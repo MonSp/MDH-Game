@@ -55,6 +55,9 @@ struct ComponentTypeInfo {
     std::type_index type;
     size_t size;
     size_t alignment;
+
+    ComponentTypeInfo() : type(typeid(void)), size(0), alignment(0) {}
+    ComponentTypeInfo(std::type_index t, size_t s, size_t a) : type(t), size(s), alignment(a) {}
 };
 
 class ComponentRegistry {
@@ -67,17 +70,16 @@ public:
     template<typename T>
     void registerComponent() {
         ComponentTypeId id = ComponentBase<T>::getStaticTypeId();
-        if (componentInfos.find(id) == componentInfos.end()) {
-            componentInfos[id] = ComponentTypeInfo{
-                std::type_index(typeid(T)),
-                sizeof(T),
-                alignof(T)
-            };
+        auto it = componentInfos.find(id);
+        if (it == componentInfos.end()) {
+            componentInfos.emplace(id, ComponentTypeInfo{std::type_index(typeid(T)), sizeof(T), alignof(T)});
         }
     }
 
     ComponentTypeInfo getComponentInfo(ComponentTypeId id) const {
-        return componentInfos.at(id);
+        static ComponentTypeInfo empty;
+        auto it = componentInfos.find(id);
+        return it != componentInfos.end() ? it->second : empty;
     }
 
     size_t getComponentCount() const {

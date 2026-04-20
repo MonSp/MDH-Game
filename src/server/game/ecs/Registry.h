@@ -25,13 +25,14 @@ public:
             id = freeIds.front();
             freeIds.pop();
         }
-        entityComponents[id] = {};
+        auto& comps = entityComponents[id];
         return Entity(id);
     }
 
     void destroyEntity(EntityId id) {
-        if (entityComponents.find(id) != entityComponents.end()) {
-            entityComponents.erase(id);
+        auto it = entityComponents.find(id);
+        if (it != entityComponents.end()) {
+            entityComponents.erase(it);
             freeIds.push(id);
         }
     }
@@ -72,11 +73,12 @@ public:
         auto typeId = ComponentBase<T>::getStaticTypeId();
         ComponentRegistry::getInstance().registerComponent<T>();
 
-        if (entityComponents.find(id) == entityComponents.end()) {
-            entityComponents[id] = {};
+        auto it = entityComponents.find(id);
+        if (it == entityComponents.end()) {
+            it = entityComponents.emplace(id, std::unordered_map<ComponentTypeId, std::unique_ptr<IComponent>>()).first;
         }
 
-        entityComponents[id][typeId] = std::make_unique<T>(std::forward<Args>(args)...);
+        it->second[typeId] = std::make_unique<T>(std::forward<Args>(args)...);
     }
 
     template<typename T>

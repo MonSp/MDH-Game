@@ -4,8 +4,8 @@
 #include "../../ecs/components/IdentityComponent.h"
 #include "../../job/ThreadPool.h"
 #include "../../job/JobDispatcher.h"
-#include "../npc/BehaviorTreeSystem.h"
-#include "../npc/MovementSystem.h"
+#include "../../npc/BehaviorTreeSystem.h"
+#include "../../npc/MovementSystem.h"
 #include <vector>
 #include <chrono>
 #include <cmath>

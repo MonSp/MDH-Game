@@ -1,7 +1,7 @@
 #pragma once
 
 #include "LLMHttpClient.h"
-#include "../../ecs/components/LLMComponent.h"
+#include "../ecs/components/LLMComponent.h"
 #include <unordered_map>
 #include <atomic>
 
@@ -14,26 +14,26 @@ public:
 
     bool initialize(const std::string& provider, const std::string& apiKey,
                    const std::string& model, const std::string& localEndpoint = "") {
-        if (!httpClient_.initialize()) {
+        if (!httpClient_->initialize()) {
             return false;
         }
 
         if (provider == "openai") {
-            httpClient_.setProvider(LLMProvider::OPENAI);
-            httpClient_.setOpenAIKey(apiKey);
+            httpClient_->setProvider(LLMProvider::OPENAI);
+            httpClient_->setOpenAIKey(apiKey);
         } else {
-            httpClient_.setProvider(LLMProvider::LOCAL);
-            httpClient_.setLocalEndpoint(localEndpoint.empty() ? "http://localhost:11434" : localEndpoint);
+            httpClient_->setProvider(LLMProvider::LOCAL);
+            httpClient_->setLocalEndpoint(localEndpoint.empty() ? "http://localhost:11434" : localEndpoint);
         }
 
-        httpClient_.setModel(model);
-        httpClient_.setConcurrencyLimit(maxConcurrentRequests_);
+        httpClient_->setModel(model);
+        httpClient_->setConcurrencyLimit(maxConcurrentRequests_);
 
         size_t threadCount = std::thread::hardware_concurrency();
         if (threadCount > maxConcurrentRequests_) {
             threadCount = maxConcurrentRequests_;
         }
-        httpClient_.startWorkerThreads(threadCount);
+        httpClient_->startWorkerThreads(threadCount);
 
         initialized_ = true;
         return true;
@@ -41,7 +41,7 @@ public:
 
     void shutdown() {
         if (!initialized_) return;
-        httpClient_.shutdown();
+        httpClient_->shutdown();
         initialized_ = false;
     }
 
@@ -65,7 +65,7 @@ public:
             handlePlanError(npcId, error);
         };
 
-        httpClient_.submitRequest(std::move(request));
+        httpClient_->submitRequest(std::move(request));
         activeRequests_[npcId] = request.request_id;
     }
 
@@ -78,7 +78,7 @@ public:
     }
 
     size_t getPendingRequestCount() const {
-        return httpClient_.getPendingRequestCount();
+        return httpClient_->getPendingRequestCount();
     }
 
     size_t getActiveRequestCount() const {
@@ -87,11 +87,13 @@ public:
 
     void setMaxConcurrentRequests(size_t limit) {
         maxConcurrentRequests_ = limit;
-        httpClient_.setConcurrencyLimit(limit);
+        httpClient_->setConcurrencyLimit(limit);
     }
 
 private:
-    LLMService() : initialized_(false), maxConcurrentRequests_(8) {}
+    LLMService() : initialized_(false), maxConcurrentRequests_(8), httpClient_(nullptr) {
+        httpClient_ = &LLMHttpClient::getInstance();
+    }
 
     void handlePlanResponse(const std::string& npcId, const std::string& response) {
         activeRequests_.erase(npcId);
@@ -118,8 +120,8 @@ private:
 
     uint64_t getCurrentTimeMs() const {
         auto now = std::chrono::system_clock::now();
-        return std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()).count();
+        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()).count());
     }
 
 public:
@@ -130,7 +132,7 @@ private:
     bool initialized_;
     size_t maxConcurrentRequests_;
     std::atomic<uint64_t> requestIdCounter_{0};
-    LLMHttpClient& httpClient_;
+    LLMHttpClient* httpClient_;
     std::unordered_map<std::string, std::string> activeRequests_;
     std::unordered_map<std::string, std::string> lastResponse_;
     std::unordered_map<std::string, std::string> lastError_;

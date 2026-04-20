@@ -116,7 +116,7 @@ private:
                 break;
             case NPCRole::CoreDisciple:
             case NPCRole::InnerDisciple:
-                weights.compite += 20;
+                weights.compete += 20;
                 weights.patrol += 10;
                 break;
             case NPCRole::BranchDisciple:
@@ -130,7 +130,7 @@ private:
 
     NPCActivity rouletteSelect(const BehaviorWeight& weights) {
         uint32_t total = weights.patrol + weights.retreat + weights.logistics +
-                         weights.compite + weights.work + weights.rest + weights.trade;
+                         weights.compete + weights.work + weights.rest + weights.trade;
 
         if (total == 0) return NPCActivity::Rest;
 
@@ -142,8 +142,8 @@ private:
         random -= weights.retreat;
         if (random < weights.logistics) return NPCActivity::Logistics;
         random -= weights.logistics;
-        if (random < weights.compite) return NPCActivity::Compete;
-        random -= weights.compite;
+        if (random < weights.compete) return NPCActivity::Compete;
+        random -= weights.compete;
         if (random < weights.work) return NPCActivity::Work;
         random -= weights.work;
         if (random < weights.rest) return NPCActivity::Rest;

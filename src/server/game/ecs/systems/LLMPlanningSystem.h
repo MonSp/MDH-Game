@@ -6,6 +6,8 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
 class LLMPlanningSystem {
 public:
@@ -14,10 +16,20 @@ public:
         return instance;
     }
 
-    void initialize(const std::string& provider = "openai",
-                  const std::string& apiKey = "",
-                  const std::string& model = "gpt-4",
-                  const std::string& localEndpoint = "") {
+    void initialize(const std::string& configPath = "") {
+        std::string actualConfigPath = configPath.empty() ? getDefaultConfigPath() : configPath;
+
+        std::string provider = "openai";
+        std::string apiKey = "";
+        std::string model = "gpt-4";
+        std::string localEndpoint = "http://localhost:11434";
+
+        if (loadConfigFromFile(actualConfigPath, provider, apiKey, model, localEndpoint)) {
+            std::cout << "LLM config loaded from: " << actualConfigPath << std::endl;
+        } else {
+            std::cout << "Using default LLM config (no config file found)" << std::endl;
+        }
+
         llmClient_ = &LLMPlanningClient::getInstance();
         llmClient_->initialize(provider, apiKey, model, localEndpoint);
     }
@@ -153,6 +165,60 @@ private:
 
     bool parseAndApplyPlan(const std::string& jsonResponse, LLMPlanComponent* plan) {
         return true;
+    }
+
+    std::string getDefaultConfigPath() const {
+        return "src/server/config/llm_config.txt";
+    }
+
+    bool loadConfigFromFile(const std::string& path, std::string& provider,
+                           std::string& apiKey, std::string& model,
+                           std::string& localEndpoint) const {
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            return false;
+        }
+
+        std::string line;
+        while (std::getline(file, line)) {
+            line = trim(line);
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+
+            size_t eqPos = line.find('=');
+            if (eqPos == std::string::npos) {
+                continue;
+            }
+
+            std::string key = trim(line.substr(0, eqPos));
+            std::string value = trim(line.substr(eqPos + 1));
+
+            if (key == "provider") {
+                provider = value;
+            } else if (key == "api_key") {
+                apiKey = value;
+            } else if (key == "model") {
+                model = value;
+            } else if (key == "local_endpoint") {
+                localEndpoint = value;
+            }
+        }
+
+        file.close();
+        return true;
+    }
+
+    std::string trim(const std::string& str) const {
+        size_t start = 0;
+        while (start < str.length() && std::isspace(str[start])) {
+            start++;
+        }
+        size_t end = str.length();
+        while (end > start && std::isspace(str[end - 1])) {
+            end--;
+        }
+        return str.substr(start, end - start);
     }
 
     uint32_t getHorizonDays(LLMTier tier) const {

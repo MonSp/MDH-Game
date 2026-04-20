@@ -11,9 +11,9 @@ export const LogBox = () => {
   }, [logs]);
 
   return (
-    <div className="absolute bottom-4 left-4 w-96 flex flex-col pointer-events-auto">
+    <div className="absolute bottom-4 right-4 w-80 flex flex-col pointer-events-auto">
       {/* 聊天/日志框 */}
-      <div className="bg-zinc-950/80 border border-zinc-800/50 rounded-lg backdrop-blur-md shadow-lg overflow-hidden flex flex-col h-64">
+      <div className="bg-zinc-950/80 border border-zinc-800/50 rounded-lg backdrop-blur-md shadow-lg overflow-hidden flex flex-col h-48">
         <div className="bg-zinc-900/80 px-3 py-2 border-b border-zinc-800/50 flex items-center space-x-2">
           <ScrollText size={16} className="text-emerald-500" />
           <span className="text-sm font-medium text-zinc-300">仙途纪事</span>

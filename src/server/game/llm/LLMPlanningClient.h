@@ -2,8 +2,8 @@
 
 #include "LLMService.h"
 #include "LLMPromptBuilder.h"
-#include "../../ecs/components/LLMComponent.h"
-#include "../../ecs/Registry.h"
+#include "../ecs/components/LLMComponent.h"
+#include "../ecs/Registry.h"
 #include <unordered_map>
 
 class LLMPlanningClient {
@@ -55,7 +55,7 @@ public:
         );
 
         std::string horizon = getHorizonString(tier);
-        userPrompt += "\n\n请为这个NPC规划未来" + horizon + "的行动计划。";
+        userPrompt += "\n\nPlease plan the NPC's actions for the next " + horizon + ".";
 
         llmService_->requestPlan(npcId, systemPrompt, userPrompt);
     }
@@ -131,10 +131,10 @@ private:
 
     std::string getHorizonString(LLMTier tier) const {
         switch (tier) {
-            case LLMTier::T0: return "一个月";
-            case LLMTier::T1: return "一周";
-            case LLMTier::T2: return "一天";
-            default: return "一天";
+            case LLMTier::T0: return "one month";
+            case LLMTier::T1: return "one week";
+            case LLMTier::T2: return "one day";
+            default: return "one day";
         }
     }
 

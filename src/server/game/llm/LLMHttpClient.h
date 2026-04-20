@@ -9,7 +9,10 @@
 #include <memory>
 #include <functional>
 #include <atomic>
+
+#ifdef USE_CURL
 #include <curl/curl.h>
+#endif
 
 enum class LLMProvider {
     OPENAI,
@@ -46,23 +49,13 @@ public:
 
     bool initialize() {
         if (initialized_) return true;
-
-        curl_global_init(CURL_GLOBAL_DEFAULT);
-        multiHandle_ = curl_multi_init();
-        if (!multiHandle_) {
-            return false;
-        }
-
         initialized_ = true;
         return true;
     }
 
     void shutdown() {
         if (!initialized_) return;
-
         stopWorkerThreads();
-        curl_multi_cleanup(multiHandle_);
-        curl_global_cleanup();
         initialized_ = false;
     }
 
@@ -110,8 +103,8 @@ public:
 
 private:
     LLMHttpClient() : initialized_(false), pendingRequests_(0),
-        multiHandle_(nullptr), provider_(LLMProvider::OPENAI),
-        temperature_(0.7f), maxTokens_(2000) {}
+        provider_(LLMProvider::OPENAI),
+        temperature_(0.7f), maxTokens_(2000), maxConcurrentRequests_(10) {}
 
     ~LLMHttpClient() {
         shutdown();
@@ -152,150 +145,14 @@ private:
         response.request_id = request.request_id;
         auto startTime = std::chrono::high_resolution_clock::now();
 
-        try {
-            std::string url;
-            std::string postData;
+        response.success = false;
+        response.error = "HTTP client not available - curl library not installed";
 
-            if (provider_ == LLMProvider::OPENAI) {
-                url = "https://api.openai.com/v1/chat/completions";
-                postData = buildOpenAIRequest(request);
-            } else {
-                url = localEndpoint_ + "/api/generate";
-                postData = buildLocalRequest(request);
-            }
-
-            CURL* curl = curl_easy_init();
-            if (!curl) {
-                response.success = false;
-                response.error = "Failed to init curl";
-                invokeCallback(request, response);
-                return;
-            }
-
-            std::string responseBody;
-            struct curl_slist* headers = nullptr;
-
-            if (provider_ == LLMProvider::OPENAI) {
-                headers = curl_slist_append(headers, "Content-Type: application/json");
-                headers = curl_slist_append(headers, ("Authorization: Bearer " + openaiApiKey_).c_str());
-            }
-
-            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
-            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
-            curl_easy_setopt(curl, CURLOPT_POST, 1L);
-
-            if (headers) {
-                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-            }
-
-            CURLcode res = curl_easy_perform(curl);
-
-            if (headers) {
-                curl_slist_free_all(headers);
-            }
-
-            auto endTime = std::chrono::high_resolution_clock::now();
-            response.latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                endTime - startTime).count();
-
-            if (res == CURLE_OK) {
-                response.success = true;
-                response.content = parseResponse(responseBody);
-            } else {
-                response.success = false;
-                response.error = curl_easy_strerror(res);
-            }
-
-            curl_easy_cleanup(curl);
-
-        } catch (const std::exception& e) {
-            response.success = false;
-            response.error = e.what();
-        }
+        auto endTime = std::chrono::high_resolution_clock::now();
+        response.latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            endTime - startTime).count();
 
         invokeCallback(request, response);
-    }
-
-    std::string buildOpenAIRequest(const LLMRequest& request) {
-        std::string json = "{";
-        json += "\"model\":\"" + request.model + "\",";
-        json += "\"messages\":[";
-        json += "{\"role\":\"system\",\"content\":\"" + escapeJson(request.system_prompt) + "\"},";
-        json += "{\"role\":\"user\",\"content\":\"" + escapeJson(request.user_prompt) + "\"}";
-        json += "]},";
-        json += "\"temperature\":" + std::to_string(request.temperature) + ",";
-        json += "\"max_tokens\":" + std::to_string(request.max_tokens);
-        json += "}";
-        return json;
-    }
-
-    std::string buildLocalRequest(const LLMRequest& request) {
-        std::string json = "{";
-        json += "\"model\":\"" + request.model + "\",";
-        json += "\"prompt\":\"" + escapeJson(request.user_prompt) + "\",";
-        json += "\"stream\":false";
-        json += "}";
-        return json;
-    }
-
-    std::string parseResponse(const std::string& responseBody) {
-        if (provider_ == LLMProvider::OPENAI) {
-            return parseOpenAIResponse(responseBody);
-        } else {
-            return parseLocalResponse(responseBody);
-        }
-    }
-
-    std::string parseOpenAIResponse(const std::string& body) {
-        size_t contentPos = body.find("\"content\":\"");
-        if (contentPos == std::string::npos) {
-            return body;
-        }
-
-        size_t start = contentPos + 10;
-        size_t end = body.find("\"", start);
-        if (end == std::string::npos) {
-            return body.substr(start);
-        }
-
-        return body.substr(start, end - start);
-    }
-
-    std::string parseLocalResponse(const std::string& body) {
-        size_t responsePos = body.find("\"response\":\"");
-        if (responsePos == std::string::npos) {
-            return body;
-        }
-
-        size_t start = responsePos + 11;
-        size_t end = body.find("\"", start);
-        if (end == std::string::npos) {
-            return body.substr(start);
-        }
-
-        return body.substr(start, end - start);
-    }
-
-    static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-        ((std::string*)userp)->append((char*)contents, size * nmemb);
-        return size * nmemb;
-    }
-
-    std::string escapeJson(const std::string& input) {
-        std::string result;
-        for (char c : input) {
-            switch (c) {
-                case '"': result += "\\\""; break;
-                case '\\': result += "\\\\"; break;
-                case '\n': result += "\\n"; break;
-                case '\r': result += "\\r"; break;
-                case '\t': result += "\\t"; break;
-                default: result += c;
-            }
-        }
-        return result;
     }
 
     void invokeCallback(const LLMRequest& request, const LLMResponse& response) {
@@ -318,7 +175,6 @@ private:
     }
 
     bool initialized_;
-    CURLM* multiHandle_;
     std::atomic<size_t> pendingRequests_;
 
     LLMProvider provider_;

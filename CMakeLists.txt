@@ -5,8 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wall")
 
-add_compile_definitions(USE_CURL)
-
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
 )
@@ -50,4 +48,4 @@ add_executable(game_engine
     ${LLM_FILES}
 )
 
-target_link_libraries(game_engine pthread curl)
+target_link_libraries(game_engine)

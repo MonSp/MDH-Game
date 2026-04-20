@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../ecs/components/LLMComponent.h"
+#include "../ecs/components/LLMComponent.h"
 #include <string>
 
 class LLMPromptBuilder {
@@ -11,60 +11,59 @@ public:
     }
 
     std::string buildSystemPrompt(LLMTier tier, bool warActive) {
-        std::string era = warActive ? "战争时期" : "和平时期";
+        std::string era = warActive ? "war time" : "peace time";
         std::string tierDesc = getTierDescription(tier);
 
-        return "你是修仙世界" + era + "的NPC规划专家。\n"
-               "你负责为" + tierDesc + "的NPC生成合理的行动规划。\n"
-               "规划应该包含多个子任务，每个子任务有明确的行动类型和优先级。\n"
-               "行动类型包括：\n"
-               "- IDLE: 空闲\n"
-               "- REST: 休息恢复\n"
-               "- PATROL: 巡逻\n"
-               "- EXPLORE: 探索机缘\n"
-               "- CULTIVATE: 修炼突破\n"
-               "- TRADE: 坊市交易\n"
-               "- LOGISTICS: 后勤支援\n"
-               "- MILITARY_ORDER: 军事命令\n"
-               "- DIPLOMACY: 外交活动\n"
-               "- INTELLIGENCE: 情报收集\n"
-               "- RESOURCE_ALLOCATION: 资源调配\n"
-               "- RESOURCE_PURCHASE: 资源采购\n"
-               "- RESOURCE_RAID: 资源掠夺\n"
-               "- CAPTURE_RESOURCE_POINT: 占领资源点\n"
-               "- DOMAIN_WAR: 领域战争\n"
-               "- ALLIANCE_FORMATION: 联盟结交\n"
-               "- CULTIVATE_BREAKTHROUGH: 闭关突破";
+        return std::string("You are an NPC planning expert in the cultivation world during ") + era + ".\n"
+               "You are responsible for generating reasonable action plans for " + tierDesc + " NPCs.\n"
+               "Plans should contain multiple sub-tasks, each with clear action types and priorities.\n"
+               "Action types include:\n"
+               "- IDLE: idle\n"
+               "- REST: rest and recovery\n"
+               "- PATROL: patrol\n"
+               "- EXPLORE: explore opportunities\n"
+               "- CULTIVATE: cultivation breakthrough\n"
+               "- TRADE: market trading\n"
+               "- LOGISTICS: logistics support\n"
+               "- MILITARY_ORDER: military orders\n"
+               "- DIPLOMACY: diplomatic activities\n"
+               "- INTELLIGENCE: intelligence gathering\n"
+               "- RESOURCE_ALLOCATION: resource allocation\n"
+               "- RESOURCE_PURCHASE: resource purchase\n"
+               "- RESOURCE_RAID: resource raid\n"
+               "- CAPTURE_RESOURCE_POINT: capture resource points\n"
+               "- DOMAIN_WAR: domain war\n"
+               "- ALLIANCE_FORMATION: alliance formation\n"
+               "- CULTIVATE_BREAKTHROUGH: closed-door breakthrough";
     }
 
     std::string buildNPCContextPrompt(const std::string& name, const std::string& clan,
                                      const std::string& nation, const std::string& role,
                                      const std::string& realm, int32_t power,
                                      float ambition, float caution, float loyalty, float greed) {
-        return "NPC信息：\n"
-               "- 名字：" + name + "\n"
-               "- 家族：" + clan + "\n"
-               "- 国家：" + nation + "\n"
-               "- 角色：" + role + "\n"
-               "- 境界：" + realm + "\n"
-               "- 实力：" + std::to_string(power) + "\n"
-               "- 性格：野心" + std::to_string((int)ambition) +
-               "，谨慎" + std::to_string((int)caution) +
-               "，忠诚" + std::to_string((int)loyalty) +
-               "，贪婪" + std::to_string((int)greed);
+        return std::string("NPC Info:\n") + name + "\n"
+               "- Clan: " + clan + "\n"
+               "- Nation: " + nation + "\n"
+               "- Role: " + role + "\n"
+               "- Realm: " + realm + "\n"
+               "- Power: " + std::to_string(power) + "\n"
+               "- Personality: ambition " + std::to_string((int)ambition) +
+               ", caution " + std::to_string((int)caution) +
+               ", loyalty " + std::to_string((int)loyalty) +
+               ", greed " + std::to_string((int)greed);
     }
 
     std::string buildWorldContextPrompt(bool warActive, float resourceDensity,
                                        const std::string& economyStatus,
                                        const std::vector<std::string>& majorEvents) {
-        std::string warStr = warActive ? "进行中" : "和平";
-        std::string eventsStr = majorEvents.empty() ? "无" : joinStrings(majorEvents, ", ");
+        std::string warStr = warActive ? "active" : "peaceful";
+        std::string eventsStr = majorEvents.empty() ? "none" : joinStrings(majorEvents, ", ");
 
-        return "世界局势：\n"
-               "- 战争状态：" + warStr + "\n"
-               "- 资源密度：" + std::to_string(resourceDensity) + "\n"
-               "- 经济状态：" + economyStatus + "\n"
-               "- 重大事件：" + eventsStr;
+        return std::string("World Situation:\n") +
+               "- War Status: " + warStr + "\n" +
+               "- Resource Density: " + std::to_string(resourceDensity) + "\n" +
+               "- Economy Status: " + economyStatus + "\n" +
+               "- Major Events: " + eventsStr;
     }
 
 private:
@@ -72,10 +71,10 @@ private:
 
     std::string getTierDescription(LLMTier tier) const {
         switch (tier) {
-            case LLMTier::T0: return "天道级（皇帝、太虚境霸主）";
-            case LLMTier::T1: return "战略级（家族家主、大将军）";
-            case LLMTier::T2: return "战术级（长老、金丹期核心子弟）";
-            default: return "普通NPC";
+            case LLMTier::T0: return "Tier-0 (Emperor, transcendent rulers)";
+            case LLMTier::T1: return "Tier-1 (Family heads, generals)";
+            case LLMTier::T2: return "Tier-2 (Elders, core disciples)";
+            default: return "ordinary NPCs";
         }
     }
 

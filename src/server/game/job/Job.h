@@ -6,6 +6,7 @@
 #include <vector>
 #include <thread>
 #include <future>
+#include <type_traits>
 
 class IJob {
 public:
@@ -67,10 +68,12 @@ private:
     std::atomic<bool> finished_;
 };
 
+template<typename F>
 class JobWithResult : public IJob {
 public:
-    template<typename F, typename R = std::result_of_t<F()>>
-    Job(F&& func) : promise_(std::make_shared<std::promise<R>>()) {
+    using R = std::invoke_result_t<F>;
+
+    JobWithResult(F&& func) : promise_(std::make_shared<std::promise<R>>()) {
         future_ = promise_->get_future();
         func_ = [this, f = std::forward<F>(func)]() {
             if constexpr (std::is_same_v<R, void>) {

@@ -365,17 +365,17 @@ export const Map2D = () => {
   });
 
   return (
-    <div className="w-full h-full bg-zinc-950 relative overflow-hidden">
-      <Canvas shadows>
+    <div className="w-full h-full bg-zinc-950 relative overflow-hidden" style={{ width: '100vw', height: '100vh' }}>
+      <Canvas shadows style={{ width: '100%', height: '100%' }}>
         {/* 迷雾参数调整：颜色调亮，范围大幅推远，减少压抑感 */}
         <fog attach="fog" args={['#18181b', 25, 60]} />
 
         <OrthographicCamera 
           makeDefault 
-          position={[20, 20, 20]} 
-          zoom={40} 
+          position={[25, 25, 25]} 
+          zoom={35} 
           near={-100} 
-          far={100} 
+          far={200} 
           onUpdate={c => c.lookAt(0, 0, 0)} 
         />
         

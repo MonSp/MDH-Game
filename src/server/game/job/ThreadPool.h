@@ -17,9 +17,10 @@ struct ThreadPoolConfig {
 class ThreadPool {
 public:
     explicit ThreadPool(const ThreadPoolConfig& config) : config_(config), stop_(false) {
-        queues_.resize(config.threadCount);
+        queues_.reserve(config.threadCount);
         for (uint32_t i = 0; i < config.threadCount; ++i) {
-            queues_[i].setMaxSize(config.queueSize);
+            queues_.push_back(std::make_unique<TaskQueue>());
+            queues_[i]->setMaxSize(config.queueSize);
         }
 
         for (uint32_t i = 0; i < config.threadCount; ++i) {
@@ -45,11 +46,11 @@ public:
         return config_.threadCount;
     }
 
-    void submit(std::function<void()>&& func, uint32_t hintThread = 0) {
+    void submit(std::function<void()> func, uint32_t hintThread = 0) {
         uint32_t threadIndex = hintThread % config_.threadCount;
-        if (!queues_[threadIndex].push(std::move(func))) {
+        if (!queues_[threadIndex]->push(std::move(func))) {
             for (uint32_t i = 0; i < config_.threadCount; ++i) {
-                if (queues_[i].push(func)) {
+                if (queues_[i]->push(std::move(func))) {
                     return;
                 }
             }
@@ -69,7 +70,7 @@ public:
 
     size_t getQueueSize(uint32_t threadIndex) const {
         if (threadIndex >= config_.threadCount) return 0;
-        return queues_[threadIndex].size();
+        return queues_[threadIndex]->size();
     }
 
 private:
@@ -78,12 +79,12 @@ private:
             std::function<void()> task;
             bool found = false;
 
-            if (queues_[threadIndex].pop(task)) {
+            if (queues_[threadIndex]->pop(task)) {
                 found = true;
             } else if (config_.enableStealing) {
                 for (uint32_t i = 1; i < config_.threadCount; ++i) {
                     uint32_t stealIndex = (threadIndex + i) % config_.threadCount;
-                    if (queues_[stealIndex].steal(task)) {
+                    if (queues_[stealIndex]->steal(task)) {
                         found = true;
                         break;
                     }
@@ -102,7 +103,7 @@ private:
     ThreadPoolConfig config_;
     std::atomic<bool> stop_;
     std::vector<std::thread> threads_;
-    std::vector<TaskQueue> queues_;
+    std::vector<std::unique_ptr<TaskQueue>> queues_;
     std::vector<std::condition_variable> cvs_;
     std::mutex mtx_;
 };

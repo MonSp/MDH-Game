@@ -1,13 +1,13 @@
 #pragma once
 
-#include "../../ecs/Registry.h"
-#include "../../ecs/components/PositionComponent.h"
-#include "../../ecs/components/StatsComponent.h"
-#include "../../ecs/components/BehaviorComponent.h"
-#include "../../ecs/components/PersonalityComponent.h"
-#include "../../ecs/components/IdentityComponent.h"
-#include "../../ecs/components/LifecycleComponent.h"
-#include "../../ecs/components/ResourcesComponent.h"
+#include "../ecs/Registry.h"
+#include "../ecs/components/PositionComponent.h"
+#include "../ecs/components/StatsComponent.h"
+#include "../ecs/components/BehaviorComponent.h"
+#include "../ecs/components/PersonalityComponent.h"
+#include "../ecs/components/IdentityComponent.h"
+#include "../ecs/components/LifecycleComponent.h"
+#include "../ecs/components/ResourcesComponent.h"
 #include <string>
 #include <vector>
 #include <random>
@@ -68,7 +68,7 @@ public:
         std::uniform_real_distribution<float> xDist(-500.0f, 500.0f);
         std::uniform_real_distribution<float> yDist(-500.0f, 500.0f);
 
-        std::vector<std::string> nations = {"秦国", "楚国", "齐国", "燕国", "赵国", "魏国", "韩国"};
+        std::vector<std::string> nations = {"Qin", "Chu", "Qi", "Yan", "Zhao", "Wei", "Han"};
         std::vector<NPCRole> roles = {NPCRole::BranchDisciple, NPCRole::InnerDisciple,
                                       NPCRole::CoreDisciple, NPCRole::Elder, NPCRole::FamilyHead};
 
@@ -105,13 +105,13 @@ private:
     PersonalityComponent* createPersonalityByNation(const std::string& nation) {
         float amb = 50.0f, cau = 50.0f, loy = 50.0f, gre = 50.0f;
 
-        if (nation == "秦国") {
+        if (nation == "Qin") {
             amb = 70.0f; loy = 70.0f;
-        } else if (nation == "楚国") {
+        } else if (nation == "Chu") {
             cau = 70.0f;
-        } else if (nation == "燕国") {
+        } else if (nation == "Yan") {
             cau = 70.0f; gre = 40.0f;
-        } else if (nation == "赵国") {
+        } else if (nation == "Zhao") {
             amb = 60.0f; gre = 60.0f;
         }
 

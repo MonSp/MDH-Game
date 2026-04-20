@@ -1,0 +1,13 @@
+# LLM Configuration File
+# Provider: openai or local
+provider=local
+
+# API Key for OpenAI (leave empty if using local LLM)
+api_key=sk-2Q3m2HIr1pafistAVGI7P2IE86NnDJvDceeMhcZL76b3b
+
+# Model name (e.g., gpt-4, gpt-3.5-turbo, llama3)
+model=minimax-m25
+
+# Local LLM endpoint (used when provider=local)
+# Default: http://localhost:11434 (Ollama default)
+local_endpoint=http://maas.gd.chinamobile.com:36007/ai/uifm/open/v1

@@ -5,6 +5,7 @@
 #include "PopulationBalanceSystem.h"
 #include "LLMPlanningSystem.h"
 #include "../../job/ThreadPool.h"
+#include "../../npc/NPCCreationSystem.h"
 #include <chrono>
 #include <iostream>
 #include <memory>
