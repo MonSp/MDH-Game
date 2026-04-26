@@ -2,6 +2,7 @@
 
 #include "../../ecs/Component.h"
 #include <cstdint>
+#include <cmath>
 
 struct PositionComponent : public ECS::ComponentBase<PositionComponent> {
     float x;

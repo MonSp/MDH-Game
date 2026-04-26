@@ -13,6 +13,10 @@ dist-ssr
 *.local
 build
 
+data/*
+phase*
+test/*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

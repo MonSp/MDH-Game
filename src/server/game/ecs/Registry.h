@@ -152,6 +152,4 @@ private:
     std::unordered_map<EntityId, std::unordered_map<ComponentTypeId, std::unique_ptr<IComponent>>> entityComponents;
 };
 
-EntityBuilder createEntity();
-
 }

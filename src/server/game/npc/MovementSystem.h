@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../ecs/components/PositionComponent.h"
-#include "../../ecs/Registry.h"
+#include "../ecs/components/PositionComponent.h"
+#include "../ecs/Registry.h"
 #include <cmath>
 
 class MovementSystem {

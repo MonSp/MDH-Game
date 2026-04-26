@@ -1,11 +1,11 @@
 #pragma once
 
-#include "../../ecs/components/StatsComponent.h"
-#include "../../ecs/components/PositionComponent.h"
-#include "../../ecs/components/IdentityComponent.h"
-#include "../../ecs/components/LifecycleComponent.h"
-#include "../../ecs/components/ResourcesComponent.h"
-#include "../../ecs/Registry.h"
+#include "../ecs/components/StatsComponent.h"
+#include "../ecs/components/PositionComponent.h"
+#include "../ecs/components/IdentityComponent.h"
+#include "../ecs/components/LifecycleComponent.h"
+#include "../ecs/components/ResourcesComponent.h"
+#include "../ecs/Registry.h"
 #include <cstdlib>
 #include <ctime>
 

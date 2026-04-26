@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
 import {
@@ -227,6 +228,118 @@ io.on('connection', (socket) => {
     console.log(`Client disconnected: ${socket.id}`);
   });
 });
+
+// --- Chronicle WebSocket for NPC event streaming ---
+
+interface ChronicleEvent {
+  timestamp: number;
+  npcId: string;
+  npcName: string;
+  action: string;
+  location: string;
+  reason: string;
+  automated: boolean;
+}
+
+const chronicleClients: Set<WebSocket> = new Set();
+const eventBuffer: ChronicleEvent[] = [];
+const BATCH_INTERVAL_MS = 5000;
+const BATCH_MIN_EVENTS = 3;
+
+const wss = new WebSocketServer({ server: httpServer, path: '/chronicle' });
+
+wss.on('connection', (ws: WebSocket) => {
+  console.log('[CHRONICLE] client connected');
+  chronicleClients.add(ws);
+
+  ws.on('close', () => {
+    console.log('[CHRONICLE] client disconnected');
+    chronicleClients.delete(ws);
+  });
+
+  ws.on('message', (data: Buffer) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      handleChronicleCommand(msg, ws);
+    } catch {
+      // ignore malformed messages
+    }
+  });
+});
+
+function handleChronicleCommand(msg: any, ws: WebSocket): void {
+  switch (msg.type) {
+    case 'player:action': {
+      const event: ChronicleEvent = {
+        timestamp: Date.now(),
+        npcId: 'player',
+        npcName: '掌门',
+        action: msg.action,
+        location: '宗门大殿',
+        reason: msg.reason || '',
+        automated: false,
+      };
+      broadcastChronicleEvent(event);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+function broadcastChronicleEvent(event: ChronicleEvent): void {
+  eventBuffer.push(event);
+
+  // Format for display: [HH:MM:SS] Name Action Location (Reason)
+  const time = new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+  const tag = event.automated ? ' [automated]' : '';
+  const line = `[${time}]${tag} ${event.npcName} ${event.action} 在 ${event.location}（${event.reason}）`;
+
+  const payload = JSON.stringify({ type: 'chronicle:event', line, event });
+
+  for (const client of chronicleClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  }
+}
+
+// Batch flush: sends accumulated events every BATCH_INTERVAL_MS or when >= BATCH_MIN_EVENTS
+function flushEventBatch(): void {
+  if (eventBuffer.length >= BATCH_MIN_EVENTS) {
+    // Events are already sent individually via broadcastChronicleEvent;
+    // the buffer is for tracking. Clear it.
+    eventBuffer.length = 0;
+  }
+}
+
+setInterval(() => {
+  if (eventBuffer.length > 0) {
+    eventBuffer.length = 0;
+  }
+}, BATCH_INTERVAL_MS);
+
+// NPC event generation — called by the LLM pipeline when NPC actions complete
+export function emitNPCEvent(
+  npcId: string,
+  npcName: string,
+  action: string,
+  location: string,
+  reason: string,
+  automated = false
+): void {
+  broadcastChronicleEvent({
+    timestamp: Date.now(),
+    npcId,
+    npcName,
+    action,
+    location,
+    reason,
+    automated,
+  });
+}
+
+// --- End Chronicle WebSocket ---
 
 const PORT = process.env.PORT || 3000;
 
