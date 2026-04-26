@@ -1164,3 +1164,32 @@ interface NPCEntity {
   llm_injected_weights?: Partial<BehaviorWeight>;
 }
 ```
+
+---
+
+## 10. 实现状态 (2026-04)
+
+### 已实现
+- `NPCBirthService` (名字生成/人格生成含国家修正/境界判定/战力计算)
+- `BehaviorTree` (4优先级: 生存>家族职责>机会主义>日常, 轮盘赌选择)
+- `BehaviorExecutor` (activity状态切换框架, 10种activity类型定义)
+- NPC人格模型 (ambition/caution/loyalty/greed 0-100)
+- 9层世界配置 (LAYER_CONFIGS, 灵气倍率1.0-20.0)
+
+### Bug / 空壳
+- `executePatrol`/`executeLogistics`/`executeCompete`/`executeChase`/`executeTrade`: 全部空壳
+- `checkFamilyDutyCondition()` 仅对家主/长老/执法长老返回true → 低阶NPC永不执行家族职责
+- `BehaviorExecutor.update()`每帧调用`evaluate()`+事件emit+`executeActivity()`, 设计冗余
+
+### 未实现
+- **`LawEnforcementElder`**: 设计4节完全未实现 (无追杀逻辑)
+- **`NPCTradeSystem` / `TradeCaravan`**: 设计5节完全未实现
+- **LLM规划集成**: `LLMPlanningService`/`LLMToBehaviorTreeMapper`/`EmergencyPlanningHandler`均未实现
+- `BehaviorWeight` 的LLM注入权重(`llm_injected_weights`)无代码消费
+
+### 与 docs/ 设计差距
+- docs中的三层AI架构(战略gemini-3.1-pro/战术gemini-2.5-flash/角色低成本模型)对应代码中的T0-T3但 HTTP客户端完全stub
+- docs中的NPC记忆系统(5种记忆/遗忘曲线)未实现
+- docs中的情感系统(6维度: confident/fear/anger/hope/sadness/joy)未实现
+- docs中的人格进化(事件驱动修改)未实现
+- docs中的行为树是真正的行为树(组合节点), 代码实现是优先级状态机+轮盘赌

@@ -1124,3 +1124,36 @@ interface DeathNarrative {
   };
 }
 ```
+
+---
+
+## 11. 实现状态 (2026-04)
+
+### 已实现
+- `LifespanSystem` (寿元追踪、基础/最大寿命、概率死亡)
+- `DeathDropService` (计算掉落: 50%灵石/1-3物品/30%装备损毁/50%家族返还)
+- `ReincarnationPool` (灵魂存储、pool状态查询)
+- `WorldRecoveryPool` (资源回收累积、每日50% reinvest)
+- `DeathService.processDeath` (流程框架)
+- `PIDBirthController` (Kp=0.1/Ki=0.01/Kd=0.05)
+- `PopulationBalanceController` (1h检查、分层target计算 7x16x100=11200)
+
+### 关键 Bug
+- `distributeDrops` 循环体为空:掉落被计算但从未交付给击杀者
+- `processSocialImpact` 空壳: 家族实力/仇恨/赏金完全未实现
+- `notifyRelatedEntities` 空壳
+- `ReincarnationPool.checkBirthConditions` 始终返回 `{ shouldBorn: false }`: 转世彻底不工作
+- `checkNationDeficits` 和 `checkFamilyDeficits` 硬编码 `current=0`: 永远检测到满缺口
+- `deathCause` 字符串与 `PopulationBalanceSystem` 国家名使用汉字 vs NPCCreationSystem使用拼音，永不匹配
+
+### 未实现
+- **宗族赏金系统**: `activeBounties` 被引用但未定义
+- **死亡叙事LLM** (`DeathNarrativeLLM`): 设计10.2节未实现
+- **转世控制LLM** (`ReincarnationControlLLM`): 设计10.1节未实现
+- `NPCLifeCycleCalculator`: 未实现
+- `DataService` 中 `death_records`/`npc_death_records` 表存在但从未写入
+
+### 与 docs/ 设计差距
+- docs中的心腹NPC轮回转生(10人魂空间/忠诚度保留/跨epoch进化)未实现
+- docs中的战争人口损失曲线未实现
+- docs中的妖兽-捕食者模型未实现
