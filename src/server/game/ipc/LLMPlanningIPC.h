@@ -4,6 +4,7 @@
 #include "../ecs/Registry.h"
 #include "../ipc/MessageQueue.h"
 #include "../ipc/UnixSocketServer.h"
+#include <chrono>
 #include <vector>
 #include <cstring>
 #include <unordered_map>

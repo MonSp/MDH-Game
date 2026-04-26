@@ -27,3 +27,4 @@ test/*
 *.njsproj
 *.sln
 *.sw?
+.gstack/
