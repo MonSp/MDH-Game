@@ -944,6 +944,8 @@ enum NPCEvent {
 
 ## 9. LLM规划系统集成
 
+> **Phase 1b实现说明**: 以下第9节的代码(`LLMPlanningService`/`LLMToBehaviorTreeMapper`/`EmergencyPlanningHandler`)为原始设计，**实际未按此实现**。Phase 1b采用`NPCWorldService`(轮询LLM调度) + `PlanParser`(JSON验证) + `NPCMemory`(3种记忆结构)替代。详见第10节"Phase 1b 新增"。
+
 ### 9.1 LLM规划服务
 
 ```typescript
@@ -1176,6 +1178,40 @@ interface NPCEntity {
 - NPC人格模型 (ambition/caution/loyalty/greed 0-100)
 - 9层世界配置 (LAYER_CONFIGS, 灵气倍率1.0-20.0)
 
+### Phase 1b 新增 (2026-04-27)
+
+#### NPCWorldService (`src/server/services/NPCWorldService.ts`)
+- EventEmitter单例, 通过`tick()`循环驱动NPC模拟(8s/tick)
+- 轮询LLM调度: `MAX_PLANNING_PER_TICK=2`, `planningOffset`跟踪进度, 50NPC公平调度
+- LLM错误隔离: `Promise.all`中单NPC失败不影响其他NPC
+- 编年史事件推送: 通过`chronicle:event`事件广播action/emotion/relationship变更
+- 玩家操作: `recruit`(3候选人A/B/C)/`assignTask`/`promote`/`demote`/`ceremony`
+- 回退计划: LLM不可用时`fallbackPlan()`生成随机action
+
+#### PlanParser (`src/server/llm/PlanParser.ts`)
+- JSON提取: `extractJSON()`支持`<think>`标签剥离/代码围栏/自然语言环绕/大括号计数嵌套对象
+- 验证规则: `targetId`必填字符串, `actionType`需在`VALID_ACTION_TYPES`范围内, `priority` 1-10, `duration` 5-120(默认30), `reason`必填
+- 动作类型: `cultivate | request | scheme | defect | train | socialize | patrol | rest`
+- 默认值: `missing emotionalState` → `neutral`, `missing/out-of-range duration` → 30
+
+#### NPCMemory (`src/server/llm/NPCMemory.ts`)
+- `NPCRelationshipMatrix`: 50×50亲密度矩阵, `modifyRelationship(reason)`记录原因
+- `NPCInteractionRingBuffer`: 每个NPC最近20条交互记录(谁/何时/做了什么)
+- `NPCWitnessedEvents`: 每个NPC最近30条见证事件
+- `buildMemoryContext(npcId)`: 将三者组合为LLM提示上下文
+
+#### ChroniclePanel (`src/components/ChroniclePanel.tsx`)
+- WebSocket事件流(`ws://host/chronicle`), 自动重连+指数退避(1s→2s→4s→8s→max16s)
+- NPC列表: 实时搜索/角色筛选/活动状态/情绪颜色
+- 事件过滤: 时间分组(最近/本小时/更早), 9种事件类型颜色标记, NPC筛选
+- 操作模态框: 招募弟子/分配任务/提拔/贬斥/祭祀/庆典
+
+#### 测试框架
+- Vitest, 95项测试覆盖3个套件
+- `test/llm-parser.test.ts` (36项): JSON解析/验证/边缘情况/嵌套对象/思维链剥离
+- `test/npc-memory.test.ts` (40项): 记忆存储/检索/关系操作/并发安全
+- `test/npc-world-service.test.ts` (19项): NPC初始化/操作/回归测试/关系查询
+
 ### Bug / 空壳
 - `executePatrol`/`executeLogistics`/`executeCompete`/`executeChase`/`executeTrade`: 全部空壳
 - `checkFamilyDutyCondition()` 仅对家主/长老/执法长老返回true → 低阶NPC永不执行家族职责
@@ -1184,12 +1220,12 @@ interface NPCEntity {
 ### 未实现
 - **`LawEnforcementElder`**: 设计4节完全未实现 (无追杀逻辑)
 - **`NPCTradeSystem` / `TradeCaravan`**: 设计5节完全未实现
-- **LLM规划集成**: `LLMPlanningService`/`LLMToBehaviorTreeMapper`/`EmergencyPlanningHandler`均未实现
+- **LLM规划集成(旧设计)**: `LLMPlanningService`/`LLMToBehaviorTreeMapper`/`EmergencyPlanningHandler`均未实现 (被Phase 1b的NPCWorldService替代)
 - `BehaviorWeight` 的LLM注入权重(`llm_injected_weights`)无代码消费
 
 ### 与 docs/ 设计差距
-- docs中的三层AI架构(战略gemini-3.1-pro/战术gemini-2.5-flash/角色低成本模型)对应代码中的T0-T3但 HTTP客户端完全stub
-- docs中的NPC记忆系统(5种记忆/遗忘曲线)未实现
-- docs中的情感系统(6维度: confident/fear/anger/hope/sadness/joy)未实现
+- docs中的三层AI架构(战略gemini-3.1-pro/战术gemini-2.5-flash/角色低成本模型)对应代码中的T0-T3但HTTP客户端完全stub
+- docs中的NPC记忆系统(5种记忆/遗忘曲线)未实现 (Phase 1b实现了3种简化结构)
+- docs中的情感系统(6维度: confident/fear/anger/hope/sadness/joy)未实现 (Phase 1b使用单字符串emotionalState)
 - docs中的人格进化(事件驱动修改)未实现
 - docs中的行为树是真正的行为树(组合节点), 代码实现是优先级状态机+轮盘赌

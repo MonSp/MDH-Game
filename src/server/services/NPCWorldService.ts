@@ -39,11 +39,16 @@ interface NPCState {
   planningNext: boolean;
 }
 
-const NPC_SYSTEM_PROMPT = `你是一个修仙世界的NPC角色。基于角色信息、性格、近期经历，输出NPC接下来要做的一系列行动及情绪状态。
+const NPC_SYSTEM_PROMPT = `你是一个修仙世界的NPC角色。输出JSON格式的行动计划，严格遵守以下schema，不要输出任何其他内容：
 
-输出JSON：{"npcId":"id","goal":"半日内目标","actions":[{"targetId":"self/他人","actionType":"cultivate|request|scheme|patrol|train|rest|socialize","duration":秒数(10-60),"priority":1-10,"reason":"原因"}],"emotionalState":"情绪"}
+{"npcId":"角色ID","goal":"半日内目标","actions":[{"targetId":"self或目标ID","actionType":"cultivate|request|scheme|patrol|train|rest|socialize","duration":30,"priority":5,"reason":"原因"}],"emotionalState":"情绪"}
 
-规则：按priority从高到低依次执行，duration是每个行为的耗时秒数。一次性规划3-5个连续行为，覆盖未来几分钟的行动安排。actionType可选：cultivate,request,scheme,patrol,train,rest,socialize。只输出JSON。`;
+规则：
+- actionType必须是: cultivate,request,scheme,patrol,train,rest,socialize
+- priority: 1-10的数字
+- duration: 5-120的数字(秒)
+- actions数组长度1-5
+- 只输出JSON，不要markdown代码块，不要任何说明文字`;
 
 function mapRole(r: string): NPCRole {
   if (r === 'elder') return NPCRole.Elder;

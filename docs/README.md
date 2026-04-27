@@ -89,6 +89,26 @@ AI生成世界格局（战略AI）
 6. **[21-战争史诗系统](world/21-战争史诗系统.md)** - 了解战斗系统
 7. **[08-技术架构设计](technical/08-技术架构设计.md)** - 了解技术实现
 
+## 开发
+
+### 运行测试
+
+```bash
+npm test          # 运行Vitest (95项测试, 3套件)
+npm run test:ui   # 启动Vitest UI
+```
+
+测试套件: `test/llm-parser.test.ts` (36项, JSON计划解析/验证), `test/npc-memory.test.ts` (40项, 记忆系统),
+`test/npc-world-service.test.ts` (19项, NPC世界模拟/关系/回归测试)。
+
+### 开发服务器
+
+```bash
+npm run dev       # Express + Socket.IO, 端口3000
+npm run build     # TypeScript编译
+npm start         # 生产启动
+```
+
 ## 项目结构
 
 ```
@@ -132,10 +152,12 @@ docs/
 
 ## 技术栈
 
-- **客户端**: Phaser 3 + React + TypeScript
-- **服务端**: Node.js + Express + WebSocket
-- **AI系统**: Gemini API (三层级模型)
-- **数据库**: PostgreSQL + MongoDB + Redis
+- **客户端**: Three.js (react-three-fiber) + React 19 + TypeScript + Tailwind CSS v4
+- **服务端**: Node.js + Express + Socket.IO + Vitest (95项测试)
+- **AI系统**: LLMHttpClient (OpenAI兼容/Gemini), PlanParser, NPCMemory (Phase 1b)
+- **C++引擎**: CMake + C++17 ECS (benchmark only, Unix Socket IPC)
+- **数据库**: better-sqlite3 (轻量, 大部分数据在内存中)
+- **状态管理**: Zustand (gameStore.ts)
 - **部署**: Docker + AWS/Azure
 
 ## 商业模式
@@ -146,17 +168,27 @@ docs/
 
 ## 开发路线图
 
-### 第一阶段（6个月）: 核心AI系统
-- 实现三层级AI架构
-- 完成战略地图和基础战斗
-- 建立七国AI Agent原型
+### Phase 1a — 基础设施 (已完成)
+- C++ ECS引擎框架 (Registry/Archetype/Job System/ThreadPool)
+- TypeScript服务层 (Player/Family/Cultivation/Economy/Resource Services)
+- 家族/皇朝系统 (预组家族/客卿系统/篡位战斗)
+- 游戏设计文档体系
 
-### 第二阶段（6个月）: 战争系统完善
+### Phase 1b — NPC AI与编年史 (已完成, v1.1.0.0)
+- NPC记忆系统: 关系矩阵/交互缓冲/见证事件
+- LLM计划管线: PlanParser验证/LLMHttpClient/NPCMemory
+- NPCWorldService: 轮询LLM调度/玩家操作/编年史推送
+- ChroniclePanel: WebSocket事件流/NPC列表/筛选/模态框
+- 测试框架: Vitest, 95项测试
+
+### Phase 2 — 战争与交互 (规划中)
 - 实现实时战斗系统
 - 完成军团系统和阵法系统
+- NPC LLM vs 确定性行为基准验证
+- LLM API端到端冒烟测试
 - 优化AI性能和成本
 
-### 第三阶段（6个月）: 内容扩展
+### Phase 3 — 内容扩展 (规划中)
 - 添加多人联机模式
 - 完成DLC支持框架
 - 优化用户体验和平衡性
@@ -168,6 +200,8 @@ docs/
 3. 使用[game-design-prompt](game-design-prompt.md)辅助AI设计
 4. 保持文档风格一致，使用Markdown格式
 5. 更新相关文档时同步更新本文档索引
+6. 修改代码后运行 `npm test` 确保95项测试全部通过
+7. 新增功能时添加Vitest测试用例
 
 ## 联系方式
 
