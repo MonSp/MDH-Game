@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { parsePlanResponse, ParsedPlan } from './PlanParser';
 import { logLLMCall } from './LLMLogger';
 
@@ -47,17 +48,23 @@ function loadConfig(): LLMClientConfig {
   // 1. Load from config file
   try {
     const fs = require('fs');
-    const txt = fs.readFileSync('/home/test/MyGame/src/server/config/llm_config.txt', 'utf8');
+    const configPath = path.resolve(__dirname, '../config/llm_config.txt');
+    const txt = fs.readFileSync(configPath, 'utf8');
     for (const line of txt.split('\n')) {
-      const [k, v] = line.trim().split('=');
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const sep = trimmed.indexOf('=');
+      if (sep === -1) continue;
+      const k = trimmed.slice(0, sep).trim();
+      const v = trimmed.slice(sep + 1).trim();
       if (k === 'api_key') config.apiKey = v;
       if (k === 'local_endpoint') {
-        config.endpoint = v.replace('http://', 'https://');
+        try { config.endpoint = new URL(v).toString().replace(/\/+$/, ''); } catch { /* keep default */ }
         config.provider = 'openai-compatible';
       }
       if (k === 'model') config.model = v;
       if (k === 'provider') {
-        config.provider = v === 'openai' ? 'openai-compatible' : 'openai-compatible';
+        config.provider = v === 'gemini' ? 'gemini' : 'openai-compatible';
       }
     }
   } catch (e) {
@@ -66,7 +73,7 @@ function loadConfig(): LLMClientConfig {
 
   // 2. Override with environment variables (higher priority)
   if (process.env.LLM_BASE_URL) {
-    config.endpoint = process.env.LLM_BASE_URL.replace('http://', 'https://');
+    config.endpoint = process.env.LLM_BASE_URL.replace(/\/+$/, '');
     config.provider = 'openai-compatible';
   }
   if (process.env.LLM_API_KEY) {

@@ -313,6 +313,10 @@ wss.on('connection', (ws: WebSocket) => {
     chronicleClients.delete(ws);
   });
 
+  ws.on('error', () => {
+    chronicleClients.delete(ws);
+  });
+
   ws.on('message', (data: Buffer) => {
     try {
       const msg = JSON.parse(data.toString());
@@ -352,7 +356,7 @@ function broadcastChronicleEvent(event: ChronicleEvent): void {
   const tag = event.automated ? ' [automated]' : '';
   const line = `[${time}]${tag} ${event.npcName} ${event.action} 在 ${event.location}（${event.reason}）`;
 
-  const payload = JSON.stringify({ type: 'chronicle:event', line, event: { ...event, type: event.reason } });
+  const payload = JSON.stringify({ type: 'chronicle:event', line, event });
 
   for (const client of chronicleClients) {
     if (client.readyState === WebSocket.OPEN) {

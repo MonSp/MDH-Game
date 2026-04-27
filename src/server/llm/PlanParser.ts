@@ -50,7 +50,7 @@ function extractJSON(raw: string): string {
     return cleaned;
   } catch {
     // Extract first JSON object via regex
-    const match = cleaned.match(/\{[\s\S]*\}/);
+    const match = cleaned.match(/\{[\s\S]*?\}/);
     if (match) return match[0];
     return cleaned;
   }
