@@ -28,7 +28,7 @@ export interface ParsedPlan {
   emotionalState: string;
 }
 
-const VALID_ACTION_TYPES: Set<string> = new Set([
+export const VALID_ACTION_TYPES: Set<string> = new Set([
   'cultivate', 'request', 'scheme', 'defect', 'train', 'socialize', 'patrol', 'rest',
 ]);
 
@@ -49,9 +49,17 @@ function extractJSON(raw: string): string {
     JSON.parse(cleaned);
     return cleaned;
   } catch {
-    // Extract first JSON object via regex
-    const match = cleaned.match(/\{[\s\S]*?\}/);
-    if (match) return match[0];
+    // Extract first JSON object via brace counting (handles nested objects)
+    const start = cleaned.indexOf('{');
+    if (start < 0) return cleaned;
+    let depth = 0;
+    for (let i = start; i < cleaned.length; i++) {
+      if (cleaned[i] === '{') depth++;
+      else if (cleaned[i] === '}') {
+        depth--;
+        if (depth === 0) return cleaned.slice(start, i + 1);
+      }
+    }
     return cleaned;
   }
 }

@@ -348,37 +348,34 @@ function handleChronicleCommand(msg: any, ws: WebSocket): void {
   }
 }
 
-function broadcastChronicleEvent(event: ChronicleEvent): void {
-  eventBuffer.push(event);
+function sendChronicleEvents(): void {
+  if (eventBuffer.length === 0) return;
 
-  // Format for display: [HH:MM:SS] Name Action Location (Reason)
-  const time = new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
-  const tag = event.automated ? ' [automated]' : '';
-  const line = `[${time}]${tag} ${event.npcName} ${event.action} 在 ${event.location}（${event.reason}）`;
+  const events = eventBuffer.splice(0);
 
-  const payload = JSON.stringify({ type: 'chronicle:event', line, event });
+  for (const event of events) {
+    const time = new Date(event.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+    const tag = event.automated ? ' [automated]' : '';
+    const line = `[${time}]${tag} ${event.npcName} ${event.action} 在 ${event.location}（${event.reason}）`;
+    const payload = JSON.stringify({ type: 'chronicle:event', line, event });
 
-  for (const client of chronicleClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+    for (const client of chronicleClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        try { client.send(payload); } catch { /* socket closed between check and send */ }
+      }
     }
   }
 }
 
-// Batch flush: sends accumulated events every BATCH_INTERVAL_MS or when >= BATCH_MIN_EVENTS
-function flushEventBatch(): void {
+function broadcastChronicleEvent(event: ChronicleEvent): void {
+  eventBuffer.push(event);
   if (eventBuffer.length >= BATCH_MIN_EVENTS) {
-    // Events are already sent individually via broadcastChronicleEvent;
-    // the buffer is for tracking. Clear it.
-    eventBuffer.length = 0;
+    sendChronicleEvents();
   }
 }
 
-setInterval(() => {
-  if (eventBuffer.length > 0) {
-    eventBuffer.length = 0;
-  }
-}, BATCH_INTERVAL_MS);
+// Periodic flush: guarantees buffered events are sent even if BATCH_MIN_EVENTS isn't reached
+setInterval(sendChronicleEvents, BATCH_INTERVAL_MS);
 
 // NPC event generation — called by the LLM pipeline when NPC actions complete
 export function emitNPCEvent(

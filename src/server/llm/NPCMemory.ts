@@ -192,8 +192,9 @@ export class NPCMemoryStore {
   /**
    * Build the memory context string for LLM prompt injection.
    * Design doc budget: ~1,500 tokens per NPC.
+   * @param nameResolver optional function to convert NPC IDs to display names
    */
-  buildMemoryContext(npcId: string): string {
+  buildMemoryContext(npcId: string, nameResolver?: (id: string) => string): string {
     const parts: string[] = [];
 
     // Top 5 relationships
@@ -202,7 +203,10 @@ export class NPCMemoryStore {
       parts.push('重要关系:');
       for (const rel of topRel) {
         const label = rel.affinity > 30 ? '友好' : rel.affinity < -30 ? '敌对' : '中立';
-        parts.push(`  - ${rel.otherId}: ${label} (好感度 ${rel.affinity})`);
+        const displayName = nameResolver ? nameResolver(rel.otherId) : rel.otherId;
+        const mods = this.relationships.getModifiers(npcId, rel.otherId);
+        const reason = mods.length > 0 ? mods[mods.length - 1].reason : '';
+        parts.push(`  - ${displayName}: ${label} (好感度 ${rel.affinity})${reason ? ` — ${reason}` : ''}`);
       }
     }
 
@@ -211,7 +215,8 @@ export class NPCMemoryStore {
     if (recentInt.length > 0) {
       parts.push('近期互动:');
       for (const int of recentInt) {
-        parts.push(`  - [${new Date(int.timestamp).toLocaleTimeString()}] 与 ${int.otherNpcId}: ${int.summary}`);
+        const displayName = nameResolver ? nameResolver(int.otherNpcId) : int.otherNpcId;
+        parts.push(`  - [${new Date(int.timestamp).toLocaleTimeString()}] 与 ${displayName}: ${int.summary}`);
       }
     }
 

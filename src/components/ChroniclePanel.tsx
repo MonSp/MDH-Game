@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+let globalIdCounter = 0;
+
 interface NPCEntry {
   id: string;
   name: string;
@@ -76,34 +78,67 @@ export const ChroniclePanel = ({ onClose }: { onClose: () => void }) => {
   const [npcFilter, setNpcFilter] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<RecruitCandidate[]>([]);
   const chronicleRef = useRef<HTMLDivElement>(null);
-  const idRef = useRef(0);
+  const [wsConnected, setWsConnected] = useState(false);
 
-  // Connect to chronicle WebSocket
+  // Connect to chronicle WebSocket with auto-reconnect
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/chronicle`);
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let reconnectAttempts = 0;
+    let disposed = false;
 
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'chronicle:event') {
-          const ts = msg.event.timestamp || Date.now();
-          const time = new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
-          idRef.current++;
-          setChronicle(prev => [...prev.slice(-200), {
-            id: idRef.current,
-            timestamp: ts,
-            time,
-            npcName: msg.event.npcName,
-            npcId: msg.event.npcId,
-            action: msg.event.action,
-            type: msg.event.type || 'ambient',
-          }]);
-        }
-      } catch { /* ignore */ }
+    function connect() {
+      if (disposed) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.host}/chronicle`);
+
+      ws.onopen = () => {
+        if (disposed) { ws.close(); return; }
+        setWsConnected(true);
+        reconnectAttempts = 0;
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'chronicle:event') {
+            const ts = msg.event.timestamp || Date.now();
+            const time = new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+            globalIdCounter++;
+            setChronicle(prev => [...prev.slice(-200), {
+              id: globalIdCounter,
+              timestamp: ts,
+              time,
+              npcName: msg.event.npcName,
+              npcId: msg.event.npcId,
+              action: msg.event.action,
+              type: msg.event.type || 'ambient',
+            }]);
+          }
+        } catch { /* ignore */ }
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+        if (disposed) return;
+        // Reconnect with backoff: 1s, 2s, 4s, 8s, max 16s
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 16000);
+        reconnectAttempts++;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    connect();
+
+    return () => {
+      disposed = true;
+      clearTimeout(reconnectTimer);
+      ws.close();
     };
-
-    return () => ws.close();
   }, []);
 
   // Fetch NPC list periodically
@@ -232,6 +267,12 @@ export const ChroniclePanel = ({ onClose }: { onClose: () => void }) => {
                 {TYPE_LABELS[t] || t}
               </button>
             ))}
+          </div>
+
+          {/* Connection status */}
+          <div className="flex items-center gap-2 px-4 py-1 bg-zinc-950/40 border-b border-zinc-800">
+            <span className={`inline-block w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-xs text-zinc-500">{wsConnected ? '已连接' : '已断开，重连中...'}</span>
           </div>
 
           {/* Chronicle Feed */}

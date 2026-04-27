@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NPCEntity, NPCRole, RealmLevel, NPCActivity, NPCLifeState, BirthType } from '../../shared';
-import { PlanAction } from '../llm/PlanParser';
+import { PlanAction, VALID_ACTION_TYPES } from '../llm/PlanParser';
 import { LLMHttpClient, LLMRequestContext } from '../llm/LLMHttpClient';
 import { NPCMemoryStore } from '../llm/NPCMemory';
 
@@ -98,7 +98,6 @@ export class NPCWorldService extends EventEmitter {
   private static instance: NPCWorldService;
   private npcs: Map<string, NPCState> = new Map();
   private backgrounds: Map<string, string> = new Map();
-  private relationships: Map<string, { affinity: number; reason: string }> = new Map();
   private memory: NPCMemoryStore;
   private llmClient: LLMHttpClient;
   private tickInterval: NodeJS.Timeout | null = null;
@@ -108,7 +107,7 @@ export class NPCWorldService extends EventEmitter {
     super();
     this.memory = new NPCMemoryStore();
     this.llmClient = new LLMHttpClient();
-    this.nextNPCId = this.computeNextId();
+    this.nextNPCId = 1;
   }
 
   static getInstance(): NPCWorldService {
@@ -121,6 +120,7 @@ export class NPCWorldService extends EventEmitter {
   initialize(): void {
     this.seedNPCs();
     this.initRelationships();
+    this.nextNPCId = this.computeNextId();
     console.log(`[NPCWorld] 初始化完成: ${this.npcs.size} 个NPC`);
   }
 
@@ -133,7 +133,11 @@ export class NPCWorldService extends EventEmitter {
 
   private scheduleNextTick(): void {
     this.tickInterval = setTimeout(async () => {
-      await this.tick();
+      try {
+        await this.tick();
+      } catch (err) {
+        console.error('[NPCWorld] Tick error:', err);
+      }
       this.scheduleNextTick();
     }, 8000) as unknown as NodeJS.Timeout;
   }
@@ -203,41 +207,32 @@ export class NPCWorldService extends EventEmitter {
         const a = this.npcs.get(ids[i])!.npc;
         const b = this.npcs.get(ids[j])!.npc;
         const affinity = computeAffinity(a.personality, b.personality);
-        const key = [ids[i], ids[j]].sort().join('_');
-        this.relationships.set(key, { affinity, reason: '初始印象' });
+        this.memory.relationships.set(ids[i], ids[j], affinity);
+        this.memory.relationships.set(ids[j], ids[i], affinity);
       }
     }
   }
 
   getRelationship(idA: string, idB: string): { affinity: number; reason: string } {
-    const key = [idA, idB].sort().join('_');
-    return this.relationships.get(key) || { affinity: 0, reason: '无交集' };
+    const aff = this.memory.relationships.get(idA, idB);
+    const mods = this.memory.relationships.getModifiers(idA, idB);
+    return { affinity: aff, reason: mods.length > 0 ? mods[mods.length - 1].reason : '无交集' };
   }
 
   modifyRelationship(idA: string, idB: string, delta: number, reason: string): void {
-    const key = [idA, idB].sort().join('_');
-    const cur = this.relationships.get(key) || { affinity: 0, reason: '' };
-    cur.affinity = Math.max(-100, Math.min(100, cur.affinity + delta));
-    cur.reason = reason;
-    this.relationships.set(key, cur);
+    this.memory.relationships.modify(idA, idB, delta, reason);
   }
 
   getTopRelationships(npcId: string, count = 5): Array<{ id: string; name: string; affinity: number }> {
-    const result: Array<{ id: string; name: string; affinity: number }> = [];
-    for (const [key, rel] of this.relationships) {
-      const ids = key.split('_');
-      const otherId = ids[0] === npcId ? ids[1] : ids[1] === npcId ? ids[0] : null;
-      if (otherId && this.npcs.has(otherId)) {
-        result.push({ id: otherId, name: this.npcs.get(otherId)!.npc.name, affinity: rel.affinity });
-      }
-    }
-    return result.sort((a, b) => Math.abs(b.affinity) - Math.abs(a.affinity)).slice(0, count);
+    return this.memory.relationships.getTopRelationships(npcId, count)
+      .map(r => ({ id: r.otherId, name: this.npcs.get(r.otherId)?.npc.name || r.otherId, affinity: r.affinity }));
   }
 
   // --- NPC tick ---
 
   private readonly PREPLAN_THRESHOLD = 10000;
   private readonly MAX_PLANNING_PER_TICK = 2;
+  private planningOffset = 0;
 
   private async tick(): Promise<void> {
     const now = Date.now();
@@ -265,20 +260,34 @@ export class NPCWorldService extends EventEmitter {
       }
     }
 
-    // Idle NPCs first, then pre-plan candidates
-    const toPlan = [...idle, ...preplan].slice(0, this.MAX_PLANNING_PER_TICK);
-
-    for (const id of toPlan) {
-      const state = this.npcs.get(id);
-      if (!state) continue;
-      state.planningNext = true;
-      await this.planForNPC(id, state);
+    // Round-robin: pick candidates starting from planningOffset
+    const npcIds = [...this.npcs.keys()];
+    const idxMap = new Map(npcIds.map((id, i) => [id, i]));
+    const candidates = [...idle, ...preplan];
+    candidates.sort((a, b) => ((idxMap.get(a) ?? 0) - this.planningOffset + npcIds.length) % npcIds.length
+      - ((idxMap.get(b) ?? 0) - this.planningOffset + npcIds.length) % npcIds.length);
+    const toPlan = candidates.slice(0, this.MAX_PLANNING_PER_TICK);
+    if (toPlan.length > 0) {
+      this.planningOffset = ((idxMap.get(toPlan[toPlan.length - 1]) ?? 0) + 1) % npcIds.length;
     }
+
+    await Promise.all(toPlan.map(async (id) => {
+      try {
+        const state = this.npcs.get(id);
+        if (!state) return;
+        state.planningNext = true;
+        await this.planForNPC(id, state);
+      } catch (err) {
+        console.error(`[NPCWorld] Failed to plan ${id}:`, err);
+        const state = this.npcs.get(id);
+        if (state) state.planningNext = false;
+      }
+    }));
   }
 
   /** Pop expired actions from the queue and start the next one. */
   private advanceQueue(state: NPCState): void {
-    while (state.planQueue.length > 0 && state.activityUntil <= Date.now()) {
+    if (state.planQueue.length > 0 && state.activityUntil <= Date.now()) {
       state.planQueue.shift();
     }
     if (state.planQueue.length > 0) {
@@ -291,8 +300,9 @@ export class NPCWorldService extends EventEmitter {
   }
 
   private async planForNPC(id: string, state: NPCState): Promise<void> {
-    const rels = this.getTopRelationships(id, 3);
-    const relText = rels.map(r => `- 对${r.name}：好感${r.affinity}`).join('\n');
+    const memoryCtx = this.memory.buildMemoryContext(id, (otherId) => {
+      return this.npcs.get(otherId)?.npc.name || otherId;
+    });
 
     const context: LLMRequestContext = {
       npcId: id,
@@ -306,8 +316,7 @@ export class NPCWorldService extends EventEmitter {
         `性格：野心${state.npc.personality.ambition} 谨慎${state.npc.personality.caution} 忠诚${state.npc.personality.loyalty} 贪婪${state.npc.personality.greed}`,
         `背景：${this.backgrounds.get(id) || '无'}`,
         '',
-        '== 人际关系 ==',
-        relText || '暂无重点关系。',
+        memoryCtx || '暂无重点关系。',
         '',
         `请以${state.npc.name}的身份，规划接下来连续3-5个行动，每个行动包含duration（秒数）。`,
       ].join('\n'),
@@ -328,9 +337,8 @@ export class NPCWorldService extends EventEmitter {
     state.goal = plan.goal;
     state.emotion = plan.emotionalState;
 
-    const VALID = new Set(['cultivate', 'request', 'scheme', 'patrol', 'train', 'rest', 'socialize', 'defect']);
     const sorted = plan.actions
-      .filter(a => VALID.has(a.actionType))
+      .filter(a => VALID_ACTION_TYPES.has(a.actionType))
       .sort((a, b) => b.priority - a.priority);
 
     if (sorted.length === 0) {
@@ -348,6 +356,13 @@ export class NPCWorldService extends EventEmitter {
       if (t) {
         const delta = Math.floor(Math.random() * 6 + 2);
         this.modifyRelationship(id, t, delta, `${state.npc.name}主动交往`);
+        this.memory.interactions.add(id, {
+          timestamp: Date.now(),
+          otherNpcId: t,
+          type: 'socialize',
+          summary: `主动与${this.npcs.get(t)?.npc.name || t}交往，关系改善`,
+          impactScore: delta,
+        });
         const target = this.npcs.get(t);
         if (target) this.emitEvent(t, `与${state.npc.name}的关系改善了`, 'relationship');
       }
@@ -462,11 +477,20 @@ export class NPCWorldService extends EventEmitter {
     for (const [existingId, existing] of this.npcs) {
       if (existingId === id) continue;
       const affinity = computeAffinity(npc.personality, existing.npc.personality);
-      const key = [id, existingId].sort().join('_');
-      this.relationships.set(key, { affinity, reason: '初次见面' });
+      this.memory.relationships.set(id, existingId, affinity);
+      this.memory.relationships.set(existingId, id, affinity);
     }
 
     this.emitEvent('system', `掌门决定招募「${candidate.name}」——${candidate.desc}，已列入门墙`, 'system');
+
+    // Log the recruit interaction
+    this.memory.interactions.add('system', {
+      timestamp: Date.now(),
+      otherNpcId: id,
+      type: 'recruit',
+      summary: `招募了${candidate.name}`,
+      impactScore: 5,
+    });
 
     // Other NPCs react
     for (const [existingId, state] of this.npcs) {
@@ -517,6 +541,14 @@ export class NPCWorldService extends EventEmitter {
 
     this.emitEvent(npcId, `被掌门${label}`, 'status');
 
+    this.memory.interactions.add(npcId, {
+      timestamp: Date.now(),
+      otherNpcId: 'system',
+      type: 'promote',
+      summary: `被掌门${label}，现在职位为${state.npc.role}`,
+      impactScore: action === 'promote' ? 10 : -10,
+    });
+
     // Others react
     for (const [id, other] of this.npcs) {
       if (id === npcId) continue;
@@ -536,6 +568,13 @@ export class NPCWorldService extends EventEmitter {
     this.emitEvent('system', `掌门举行「${type}」，全宗弟子齐聚一堂`, 'system');
     for (const [id] of this.npcs) {
       this.emitEvent(id, `参加${type}，心情愉悦`, 'morale');
+      this.memory.witnessedEvents.add(id, {
+        timestamp: Date.now(),
+        description: `掌门举行了${type}`,
+        involvedNpcIds: [id],
+        location: '宗门大殿',
+        significance: 3,
+      });
     }
   }
 
