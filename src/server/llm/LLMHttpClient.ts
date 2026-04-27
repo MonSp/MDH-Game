@@ -1,4 +1,14 @@
 import { parsePlanResponse, ParsedPlan } from './PlanParser';
+import { logLLMCall } from './LLMLogger';
+
+export type LLMProvider = 'openai-compatible' | 'gemini';
+
+export interface LLMClientConfig {
+  provider: LLMProvider;
+  endpoint: string;
+  model: string;
+  apiKey: string;
+}
 
 export interface LLMRequestContext {
   npcId: string;
@@ -21,30 +31,69 @@ interface PendingRequest {
   resolve: (result: LLMResult) => void;
 }
 
-const FALLBACK_COOLDOWN_MS = 5 * 60 * 1000; // 5 min
-const MAX_RETRIES = 3;
-const RETRY_BACKOFF_MS = [1000, 2000, 4000];
+const FALLBACK_COOLDOWN_MS = 5 * 60 * 1000;
+const MAX_RETRIES = 2; // 3 attempts total (1 initial + 2 retries)
+const RETRY_BACKOFF_MS = [6000, 12000]; // wait 6s/12s — avg response is 3-4s
+const FETCH_TIMEOUT_MS = 45000;
+
+function loadConfig(): LLMClientConfig {
+  const config: LLMClientConfig = {
+    provider: 'openai-compatible',
+    endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',
+    model: 'gemini-2.0-flash',
+    apiKey: '',
+  };
+
+  // 1. Load from config file
+  try {
+    const fs = require('fs');
+    const txt = fs.readFileSync('/home/test/MyGame/src/server/config/llm_config.txt', 'utf8');
+    for (const line of txt.split('\n')) {
+      const [k, v] = line.trim().split('=');
+      if (k === 'api_key') config.apiKey = v;
+      if (k === 'local_endpoint') {
+        config.endpoint = v.replace('http://', 'https://');
+        config.provider = 'openai-compatible';
+      }
+      if (k === 'model') config.model = v;
+      if (k === 'provider') {
+        config.provider = v === 'openai' ? 'openai-compatible' : 'openai-compatible';
+      }
+    }
+  } catch (e) {
+    console.warn('[LLMHttpClient] No config file, using defaults');
+  }
+
+  // 2. Override with environment variables (higher priority)
+  if (process.env.LLM_BASE_URL) {
+    config.endpoint = process.env.LLM_BASE_URL.replace('http://', 'https://');
+    config.provider = 'openai-compatible';
+  }
+  if (process.env.LLM_API_KEY) {
+    config.apiKey = process.env.LLM_API_KEY;
+  }
+  if (process.env.LLM_MODEL) {
+    config.model = process.env.LLM_MODEL;
+  }
+
+  return config;
+}
 
 export class LLMHttpClient {
-  private apiKey: string;
-  private model: string;
-  private baseUrl: string;
+  private config: LLMClientConfig;
   private pending: Map<string, PendingRequest> = new Map();
   private fallbackUntil: Map<string, number> = new Map();
   private activeRequests = 0;
   private maxConcurrent = 5;
 
-  constructor(apiKey: string, model = 'gemini-2.0-flash') {
-    this.apiKey = apiKey;
-    this.model = model;
-    this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
+  constructor() {
+    this.config = loadConfig();
+    console.log(`[LLMHttpClient] provider=${this.config.provider} model=${this.config.model}`);
   }
 
   async requestPlan(context: LLMRequestContext): Promise<LLMResult> {
-    // Check if NPC is in fallback cooldown
     const cooldownUntil = this.fallbackUntil.get(context.npcId);
     if (cooldownUntil && Date.now() < cooldownUntil) {
-      console.log(`[FALLBACK] npc=${context.npcId} reason=cooldown remaining=${cooldownUntil - Date.now()}ms`);
       return {
         success: false,
         plan: null,
@@ -57,24 +106,52 @@ export class LLMHttpClient {
 
     const startTime = Date.now();
     let lastError: string | null = null;
+    let responseText: string | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        console.log(`[LLM REQ] npc=${context.npcId} model=${this.model} attempt=${attempt + 1}/${MAX_RETRIES + 1}`);
-
-        const response = await this.callGemini(context);
+        responseText = this.config.provider === 'gemini'
+          ? await this.callGemini(context)
+          : await this.callOpenAICompatible(context);
 
         const latencyMs = Date.now() - startTime;
-        console.log(`[LLM RES] npc=${context.npcId} latency=${latencyMs}ms status=success`);
 
-        const plan = parsePlanResponse(response);
+        const plan = parsePlanResponse(responseText);
         if (!plan) {
-          console.log(`[PARSE] npc=${context.npcId} status=failed reason=schema_validation`);
-          lastError = 'Failed to parse LLM response';
-          continue; // retry
+          logLLMCall({
+            npcId: context.npcId,
+            npcName: context.npcName,
+            attempt: attempt + 1,
+            systemPromptTokens: context.systemPrompt.length,
+            userPromptTokens: context.userPrompt.length,
+            response: responseText,
+            latencyMs,
+            success: true,
+            parseSuccess: false,
+          });
+          return {
+            success: false,
+            plan: null,
+            error: 'Failed to parse LLM response',
+            latencyMs,
+            retries: attempt,
+            fallback: true,
+          };
         }
 
-        console.log(`[PARSE] npc=${context.npcId} actions=${plan.actions.length} goal="${plan.goal}" valid=true`);
+        const actions = plan.actions.map(a => `${a.actionType}[${a.priority}]`).join(', ');
+        logLLMCall({
+          npcId: context.npcId,
+          npcName: context.npcName,
+          attempt: attempt + 1,
+          systemPromptTokens: context.systemPrompt.length,
+          userPromptTokens: context.userPrompt.length,
+          response: responseText,
+          latencyMs,
+          success: true,
+          parseSuccess: true,
+          planSummary: `${plan.goal} | ${actions} | ${plan.emotionalState}`,
+        });
 
         return {
           success: true,
@@ -87,19 +164,29 @@ export class LLMHttpClient {
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
         const latencyMs = Date.now() - startTime;
-        console.log(`[LLM ERR] npc=${context.npcId} latency=${latencyMs}ms attempt=${attempt + 1} error="${lastError}"`);
+
+        logLLMCall({
+          npcId: context.npcId,
+          npcName: context.npcName,
+          attempt: attempt + 1,
+          systemPromptTokens: context.systemPrompt.length,
+          userPromptTokens: context.userPrompt.length,
+          latencyMs,
+          success: false,
+          error: lastError,
+          response: responseText || undefined,
+        });
 
         if (attempt < MAX_RETRIES) {
           const delay = RETRY_BACKOFF_MS[attempt];
-          console.log(`[RETRY] npc=${context.npcId} delay=${delay}ms`);
           await sleep(delay);
         }
       }
     }
 
-    // All retries exhausted — enter fallback cooldown
     this.fallbackUntil.set(context.npcId, Date.now() + FALLBACK_COOLDOWN_MS);
-    console.log(`[FALLBACK] npc=${context.npcId} reason=exhausted_retries cooldown=300s`);
+
+    console.log(`[LLM] ${context.npcName} fallback (${lastError})`);
 
     return {
       success: false,
@@ -120,8 +207,63 @@ export class LLMHttpClient {
     return cooldown != null && Date.now() < cooldown;
   }
 
+  private async callOpenAICompatible(context: LLMRequestContext): Promise<string> {
+    const baseUrl = this.config.endpoint.replace(/\/+$/, '');
+    const url = `${baseUrl}/chat/completions`;
+
+    const body = {
+      model: this.config.model,
+      messages: [
+        { role: 'system', content: context.systemPrompt },
+        { role: 'user', content: context.userPrompt },
+      ],
+      temperature: 0.8,
+      max_tokens: 600,
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`API ${res.status}: ${text.slice(0, 500)}`);
+    }
+
+    const data = await res.json() as {
+      choices?: Array<{
+        message?: { content?: string };
+      }>;
+    };
+
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('Empty response from API');
+    }
+
+    return text;
+  }
+
   private async callGemini(context: LLMRequestContext): Promise<string> {
-    const url = `${this.baseUrl}/${this.model}:generateContent?key=${this.apiKey}`;
+    const url = `${this.config.endpoint}/${this.config.model}:generateContent?key=${this.config.apiKey}`;
 
     const body = {
       system_instruction: {
@@ -140,11 +282,19 @@ export class LLMHttpClient {
       },
     };
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res.ok) {
       const text = await res.text();

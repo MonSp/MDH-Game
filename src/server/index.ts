@@ -13,6 +13,7 @@ import {
   EconomyService,
   ItemService
 } from './services';
+import { NPCWorldService } from './services/NPCWorldService';
 
 import { PlayerState, Country, CultivationRealm } from '../shared';
 
@@ -29,6 +30,60 @@ app.use(express.json());
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: '修仙世界运行中...' });
+});
+
+// ============================================================
+// NPC API
+// ============================================================
+app.get('/api/npcs', (req, res) => {
+  const npcWorld = NPCWorldService.getInstance();
+  res.json(npcWorld.getNPCList());
+});
+
+app.post('/api/recruit', (req, res) => {
+  const { candidate } = req.body;
+  if (!candidate) {
+    return res.status(400).json({ error: 'Missing candidate' });
+  }
+  const npcWorld = NPCWorldService.getInstance();
+  const ok = npcWorld.recruit(candidate);
+  if (!ok) return res.status(400).json({ error: 'Invalid candidate' });
+  res.json({ ok: true, npcs: npcWorld.getNPCList() });
+});
+
+app.get('/api/recruit/candidates', (req, res) => {
+  const npcWorld = NPCWorldService.getInstance();
+  res.json(npcWorld.getCandidates());
+});
+
+app.post('/api/assign', (req, res) => {
+  const { npcId, task } = req.body;
+  if (!npcId || !task) return res.status(400).json({ error: 'Missing npcId or task' });
+  const npcWorld = NPCWorldService.getInstance();
+  if (!npcWorld.assignTask(npcId, task)) {
+    return res.status(404).json({ error: 'NPC not found' });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/promote', (req, res) => {
+  const { npcId, action } = req.body;
+  if (!npcId || !['promote', 'demote'].includes(action)) {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+  const npcWorld = NPCWorldService.getInstance();
+  if (!npcWorld.promote(npcId, action)) {
+    return res.status(404).json({ error: 'NPC not found' });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/ceremony', (req, res) => {
+  const { type } = req.body;
+  if (!type) return res.status(400).json({ error: 'Missing type' });
+  const npcWorld = NPCWorldService.getInstance();
+  npcWorld.ceremony(type);
+  res.json({ ok: true });
 });
 
 interface PlayerSocket {
@@ -238,6 +293,7 @@ interface ChronicleEvent {
   action: string;
   location: string;
   reason: string;
+  type: string;
   automated: boolean;
 }
 
@@ -277,6 +333,7 @@ function handleChronicleCommand(msg: any, ws: WebSocket): void {
         action: msg.action,
         location: '宗门大殿',
         reason: msg.reason || '',
+        type: 'player_action',
         automated: false,
       };
       broadcastChronicleEvent(event);
@@ -295,7 +352,7 @@ function broadcastChronicleEvent(event: ChronicleEvent): void {
   const tag = event.automated ? ' [automated]' : '';
   const line = `[${time}]${tag} ${event.npcName} ${event.action} 在 ${event.location}（${event.reason}）`;
 
-  const payload = JSON.stringify({ type: 'chronicle:event', line, event });
+  const payload = JSON.stringify({ type: 'chronicle:event', line, event: { ...event, type: event.reason } });
 
   for (const client of chronicleClients) {
     if (client.readyState === WebSocket.OPEN) {
@@ -335,6 +392,7 @@ export function emitNPCEvent(
     action,
     location,
     reason,
+    type: reason,
     automated,
   });
 }
@@ -345,11 +403,30 @@ const PORT = process.env.PORT || 3000;
 
 function initializeGame(): void {
   console.log('Initializing game systems...');
-  
+
   CountryService.getInstance();
   FamilyService.getInstance().initializeFamilies();
   ResourceManager.getInstance().initialize(1000, 1000, 50);
-  
+
+  // Start NPC simulation world
+  const npcWorld = NPCWorldService.getInstance();
+  npcWorld.initialize();
+  npcWorld.start();
+
+  // Bridge NPC world events to chronicle
+  npcWorld.on('npc:event', (event: any) => {
+    broadcastChronicleEvent({
+      timestamp: Date.now(),
+      npcId: event.npcId,
+      npcName: event.npcName,
+      action: event.description,
+      location: event.location || '宗门',
+      reason: event.type,
+      type: event.type,
+      automated: true,
+    });
+  });
+
   console.log('Game systems initialized.');
 }
 

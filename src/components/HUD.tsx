@@ -3,7 +3,11 @@ import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, Refres
 import { useState } from 'react';
 import { MarketPanel } from './MarketPanel';
 
-export const HUD = () => {
+interface HUDProps {
+  onOpenChronicle?: () => void;
+}
+
+export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const { player, clans, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown } = useGameStore();
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
@@ -199,6 +203,13 @@ export const HUD = () => {
         >
           <Store size={16} />
           <span>进入坊市</span>
+        </button>
+
+        <button
+          onClick={onOpenChronicle}
+          className="flex items-center justify-center space-x-2 w-full py-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded transition-colors text-purple-300 font-medium"
+        >
+          <span>宗门事务</span>
         </button>
       </div>
 

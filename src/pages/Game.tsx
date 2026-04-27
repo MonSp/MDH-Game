@@ -1,13 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../store/gameStore';
 import { HUD } from '../components/HUD';
 import { Map2D } from '../components/Map2D';
 import { LogBox } from '../components/LogBox';
+import { ChroniclePanel } from '../components/ChroniclePanel';
 
 export const Game = () => {
   const navigate = useNavigate();
   const { player, updateNPCs } = useGameStore();
+  const [showChronicle, setShowChronicle] = useState(false);
 
   useEffect(() => {
     if (!player) {
@@ -34,8 +36,9 @@ export const Game = () => {
 
       {/* UI 覆盖层 */}
       <div className="absolute inset-0 z-10 pointer-events-none">
-        <HUD />
+        <HUD onOpenChronicle={() => setShowChronicle(true)} />
         <LogBox />
+        {showChronicle && <ChroniclePanel onClose={() => setShowChronicle(false)} />}
       </div>
     </div>
   );

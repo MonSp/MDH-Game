@@ -11,12 +11,13 @@
 //   "emotionalState": "string"
 // }
 
-export type NarrativeActionType = 'cultivate' | 'request' | 'scheme' | 'defect' | 'train';
+export type NarrativeActionType = 'cultivate' | 'request' | 'scheme' | 'defect' | 'train' | 'socialize' | 'patrol' | 'rest';
 
 export interface PlanAction {
   targetId: string;
   actionType: NarrativeActionType;
   priority: number;
+  duration: number;
   reason: string;
 }
 
@@ -28,14 +29,35 @@ export interface ParsedPlan {
 }
 
 const VALID_ACTION_TYPES: Set<string> = new Set([
-  'cultivate', 'request', 'scheme', 'defect', 'train',
+  'cultivate', 'request', 'scheme', 'defect', 'train', 'socialize', 'patrol', 'rest',
 ]);
 
 function isValidActionType(s: unknown): s is NarrativeActionType {
   return typeof s === 'string' && VALID_ACTION_TYPES.has(s);
 }
 
-export function parsePlanResponse(json: string): ParsedPlan | null {
+/**
+ * Strip <think> blocks and extract JSON object from LLM output.
+ * Many reasoning models wrap JSON in <think> tags or markdown code fences.
+ */
+function extractJSON(raw: string): string {
+  // Strip <think>...</think> blocks
+  let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
+  // Try JSON.parse directly
+  cleaned = cleaned.trim();
+  try {
+    JSON.parse(cleaned);
+    return cleaned;
+  } catch {
+    // Extract first JSON object via regex
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return match[0];
+    return cleaned;
+  }
+}
+
+export function parsePlanResponse(raw: string): ParsedPlan | null {
+  const json = extractJSON(raw);
   let obj: unknown;
   try {
     obj = JSON.parse(json);
@@ -90,10 +112,15 @@ export function parsePlanResponse(json: string): ParsedPlan | null {
       return null;
     }
 
+    const duration = typeof a.duration === 'number' && a.duration >= 5 && a.duration <= 120
+      ? a.duration
+      : 30;
+
     actions.push({
       targetId: a.targetId,
       actionType: a.actionType,
       priority: a.priority,
+      duration,
       reason: a.reason,
     });
   }

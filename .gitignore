@@ -16,6 +16,7 @@ build
 data/*
 phase*
 test/*
+logs/*
 
 # Editor directories and files
 .vscode/*
