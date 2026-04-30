@@ -21,7 +21,6 @@ const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; m
 };
 
 const NPC_FALLBACK = '……你找我有何事？';
-const LLM_TIMEOUT_MS = 15000;
 
 export const Game = () => {
   const navigate = useNavigate();
@@ -57,10 +56,6 @@ export const Game = () => {
     }, 1000);
     return () => clearInterval(interval);
   }, [player, navigate, updateNPCs]);
-
-  const findSceneEntry = useCallback((id: string): SceneEntry | undefined => {
-    return INTRO_SCENE.find(s => s.id === id);
-  }, []);
 
   const clearLlmTimer = useCallback(() => {
     if (llmTimerRef.current) {

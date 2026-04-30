@@ -1,6 +1,6 @@
 {
   "name": "xianxia-pixel-game",
-  "version": "1.1.0.0",
+  "version": "1.2.0.0",
   "description": "2.5D Pixel Cultivation MMORPG",
   "main": "dist/server/index.js",
   "scripts": {

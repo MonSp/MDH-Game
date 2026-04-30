@@ -2,6 +2,21 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.2.0.0] - 2026-05-01
+
+### Added
+- Player character system: Talent attributes (灵根/根骨/悟性/机缘) with 5-tier Chinese grade labels
+- Talent mechanics wired into gameplay: spiritualRoot affects cultivation speed, boneConstitution affects combat stats, comprehension reduces breakthrough costs, fortune boosts resource gathering
+- Scene narrative system with branching story panels (CHOOSING/LOADING/DIALOGUE states)
+- NPC memory persistence: `metNpcs` tracking with dialogue variants when re-encountering NPCs
+- ScenePanel component with full ARIA a11y, keyboard navigation (Escape to close), and auto-focus
+- 4 introductory scene entries with branching choices and NPC dialogue flows
+- Server-side `scene:npc-dialogue` Socket.IO handler for scripted NPC responses
+- 22 unit tests for `computeTalentGrade` covering all grade keys, boundaries, clamping, and edge cases
+
+### Fixed
+- Removed dead code (`findSceneEntry`, `LLM_TIMEOUT_MS`) from Game.tsx
+
 ## [1.1.0.1] - 2026-04-30
 
 ### Added
