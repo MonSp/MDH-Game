@@ -1,6 +1,9 @@
 # TODOS
 
-## LLM API smoke test (Phase 1b prerequisite)
+## ~~LLM API smoke test (Phase 1b prerequisite)~~ ✅ DONE
+
+**Completed:** 2026-04-30
+**Results:** Tested implicitly during benchmark run — LLM phase successfully called the API via LLMHttpClient, responses parsed by PlanParser, 5-minute run with real latency data collected.
 
 **Added:** 2026-04-27 (from /plan-eng-review)
 **Context:** The existing `src/server/llm/LLMHttpClient.ts` targets Gemini 2.0 Flash
@@ -43,3 +46,51 @@ WebSocket captures all events. A toggle in NPCWorldService can disable LLM calls
 and use fallbackPlan() exclusively.
 
 **Depends on:** Running Phase 1b demo, ability to capture chronicle output.
+
+## ~~Player character + scene narrative (Phase 1c)~~ ✅ DONE
+
+**Completed:** 2026-04-30
+**Results:** Design approved via /office-hours. Eng review completed via /plan-eng-review.
+Implementation pending. See design doc at `~/.gstack/projects/MyGame/test-main-design-20260430-201022.md`.
+
+## Wire remaining 3 talent stats into game mechanics
+
+**Added:** 2026-04-30 (from /plan-eng-review)
+**Context:** D7 wired 灵根 (spiritualRoot) → cultivation speed. Still needed:
+骨根 (boneConstitution) → combat power/HP, 悟性 (comprehension) → breakthrough probability,
+机缘 (fortune) → random event rolls.
+**Effort:** ~15 min per stat
+**Depends on:** Player character system PR merged
+
+## NPC memory persistence from scene dialogue
+
+**Added:** 2026-04-30 (from /plan-eng-review)
+**Context:** ScenePanel NPC dialogue doesn't update NPCWorldService memory. After
+scene → map transition, the same NPC doesn't remember meeting the player.
+**What:** Emit `scene:npcs-met` event from ScenePanel to persist NPC memory.
+**Effort:** ~10 min
+**Depends on:** Player character system PR merged
+
+## Socket.IO disconnect handling during scene LOADING state
+
+**Added:** 2026-04-30 (from /plan-eng-review)
+**Context:** Critical gap from failure modes review. If player disconnects during
+LLM NPC dialogue LOADING state, they're stuck on spinner until 15s timeout.
+**What:** Handle disconnect event → show error message + fallback button.
+**Depends on:** Player character system PR merged
+
+## Mobile responsive ScenePanel
+
+**Added:** 2026-04-30 (from /plan-design-review)
+**Context:** ScenePanel is designed for desktop (1920x1080, min 1024px). On mobile/tablet, the full-screen overlay with small text and buttons creates a poor experience.
+**What:** Design mobile variant (375-768px): bottom sheet instead of full overlay, condensed text, larger buttons (44px min touch target). 
+**Effort:** ~30 min
+**Depends on:** Player character system PR merged
+
+## ScenePanel keyboard navigation and screen reader support
+
+**Added:** 2026-04-30 (from /plan-design-review)
+**Context:** ScenePanel has no keyboard nav or a11y spec. Players who rely on keyboard or screen readers can't interact with the scene.
+**What:** Add Escape to close, Tab between choices, Enter to select. Add ARIA labels for screen readers (`role="dialog"`, `aria-label` for scene title, `aria-describedby` for description).
+**Effort:** ~15 min
+**Depends on:** Player character system PR merged

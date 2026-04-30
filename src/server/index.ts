@@ -274,6 +274,35 @@ io.on('connection', (socket) => {
     socket.emit('items:list_result', { items });
   });
 
+  socket.on('scene:npc-dialogue', async (data: { npcId: string; sceneContext?: string }) => {
+    const npcWorld = NPCWorldService.getInstance();
+    const npc = npcWorld.getNPC(data.npcId);
+    if (!npc) {
+      socket.emit('scene:npc-response', {
+        npcId: data.npcId,
+        name: '未知',
+        role: '',
+        text: '……你找我有何事？',
+        emotion: '平静',
+      });
+      return;
+    }
+
+    // Scripted dialogue based on NPC identity (D5: scripted intro NPC dialogue)
+    const name = npc.npc.name;
+    const role = npc.npc.role;
+    const emotion = npc.emotion || '平静';
+
+    const dialogueMap: Record<string, string> = {
+      'servant_01': '少爷您终于醒了！族长大人已经在正厅等您半天了。\n\n您的衣物已经准备好了，是否需要我为您带路？',
+    };
+
+    const text = dialogueMap[data.npcId] ||
+      `${name}看了你一眼，缓缓说道：\n\n"修炼之路漫长，${data.sceneContext ? '你说的事我知道了' : '你找我有何事？'}"`;
+
+    socket.emit('scene:npc-response', { npcId: data.npcId, name, role, text, emotion });
+  });
+
   socket.on('disconnect', () => {
     const playerSocket = playerSockets.get(socket.id);
     if (playerSocket) {

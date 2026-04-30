@@ -83,6 +83,27 @@ export const BODY_TYPES_DATA: Record<BodyType, { name: string; desc: string; buf
 
 export type CycleType = '神念投影' | '真灵转世' | '道统传承' | null;
 
+// 资质系统
+export interface TalentAttributes {
+  spiritualRoot: number;      // 灵根 0-100 → 修炼速度
+  boneConstitution: number;   // 根骨 0-100 → 战力/生命
+  comprehension: number;      // 悟性 0-100 → 突破概率
+  fortune: number;            // 机缘 0-100 → 随机事件
+}
+
+export const TALENT_GRADE_TABLE = [
+  { min: 0, max: 20, spiritual: '废灵根', bone: '凡骨', comprehension: '愚钝', fortune: '霉运' },
+  { min: 21, max: 40, spiritual: '下品灵根', bone: '灵骨', comprehension: '普通', fortune: '普通' },
+  { min: 41, max: 60, spiritual: '中品灵根', bone: '玉骨', comprehension: '聪明', fortune: '小运' },
+  { min: 61, max: 80, spiritual: '上品灵根', bone: '圣骨', comprehension: '聪慧', fortune: '大运' },
+  { min: 81, max: 100, spiritual: '天灵根', bone: '仙骨', comprehension: '天慧', fortune: '天眷' },
+];
+
+export function computeTalentGrade(value: number, gradeKey: 'spiritual' | 'bone' | 'comprehension' | 'fortune'): string {
+  const clamped = Math.max(0, Math.min(100, value));
+  return TALENT_GRADE_TABLE.find(t => clamped >= t.min && clamped <= t.max)?.[gradeKey] ?? '未知';
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -106,6 +127,7 @@ export interface Player {
   };
   isAscending: boolean;
   ascensionTarget?: HeavenLevel;
+  talent: TalentAttributes;
 }
 
 export interface Clan {
@@ -191,6 +213,7 @@ interface GameState {
   interactWithResource: (resourceId: string) => void;
   useItem: (itemName: string) => void;
   cultivate: () => void;
+  modifyTalent: (effect: Partial<TalentAttributes>) => void;
   updateNPCs: () => void;
   buyItem: (itemName: string, amount: number) => void;
   sellItem: (itemName: string, amount: number) => void;
@@ -200,6 +223,8 @@ interface GameState {
   checkCycleCooldown: () => boolean;
   getAscensionQuests: () => AscensionQuest[];
   completeAscensionQuest: (questName: string) => void;
+  markNpcMet: (npcId: string) => void;
+  metNpcs: string[];
 }
 
 export interface CountryInfo {
@@ -600,6 +625,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     '聚气散': { name: '聚气散', basePrice: 100, currentPrice: 100, stock: 80 },
     '飞升令': { name: '飞升令', basePrice: 10000, currentPrice: 10000, stock: 5 },
   },
+  metNpcs: [],
   ascensionQuests: [],
 
   joinServer: (serverId, playerName) => {
@@ -609,6 +635,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const spiritMultiplier = HEAVEN_INFO[heavenLevel].spiritMultiplier;
     
     const initialPos = { x: 50, y: 50 };
+    const defaultTalent = { spiritualRoot: 25, boneConstitution: 30, comprehension: 40, fortune: 20 };
     const player: Player = {
       id: 'p1',
       name: playerName || '无名修士',
@@ -621,10 +648,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       clanId: randomClan.id,
       stats: { 
         hp: 100, 
-        maxHp: 100 * spiritMultiplier, 
+        maxHp: 100 * spiritMultiplier + (defaultTalent.boneConstitution) * 2, 
         mp: randomClan.country === '魏' ? Math.floor(22 * spiritMultiplier) : Math.floor(20 * spiritMultiplier), 
         maxMp: randomClan.country === '魏' ? Math.floor(22 * spiritMultiplier) : Math.floor(20 * spiritMultiplier), 
-        attack: Math.floor(5 * spiritMultiplier), 
+        attack: Math.floor(5 * spiritMultiplier + (defaultTalent.boneConstitution) * 0.5), 
         exp: 0, 
         maxExp: REALM_MAX_EXP['凡人'] 
       },
@@ -632,6 +659,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       inventory: { '灵石': 500 },
       cycleInfo: { type: null },
       isAscending: false,
+      talent: defaultTalent,
     };
 
     set({
@@ -810,20 +838,23 @@ export const useGameStore = create<GameState>((set, get) => ({
     let expGain = 0;
     let logMsg = '';
     
+    const fortuneBonus = 1 + (state.player.talent?.fortune ?? 20) / 100;
     if (resource.type === '灵田') {
-      expGain = 30;
+          expGain = Math.floor(30 * fortuneBonus);
       logMsg = `你在灵田采摘了仙草，获得了 ${expGain} 点修为。`;
     } else if (resource.type === '矿脉') {
-      logMsg = `你在矿脉开采了 50 块灵石。`;
+      const yieldAmt = Math.floor(50 * fortuneBonus);
+      logMsg = `你在矿脉开采了 ${yieldAmt} 块灵石`;
       set(s => {
         if (!s.player) return s;
         const newInventory = { ...s.player.inventory };
-        newInventory['灵石'] = (newInventory['灵石'] || 0) + 50;
+        newInventory['灵石'] = (newInventory['灵石'] || 0) + yieldAmt;
         return { player: { ...s.player, inventory: newInventory } };
       });
     } else if (resource.type === '遗迹') {
-      logMsg = `你在遗迹中探索，发现了 100 块灵石`;
-      const isLucky = Math.random() < 0.3;
+      const foundAmt = Math.floor(100 * fortuneBonus);
+      const isLucky = Math.random() < 0.3 * fortuneBonus;
+      logMsg = `你在遗迹中探索，发现了 ${foundAmt} 块灵石`;
       if (isLucky) {
         logMsg += '，以及一枚珍贵的【洗髓丹】！';
       } else {
@@ -832,7 +863,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       set(s => {
         if (!s.player) return s;
         const newInventory = { ...s.player.inventory };
-        newInventory['灵石'] = (newInventory['灵石'] || 0) + 100;
+        newInventory['灵石'] = (newInventory['灵石'] || 0) + foundAmt;
         if (isLucky) {
           newInventory['洗髓丹'] = (newInventory['洗髓丹'] || 0) + 1;
         }
@@ -946,6 +977,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     const spiritMultiplier = HEAVEN_INFO[player.heavenLevel].spiritMultiplier;
     let expGain = Math.floor(10 * spiritMultiplier);
+
+    // 灵根加成：每 500 点灵根 = 100% 修炼速度
+    const talentBonus = 1 + (player.talent?.spiritualRoot ?? 25) / 500;
+    expGain = Math.floor(expGain * talentBonus);
     
     if (player.country === '燕') expGain = Math.floor(expGain * 1.1);
     if (player.country === '齐') expGain = Math.floor(expGain * 1.2);
@@ -959,7 +994,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       newExp = player.stats.maxExp;
       
       if (realmIndex < maxRealmIndex) {
-        const cost = REALM_BREAKTHROUGH_COST[player.realm] || 0;
+        const baseCost = REALM_BREAKTHROUGH_COST[player.realm] || 0;
+        const compFactor = 1 - (player.talent?.comprehension ?? 40) / 200;
+        const cost = Math.floor(baseCost * compFactor);
         const currentStones = player.inventory['灵石'] || 0;
         
         if (currentStones >= cost) {
@@ -985,8 +1022,8 @@ export const useGameStore = create<GameState>((set, get) => ({
                 stats: {
                   ...player.stats,
                   hp: player.stats.maxHp * 2,
-                  maxHp: Math.floor(player.stats.maxHp * 2 * spiritMultiplier),
-                  attack: Math.floor(player.stats.attack * 2 * spiritMultiplier),
+                  maxHp: Math.floor(player.stats.maxHp * 2 * spiritMultiplier + (player.talent?.boneConstitution ?? 30) * 2),
+                  attack: Math.floor(player.stats.attack * 2 * spiritMultiplier + (player.talent?.boneConstitution ?? 30) * 0.5),
                   exp: 0,
                   maxExp: REALM_MAX_EXP[nextRealm]
                 }
@@ -1023,6 +1060,23 @@ export const useGameStore = create<GameState>((set, get) => ({
         hiddenStats: { ...s.player.hiddenStats, cultivateCount: s.player.hiddenStats.cultivateCount + 1 }
       } : s.player
     }));
+  },
+
+  modifyTalent: (effect: Partial<TalentAttributes>) => {
+    const state = get();
+    if (!state.player?.talent) return;
+    const clamped: Partial<TalentAttributes> = {};
+    for (const [key, val] of Object.entries(effect)) {
+      if (typeof val === 'number') {
+        clamped[key as keyof TalentAttributes] = Math.max(0, Math.min(100, val));
+      }
+    }
+    set({
+      player: {
+        ...state.player,
+        talent: { ...state.player.talent, ...clamped }
+      }
+    });
   },
 
   buyItem: (itemName: string, amount: number) => {
@@ -1378,5 +1432,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         get().interactWithNPC(enforcer.id, '攻击');
       }
     }
-  }
+  },
+  markNpcMet: (npcId: string) => {
+    const state = get();
+    if (!state.metNpcs.includes(npcId)) {
+      set({ metNpcs: [...state.metNpcs, npcId] });
+    }
+  },
 }));
