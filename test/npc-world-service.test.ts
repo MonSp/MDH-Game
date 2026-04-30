@@ -238,3 +238,36 @@ function roleRank(role: string): number {
   };
   return ladder[role] ?? -1;
 }
+
+describe('NPCWorldService — benchmark mode (reset / llmMode)', () => {
+  it('reset clears all NPC state', () => {
+    const svc = NPCWorldService.getInstance();
+    const beforeReset = svc.getNPCList();
+    expect(beforeReset.length).toBeGreaterThan(0);
+
+    svc.reset();
+    // After reset but before initialize, there should be 0 NPCs
+    // (reset clears the npcs map)
+    const afterReset = (svc as any).getNPCList();
+    // getNPCList reads from npcs map, which reset cleared
+    expect(afterReset.length).toBe(0);
+  });
+
+  it('reset → initialize restores NPCs', () => {
+    const svc = NPCWorldService.getInstance();
+    svc.reset();
+    svc.initialize();
+    const list = svc.getNPCList();
+    expect(list.length).toBeGreaterThan(0);
+    // Should have the built-in NPCs (5 from the fallback)
+    expect(list.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('reset is idempotent', () => {
+    const svc = NPCWorldService.getInstance();
+    svc.reset();
+    svc.reset(); // second call should not throw
+    svc.initialize();
+    expect(svc.getNPCList().length).toBeGreaterThan(0);
+  });
+});

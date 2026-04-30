@@ -81,6 +81,7 @@ export interface NPCWorldEvent {
   description: string;
   location: string;
   type: string;
+  source?: 'llm' | 'deterministic' | 'llm_fallback';
 }
 
 function benevolenceFromGreed(greed: number): number {
@@ -107,6 +108,7 @@ export class NPCWorldService extends EventEmitter {
   private llmClient: LLMHttpClient;
   private tickInterval: NodeJS.Timeout | null = null;
   private ambientInterval: NodeJS.Timeout | null = null;
+  private llmMode: boolean = true;
 
   private constructor() {
     super();
@@ -152,6 +154,20 @@ export class NPCWorldService extends EventEmitter {
     if (this.ambientInterval) clearInterval(this.ambientInterval);
     this.tickInterval = null;
     this.ambientInterval = null;
+  }
+
+  /**
+   * Reset all in-memory state for benchmark isolation.
+   * Call initialize() afterwards to re-seed NPCs.
+   */
+  reset(): void {
+    this.stop();
+    this.npcs.clear();
+    this.backgrounds.clear();
+    this.memory = new NPCMemoryStore();
+    this.nextNPCId = 1;
+    this.planningOffset = 0;
+    this.removeAllListeners('npc:event');
   }
 
   private seedNPCs(): void {
@@ -327,12 +343,21 @@ export class NPCWorldService extends EventEmitter {
       ].join('\n'),
     };
 
+    // Benchmark mode: skip LLM call and use deterministic fallback
+    if (!this.llmMode) {
+      state.planQueue = this.fallbackPlan();
+      state.planningNext = false;
+      this.advanceQueue(state);
+      return;
+    }
+
     const result = await this.llmClient.requestPlan(context);
     state.planningNext = false;
 
     if (!result.success || !result.plan || result.plan.actions.length === 0) {
       if (state.planQueue.length === 0) {
         state.planQueue = this.fallbackPlan();
+        state.planningNext = false;
         this.advanceQueue(state);
       }
       return;
@@ -606,12 +631,13 @@ export class NPCWorldService extends EventEmitter {
   // --- Events ---
 
   private emitEvent(npcId: string, description: string, type: string): void {
+    const source: 'llm' | 'deterministic' = this.llmMode ? 'llm' : 'deterministic';
     if (npcId === 'system') {
-      this.emit('npc:event', { npcId: 'system', npcName: '宗门', description, location: '宗门大殿', type } as NPCWorldEvent);
+      this.emit('npc:event', { npcId: 'system', npcName: '宗门', description, location: '宗门大殿', type, source } as NPCWorldEvent);
       return;
     }
     const state = this.npcs.get(npcId);
     if (!state) return;
-    this.emit('npc:event', { npcId, npcName: state.npc.name, description, location: '宗门', type } as NPCWorldEvent);
+    this.emit('npc:event', { npcId, npcName: state.npc.name, description, location: '宗门', type, source } as NPCWorldEvent);
   }
 }
