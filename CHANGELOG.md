@@ -2,6 +2,14 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.1.0.1] - 2026-04-30
+
+### Added
+- LLM vs deterministic NPC behavior benchmark (`test/llm-deterministic-benchmark.ts`) with 3-dimension scoring rubric
+- `reset()` method and `llmMode` toggle on NPCWorldService for benchmark isolation
+- Unit tests for `reset()` method (3 tests)
+- `seedrandom` dev dependency for reproducible benchmark runs
+
 ## [1.1.0.0] - 2026-04-27
 
 ### Added

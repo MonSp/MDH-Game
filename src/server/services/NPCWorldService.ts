@@ -109,6 +109,7 @@ export class NPCWorldService extends EventEmitter {
   private tickInterval: NodeJS.Timeout | null = null;
   private ambientInterval: NodeJS.Timeout | null = null;
   private llmMode: boolean = true;
+  private llmFallback: boolean = false;
 
   private constructor() {
     super();
@@ -157,6 +158,14 @@ export class NPCWorldService extends EventEmitter {
   }
 
   /**
+   * Enable or disable LLM-driven planning (default true).
+   * When false, NPCs use fallbackPlan() instead of calling the LLM.
+   */
+  setLlmMode(enabled: boolean): void {
+    this.llmMode = enabled;
+  }
+
+  /**
    * Reset all in-memory state for benchmark isolation.
    * Call initialize() afterwards to re-seed NPCs.
    */
@@ -167,6 +176,7 @@ export class NPCWorldService extends EventEmitter {
     this.memory = new NPCMemoryStore();
     this.nextNPCId = 1;
     this.planningOffset = 0;
+    this.llmMode = true;
     this.removeAllListeners('npc:event');
   }
 
@@ -356,9 +366,11 @@ export class NPCWorldService extends EventEmitter {
 
     if (!result.success || !result.plan || result.plan.actions.length === 0) {
       if (state.planQueue.length === 0) {
+        this.llmFallback = true;
         state.planQueue = this.fallbackPlan();
         state.planningNext = false;
         this.advanceQueue(state);
+        this.llmFallback = false;
       }
       return;
     }
@@ -373,8 +385,10 @@ export class NPCWorldService extends EventEmitter {
 
     if (sorted.length === 0) {
       if (state.planQueue.length === 0) {
+        this.llmFallback = true;
         state.planQueue = this.fallbackPlan();
         this.advanceQueue(state);
+        this.llmFallback = false;
       }
       return;
     }
@@ -631,7 +645,7 @@ export class NPCWorldService extends EventEmitter {
   // --- Events ---
 
   private emitEvent(npcId: string, description: string, type: string): void {
-    const source: 'llm' | 'deterministic' = this.llmMode ? 'llm' : 'deterministic';
+    const source: 'llm' | 'deterministic' | 'llm_fallback' = this.llmFallback ? 'llm_fallback' : (this.llmMode ? 'llm' : 'deterministic');
     if (npcId === 'system') {
       this.emit('npc:event', { npcId: 'system', npcName: '宗门', description, location: '宗门大殿', type, source } as NPCWorldEvent);
       return;

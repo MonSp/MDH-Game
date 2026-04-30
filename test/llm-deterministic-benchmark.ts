@@ -28,9 +28,16 @@ const API_LATENCY_WARN_THRESHOLD_MS = 10_000;
 
 const CANDIDATE_IDS = ['A', 'B'];
 
-// Seed the RNG before any phase
+// Seed the RNG before any phase — save original for teardown
+let _origRandom: (() => number) | null = null;
+
 function seedRng(): void {
+  if (!_origRandom) _origRandom = Math.random;
   Math.random = seedrandom(SEED) as unknown as () => number;
+}
+
+function restoreRng(): void {
+  if (_origRandom) Math.random = _origRandom;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,8 +160,7 @@ async function runPhase(
 ): Promise<PhaseResult> {
   const svc = NPCWorldService.getInstance();
 
-  // Expose llmMode via type assertion (private field)
-  (svc as any).llmMode = useLlm;
+  svc.setLlmMode(useLlm);
 
   svc.initialize();
   svc.start();
@@ -167,7 +173,7 @@ async function runPhase(
   const onEvent = (event: NPCWorldEvent) => {
     // Skip events during warmup
     if (warmupEnd === 0 || Date.now() < warmupEnd) return;
-    // Track plan calls
+    // Track action events (one plan may produce multiple events)
     if (event.type === 'cultivate' || event.type === 'rest' ||
         event.type === 'patrol' || event.type === 'train' ||
         event.type === 'socialize' || event.type === 'scheme' ||
@@ -186,43 +192,45 @@ async function runPhase(
 
   svc.on('npc:event', onEvent);
 
-  // Warmup
-  warmupEnd = Date.now() + WARMUP_MS;
-  await sleep(WARMUP_MS);
+  try {
+    // Warmup
+    warmupEnd = Date.now() + WARMUP_MS;
+    await sleep(WARMUP_MS);
 
-  // Execute fixed player actions
-  const npcs = svc.getNPCList();
-  const firstNpcId = npcs.length > 0 ? npcs[0].id : '';
+    // Execute fixed player actions
+    const npcs = svc.getNPCList();
+    const firstNpcId = npcs.length > 0 ? npcs[0].id : '';
 
-  // Schedule player actions
-  const actions: Array<{ fn: () => boolean | void; timeMs: number }> = [
-    { fn: () => svc.recruit(CANDIDATE_IDS[0]), timeMs: 0 },
-    { fn: () => firstNpcId ? svc.promote(firstNpcId, 'promote') : false, timeMs: 60_000 },
-    { fn: () => firstNpcId ? svc.promote(firstNpcId, 'demote') : false, timeMs: 120_000 },
-    { fn: () => svc.ceremony('拜月仪式'), timeMs: 180_000 },
-    { fn: () => svc.recruit(CANDIDATE_IDS[1]), timeMs: 240_000 },
-  ];
+    // Schedule player actions
+    const actions: Array<{ fn: () => boolean | void; timeMs: number }> = [
+      { fn: () => svc.recruit(CANDIDATE_IDS[0]), timeMs: 0 },
+      { fn: () => firstNpcId ? svc.promote(firstNpcId, 'promote') : false, timeMs: 60_000 },
+      { fn: () => firstNpcId ? svc.promote(firstNpcId, 'demote') : false, timeMs: 120_000 },
+      { fn: () => svc.ceremony('拜月仪式'), timeMs: 180_000 },
+      { fn: () => svc.recruit(CANDIDATE_IDS[1]), timeMs: 240_000 },
+    ];
 
-  const startTime = Date.now();
-  for (const action of actions) {
-    const delay = action.timeMs - (Date.now() - startTime);
-    if (delay > 0) await sleep(delay);
-    try {
-      const result = action.fn();
-      if (result === false) actionFailures++;
-    } catch {
-      actionFailures++;
+    const startTime = Date.now();
+    for (const action of actions) {
+      const delay = action.timeMs - (Date.now() - startTime);
+      if (delay > 0) await sleep(delay);
+      try {
+        const result = action.fn();
+        if (result === false) actionFailures++;
+      } catch {
+        actionFailures++;
+      }
     }
+
+    // Wait for remaining time
+    const elapsed = Date.now() - startTime;
+    const remaining = PHASE_DURATION_MS - elapsed;
+    if (remaining > 0) await sleep(remaining);
+  } finally {
+    // Stop and cleanup
+    svc.stop();
+    svc.removeListener('npc:event', onEvent);
   }
-
-  // Wait for remaining time
-  const elapsed = Date.now() - startTime;
-  const remaining = PHASE_DURATION_MS - elapsed;
-  if (remaining > 0) await sleep(remaining);
-
-  // Stop and cleanup
-  svc.stop();
-  svc.removeListener('npc:event', onEvent);
 
   return { mode: modeName, events: collected, planCount, actionFailures };
 }
@@ -262,7 +270,7 @@ Seeded RNG: ${SEED}
 === Collection Stats ===
 Metric                   | LLM    | DET
 Events collected         | ${String(llm.events.length).padEnd(6)} | ${String(det.events.length).padEnd(6)}
-Plans executed           | ${String(llm.planCount).padEnd(6)} | ${String(det.planCount).padEnd(6)}
+Action events captured  | ${String(llm.planCount).padEnd(6)} | ${String(det.planCount).padEnd(6)}
 Player action failures   | ${String(llm.actionFailures).padEnd(6)} | ${String(det.actionFailures).padEnd(6)}
 
 === Aggregate Scores ===
@@ -334,22 +342,26 @@ async function main(): Promise<void> {
 
   const svc = NPCWorldService.getInstance();
 
-  // Phase 1: LLM mode
-  console.log(`Phase 1: LLM mode (${PHASE_DURATION_MS / 1000}s + ${WARMUP_MS / 1000}s warmup)...`);
-  seedRng();
-  svc.reset();
-  const llmResult = await runPhase('LLM', true);
-  console.log(`  Collected ${llmResult.events.length} events, ${llmResult.planCount} plans\n`);
+  try {
+    // Phase 1: LLM mode
+    console.log(`Phase 1: LLM mode (${PHASE_DURATION_MS / 1000}s + ${WARMUP_MS / 1000}s warmup)...`);
+    seedRng();
+    svc.reset();
+    const llmResult = await runPhase('LLM', true);
+    console.log(`  Collected ${llmResult.events.length} events, ${llmResult.planCount} action events\n`);
 
-  // Phase 2: Deterministic mode
-  console.log(`Phase 2: Deterministic mode (${PHASE_DURATION_MS / 1000}s + ${WARMUP_MS / 1000}s warmup)...`);
-  seedRng(); // Same seed for reproducibility
-  svc.reset();
-  const detResult = await runPhase('DETERMINISTIC', false);
-  console.log(`  Collected ${detResult.events.length} events, ${detResult.planCount} plans\n`);
+    // Phase 2: Deterministic mode
+    console.log(`Phase 2: Deterministic mode (${PHASE_DURATION_MS / 1000}s + ${WARMUP_MS / 1000}s warmup)...`);
+    seedRng(); // Same seed for reproducibility
+    svc.reset();
+    const detResult = await runPhase('DETERMINISTIC', false);
+    console.log(`  Collected ${detResult.events.length} events, ${detResult.planCount} action events\n`);
 
-  // Report
-  printReport(llmResult, detResult);
+    // Report
+    printReport(llmResult, detResult);
+  } finally {
+    restoreRng();
+  }
 }
 
 // ---------------------------------------------------------------------------

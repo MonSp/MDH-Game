@@ -240,6 +240,13 @@ function roleRank(role: string): number {
 }
 
 describe('NPCWorldService — benchmark mode (reset / llmMode)', () => {
+  afterAll(() => {
+    // Restore service state after reset tests
+    const svc = NPCWorldService.getInstance();
+    svc.reset();
+    svc.initialize();
+  });
+
   it('reset clears all NPC state', () => {
     const svc = NPCWorldService.getInstance();
     const beforeReset = svc.getNPCList();
@@ -248,7 +255,7 @@ describe('NPCWorldService — benchmark mode (reset / llmMode)', () => {
     svc.reset();
     // After reset but before initialize, there should be 0 NPCs
     // (reset clears the npcs map)
-    const afterReset = (svc as any).getNPCList();
+    const afterReset = svc.getNPCList();
     // getNPCList reads from npcs map, which reset cleared
     expect(afterReset.length).toBe(0);
   });

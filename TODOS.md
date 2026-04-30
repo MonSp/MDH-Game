@@ -17,7 +17,10 @@ the 2-week Phase 1b sprint.
 
 **Depends on:** Gemini API key access.
 
-## LLM vs deterministic behavior benchmark (Phase 1b validation)
+## ~~LLM vs deterministic behavior benchmark (Phase 1b validation)~~ ✅ DONE
+
+**Completed:** 2026-04-30
+**Results:** Benchmark run on benchmark/llm-vs-deterministic branch. LLM produced 262% more "interesting narrative moments" (score >= 2.0) than deterministic mode. LLM average score 1.59 vs deterministic 0.91. Verdict: LLM clearly justified.
 
 **Added:** 2026-04-27 (from /plan-eng-review outside voice)
 **Context:** The outside voice challenged whether LLM-driven NPC planning produces
