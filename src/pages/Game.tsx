@@ -36,14 +36,16 @@ export const Game = () => {
   const [npcRole, setNpcRole] = useState<string | undefined>();
   const [disconnectError, setDisconnectError] = useState(false);
   const llmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneStartedRef = useRef(false);
 
-  // Start scene on mount
+  // Start scene on mount (one-shot — do not re-trigger on close)
   useEffect(() => {
-    if (player && !activeScene) {
+    if (player && !sceneStartedRef.current) {
+      sceneStartedRef.current = true;
       setActiveScene(INTRO_SCENE[0]);
       setScenePath([INTRO_SCENE[0].id]);
     }
-  }, [player, activeScene]);
+  }, [player]);
 
   // NPC自治演化
   useEffect(() => {
@@ -117,19 +119,11 @@ export const Game = () => {
     if (choice.nextEntry) {
       const next = INTRO_SCENE.find(s => s.id === choice.nextEntry);
       if (next) {
-        // Check if selected choice also has NPC dialogue (e.g., in call_someone)
-        const hasNpc = next.choices.find(c => c.npcDialogue);
-        if (hasNpc) {
-          // The next scene has NPC dialogue — don't auto-proceed
-          setActiveScene(next);
-          setScenePath(prev => [...prev, next.id]);
-        } else {
-          setActiveScene(next);
-          setScenePath(prev => [...prev, next.id]);
-        }
+        setActiveScene(next);
+        setScenePath(prev => [...prev, next.id]);
       }
     }
-  }, [activeScene, modifyTalent]);
+  }, [activeScene, metNpcs, modifyTalent]);
 
   const handleContinue = useCallback(() => {
     if (!activeScene) return;
