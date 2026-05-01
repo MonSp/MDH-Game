@@ -6,7 +6,7 @@ import { Map2D } from '../components/Map2D';
 import { LogBox } from '../components/LogBox';
 import { ChroniclePanel } from '../components/ChroniclePanel';
 import { ScenePanel } from '../components/ScenePanel';
-import { SCENE_REGISTRY, getSceneEntry } from '../content/scenes/sceneRegistry';
+import { getSceneEntry } from '../content/scenes/sceneRegistry';
 import type { SceneEntry, ScenePanelState } from '../shared/types/scene';
 
 // Scripted NPC dialogue responses for intro scene (D5: scripted intro)

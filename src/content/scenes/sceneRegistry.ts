@@ -52,7 +52,7 @@ export function getSceneIdByCoordinate(x: number, y: number): string | undefined
     if (!entry.triggerAt) continue;
     const dx = x - entry.triggerAt.x;
     const dy = y - entry.triggerAt.y;
-    if (Math.sqrt(dx * dx + dy * dy) <= entry.triggerAt.radius) {
+    if (dx * dx + dy * dy <= entry.triggerAt.radius * entry.triggerAt.radius) {
       return entry.id;
     }
   }

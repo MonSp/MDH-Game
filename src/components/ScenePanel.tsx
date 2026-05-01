@@ -58,7 +58,7 @@ export const ScenePanel = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center transition-all duration-400"
+      className="fixed inset-0 z-40 flex items-center justify-center transition-all duration-300"
       style={{
         backgroundColor: fadeIn ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0)',
         backdropFilter: fadeIn ? 'blur(6px)' : 'blur(0px)',
@@ -88,7 +88,11 @@ export const ScenePanel = ({
                 {id === 'wake_up' ? '初醒' :
                  id === 'look_around' ? '环顾' :
                  id === 'check_body' ? '内视' :
-                 id === 'call_someone' ? '呼唤' : id}
+                 id === 'call_someone' ? '呼唤' :
+                 id === 'family_corridor' ? '家族走廊' :
+                 id === 'family_yard' ? '家族院落' :
+                 id === 'family_hall' ? '正厅' :
+                 id === 'patriarch_audience' ? '族长训话' : id}
               </span>
             </span>
           ))}
