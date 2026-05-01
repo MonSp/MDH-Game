@@ -25,7 +25,7 @@ the 2-week Phase 1b sprint.
 **Completed:** 2026-04-30
 **Results:** Benchmark run on benchmark/llm-vs-deterministic branch. LLM produced 262% more "interesting narrative moments" (score >= 2.0) than deterministic mode. LLM average score 1.59 vs deterministic 0.91. Verdict: LLM clearly justified.
 
-**Added:** 2026-04-27 (from /plan-eng-review outside voice)
+**Added:** 2026-04-27 (from /plan-eng-review)
 **Context:** The outside voice challenged whether LLM-driven NPC planning produces
 demonstrably better narrative moments than a simple deterministic state machine
 given the throughput constraints (2 planning slots per 8s tick for 50 NPCs).
@@ -53,31 +53,20 @@ and use fallbackPlan() exclusively.
 **Results:** Design approved via /office-hours. Eng review completed via /plan-eng-review.
 Implementation pending. See design doc at `~/.gstack/projects/MyGame/test-main-design-20260430-201022.md`.
 
-## Wire remaining 3 talent stats into game mechanics
+## ~~Wire remaining 3 talent stats into game mechanics~~ ✅ DONE
 
-**Added:** 2026-04-30 (from /plan-eng-review)
-**Context:** D7 wired 灵根 (spiritualRoot) → cultivation speed. Still needed:
-骨根 (boneConstitution) → combat power/HP, 悟性 (comprehension) → breakthrough probability,
-机缘 (fortune) → random event rolls.
-**Effort:** ~15 min per stat
-**Depends on:** Player character system PR merged
+**Completed:** v1.3.0.0 (2026-05-01)
+**Results:** All 4 talent stats now fully wired — spiritualRoot affects cultivation speed, boneConstitution affects HP/attack, comprehension reduces breakthrough cost, fortune enables double resource yield via binary proc.
 
-## NPC memory persistence from scene dialogue
+## ~~NPC memory persistence from scene dialogue~~ ✅ DONE
 
-**Added:** 2026-04-30 (from /plan-eng-review)
-**Context:** ScenePanel NPC dialogue doesn't update NPCWorldService memory. After
-scene → map transition, the same NPC doesn't remember meeting the player.
-**What:** Emit `scene:npcs-met` event from ScenePanel to persist NPC memory.
-**Effort:** ~10 min
-**Depends on:** Player character system PR merged
+**Completed:** v1.2.0.0 (2026-05-01)
+**Results:** `markNpcMet()` stores met NPCs in store; scripted NPC_DIALOGUE supports `metText` variants for re-encounters.
 
-## Socket.IO disconnect handling during scene LOADING state
+## ~~Socket.IO disconnect handling during scene LOADING state~~ ✅ DONE
 
-**Added:** 2026-04-30 (from /plan-eng-review)
-**Context:** Critical gap from failure modes review. If player disconnects during
-LLM NPC dialogue LOADING state, they're stuck on spinner until 15s timeout.
-**What:** Handle disconnect event → show error message + fallback button.
-**Depends on:** Player character system PR merged
+**Completed:** v1.2.0.0 (2026-05-01)
+**Results:** ScenePanel has `disconnectError` state + fallback button for connection loss during LLM dialogue loading.
 
 ## Mobile responsive ScenePanel
 
@@ -85,7 +74,6 @@ LLM NPC dialogue LOADING state, they're stuck on spinner until 15s timeout.
 **Context:** ScenePanel is designed for desktop (1920x1080, min 1024px). On mobile/tablet, the full-screen overlay with small text and buttons creates a poor experience.
 **What:** Design mobile variant (375-768px): bottom sheet instead of full overlay, condensed text, larger buttons (44px min touch target). 
 **Effort:** ~30 min
-**Depends on:** Player character system PR merged
 
 ## ScenePanel keyboard navigation and screen reader support
 
@@ -93,4 +81,3 @@ LLM NPC dialogue LOADING state, they're stuck on spinner until 15s timeout.
 **Context:** ScenePanel has no keyboard nav or a11y spec. Players who rely on keyboard or screen readers can't interact with the scene.
 **What:** Add Escape to close, Tab between choices, Enter to select. Add ARIA labels for screen readers (`role="dialog"`, `aria-label` for scene title, `aria-describedby` for description).
 **Effort:** ~15 min
-**Depends on:** Player character system PR merged

@@ -2,6 +2,21 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.3.0.0] - 2026-05-01
+
+### Added
+- HUD "打坐修炼" button with 3-second cooldown timer — calls the cultivation system from the UI for the first time
+- Breakthrough confirmation modal: displays current/next realm, comprehension-discounted spirit stone cost, and manual confirm before advancing
+- "可突破" amber pulse indicator on the exp bar when cultivation exp is full and breakthrough is available
+- "已至巅峰" disabled state when player has reached the max realm for their heaven level
+- Fortune (机缘) now triggers double resource yields on gathering: `Math.random() < fortune/100` with explicit "机缘触发！" log feedback
+
+### Fixed
+- Cooldown timer interval properly cleaned up on HUD component unmount
+
+### Changed
+- Max realm guard in cultivate(): now logs a clear message and early-returns instead of falling through with an ascension hint
+
 ## [1.2.0.1] - 2026-05-01
 
 ### Added
