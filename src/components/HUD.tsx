@@ -1,6 +1,6 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM } from '../store/gameStore';
 import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 
 interface HUDProps {
@@ -14,6 +14,16 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [showCycle, setShowCycle] = useState(false);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
   const [showBreakthrough, setShowBreakthrough] = useState(false);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 清理冷却计时器（组件卸载时）
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
 
   if (!player) return null;
 
@@ -235,9 +245,10 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             onClick={() => {
               useGameStore.getState().cultivate();
               setCultivateCooldown(3);
-              const timer = setInterval(() => {
+              if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
+              cooldownTimerRef.current = setInterval(() => {
                 setCultivateCooldown(prev => {
-                  if (prev <= 1) { clearInterval(timer); return 0; }
+                  if (prev <= 1) { clearInterval(cooldownTimerRef.current!); cooldownTimerRef.current = null; return 0; }
                   return prev - 1;
                 });
               }, 1000);
