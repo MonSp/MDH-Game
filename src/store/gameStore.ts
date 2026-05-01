@@ -837,13 +837,16 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     let expGain = 0;
     let logMsg = '';
-    
-    const fortuneBonus = 1 + (state.player.talent?.fortune ?? 20) / 100;
+
+    // 机缘判定：概率触发双倍资源
+    const fortuneProc = Math.random() < (state.player.talent?.fortune ?? 20) / 100;
+    const fortuneMult = fortuneProc ? 2 : 1;
+
     if (resource.type === '灵田') {
-          expGain = Math.floor(30 * fortuneBonus);
+      expGain = Math.floor(30 * fortuneMult);
       logMsg = `你在灵田采摘了仙草，获得了 ${expGain} 点修为。`;
     } else if (resource.type === '矿脉') {
-      const yieldAmt = Math.floor(50 * fortuneBonus);
+      const yieldAmt = Math.floor(50 * fortuneMult);
       logMsg = `你在矿脉开采了 ${yieldAmt} 块灵石`;
       set(s => {
         if (!s.player) return s;
@@ -852,8 +855,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         return { player: { ...s.player, inventory: newInventory } };
       });
     } else if (resource.type === '遗迹') {
-      const foundAmt = Math.floor(100 * fortuneBonus);
-      const isLucky = Math.random() < 0.3 * fortuneBonus;
+      const foundAmt = Math.floor(100 * fortuneMult);
+      const isLucky = Math.random() < 0.3 * fortuneMult;
       logMsg = `你在遗迹中探索，发现了 ${foundAmt} 块灵石`;
       if (isLucky) {
         logMsg += '，以及一枚珍贵的【洗髓丹】！';
@@ -869,6 +872,10 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
         return { player: { ...s.player, inventory: newInventory } };
       });
+    }
+
+    if (fortuneProc) {
+      logMsg += ' 机缘触发！获得双倍资源！';
     }
 
     state.addLog({ type: 'event', message: logMsg });
@@ -1040,7 +1047,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           });
         }
       } else {
-        state.addLog({ type: 'ascension', message: `你已达到凡界巅峰【${maxRealm}】！前往皇城飞升台，准备渡九重天劫，飞升上界！` });
+        state.addLog({ type: 'system', message: `你已达到当前世界最高境界【${maxRealm}】，修炼无法再提升修为。` });
+        return;
       }
     } else {
       set({

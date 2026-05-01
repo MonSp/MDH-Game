@@ -12,6 +12,8 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
   const [showCycle, setShowCycle] = useState(false);
+  const [cultivateCooldown, setCultivateCooldown] = useState(0);
+  const [showBreakthrough, setShowBreakthrough] = useState(false);
 
   if (!player) return null;
 
@@ -27,6 +29,15 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const hasFlypanStone = (player.inventory['飞升令'] || 0) >= 1;
   const hasEnoughSpiritStones = (player.inventory['灵石'] || 0) >= 100000;
   const canCycleRebirth = player.heavenLevel >= 6 && checkCycleCooldown();
+  const realmList = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'] as const;
+  const nextRealm = (() => {
+    const idx = realmList.indexOf(player.realm as typeof realmList[number]);
+    return idx >= 0 && idx < realmList.length - 1 ? realmList[idx + 1] : null;
+  })();
+  const breakthroughCost = Math.floor(
+    (REALM_BREAKTHROUGH_COST[player.realm] || 0) *
+    (1 - (player.talent?.comprehension ?? 40) / 200)
+  );
 
   return (
     <div className="w-full h-full p-4 pointer-events-auto flex justify-between">
@@ -94,7 +105,12 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             <div className="flex items-center text-emerald-400 space-x-1">
               <Shield size={14} /><span>修为</span>
             </div>
-            <div className="text-zinc-300">{player.stats.exp} / {player.stats.maxExp}</div>
+            <div className="text-zinc-300 flex items-center gap-2">
+              <span>{player.stats.exp} / {player.stats.maxExp}</span>
+              {player.stats.exp >= player.stats.maxExp && !isAtMaxRealm && (
+                <span className="text-amber-400 text-xs animate-pulse font-medium">可突破</span>
+              )}
+            </div>
           </div>
           <div className="w-full bg-zinc-950 rounded-full h-1">
             <div className="bg-emerald-500 h-1 rounded-full" style={{ width: `${(player.stats.exp / player.stats.maxExp) * 100}%` }}></div>
@@ -196,7 +212,44 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             <span>轮回转生</span>
           </button>
         )}
-        
+
+        {/* 修炼/突破按钮 */}
+        {isAtMaxRealm ? (
+          <button
+            disabled
+            className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/40 border border-zinc-700/50 rounded text-zinc-500 cursor-not-allowed"
+          >
+            <Sparkles size={16} />
+            <span>已至巅峰</span>
+          </button>
+        ) : player.stats.exp >= player.stats.maxExp ? (
+          <button
+            onClick={() => setShowBreakthrough(true)}
+            className="flex items-center justify-center space-x-2 w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded transition-colors text-amber-300 font-medium shadow-inner"
+          >
+            <Sparkles size={16} />
+            <span>突破境界</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              useGameStore.getState().cultivate();
+              setCultivateCooldown(3);
+              const timer = setInterval(() => {
+                setCultivateCooldown(prev => {
+                  if (prev <= 1) { clearInterval(timer); return 0; }
+                  return prev - 1;
+                });
+              }, 1000);
+            }}
+            disabled={cultivateCooldown > 0}
+            className="flex items-center justify-center space-x-2 w-full py-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded transition-colors text-emerald-300 font-medium shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Sparkles size={16} />
+            <span>{cultivateCooldown > 0 ? `打坐修炼 (${cultivateCooldown}s)` : '打坐修炼'}</span>
+          </button>
+        )}
+
         <button
           onClick={() => setShowMarket(true)}
           className="flex items-center justify-center space-x-2 w-full py-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded transition-colors text-emerald-300 font-medium shadow-inner"
@@ -212,6 +265,69 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           <span>宗门事务</span>
         </button>
       </div>
+
+      {showBreakthrough && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96">
+            <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center">
+              <Sparkles size={20} className="mr-2" />渡劫突破
+            </h3>
+
+            <div className="space-y-4">
+              <div className="p-3 bg-zinc-800 rounded">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">当前境界</span>
+                  <span className="text-emerald-400 font-medium">{player.realm}</span>
+                </div>
+                <div className="flex justify-between text-sm mt-2">
+                  <span className="text-zinc-400">下一境界</span>
+                  <span className="text-amber-400 font-medium">{nextRealm || '—'}</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-zinc-800 rounded">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">消耗灵石</span>
+                  <span className={
+                    (player.inventory['灵石'] || 0) >= breakthroughCost
+                      ? 'text-emerald-400 font-medium'
+                      : 'text-red-400 font-medium'
+                  }>{breakthroughCost}</span>
+                </div>
+                <div className="text-xs text-zinc-500 mt-1">悟性减免后，灵石充足即可突破</div>
+              </div>
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setShowBreakthrough(false)}
+                  className="flex-1 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    const store = useGameStore.getState();
+                    if (!store.player) return;
+                    // 重新读取条件
+                    const maxRealm = HEAVEN_MAX_REALM[store.player.heavenLevel];
+                    if (store.player.realm === maxRealm) {
+                      store.addLog({ type: 'system', message: '你已达到当前世界最高境界，无法继续突破。' });
+                      setShowBreakthrough(false);
+                      return;
+                    }
+                    store.cultivate();
+                    setShowBreakthrough(false);
+                  }}
+                  disabled={(player.inventory['灵石'] || 0) < breakthroughCost}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
+                >
+                  {(player.inventory['灵石'] || 0) >= breakthroughCost ? '确认突破' : '灵石不足'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showMarket && <MarketPanel onClose={() => setShowMarket(false)} />}
       
