@@ -315,12 +315,18 @@ const PlayerMesh = ({ player }: { player: any }) => {
 
 interface Map2DProps {
   onProximityTrigger?: (sceneId: string) => void;
+  triggerVersion?: number;
 }
 
-export const Map2D = ({ onProximityTrigger }: Map2DProps) => {
+export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
   const { player, nearbyNPCs, resourcePoints, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
   const triggeredRef = useRef<Set<string>>(new Set());
+
+  // Clear triggered scenes when the scene panel closes (triggerVersion increments)
+  useEffect(() => {
+    triggeredRef.current.clear();
+  }, [triggerVersion]);
 
   // Keyboard Movement + proximity trigger
   useEffect(() => {

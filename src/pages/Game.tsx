@@ -42,7 +42,7 @@ const NPC_FALLBACK = '……你找我有何事？';
 
 export const Game = () => {
   const navigate = useNavigate();
-  const { player, updateNPCs, modifyTalent, markNpcMet, metNpcs, addLog } = useGameStore();
+  const { player, updateNPCs, modifyTalent, markNpcMet, addLog } = useGameStore();
   const [showChronicle, setShowChronicle] = useState(false);
 
   // Scene state
@@ -55,6 +55,7 @@ export const Game = () => {
   const [disconnectError, setDisconnectError] = useState(false);
   const llmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneStartedRef = useRef(false);
+  const [triggerVersion, setTriggerVersion] = useState(0);
 
   // Start scene on mount (one-shot — do not re-trigger on close)
   useEffect(() => {
@@ -107,6 +108,46 @@ export const Game = () => {
       if (choice.effect.talent) {
         modifyTalent(choice.effect.talent);
       }
+      if (choice.effect.cultivation) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const newExp = store.player.stats.exp + choice.effect.cultivation;
+          useGameStore.setState({
+            player: {
+              ...store.player,
+              stats: { ...store.player.stats, exp: Math.max(0, newExp) }
+            }
+          });
+          addLog({ type: 'event', message: `修为 ${choice.effect.cultivation >= 0 ? '+' : ''}${choice.effect.cultivation}` });
+        }
+      }
+      if (choice.effect.spiritStone) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const inventory = { ...store.player.inventory };
+          inventory['灵石'] = (inventory['灵石'] || 0) + choice.effect.spiritStone;
+          useGameStore.setState({ player: { ...store.player, inventory } });
+          addLog({ type: 'event', message: `灵石 ${choice.effect.spiritStone >= 0 ? '+' : ''}${choice.effect.spiritStone}` });
+        }
+      }
+      if (choice.effect.reputation) {
+        const store = useGameStore.getState();
+        if (!store.player) return;
+        for (const [faction, delta] of Object.entries(choice.effect.reputation)) {
+          if (faction === 'family') {
+            const clanIndex = store.clans.findIndex(c => c.id === store.player!.clanId);
+            if (clanIndex !== -1) {
+              const clans = [...store.clans];
+              clans[clanIndex] = {
+                ...clans[clanIndex],
+                reputation: Math.max(0, Math.min(100, clans[clanIndex].reputation + delta))
+              };
+              useGameStore.setState({ clans });
+              addLog({ type: 'system', message: `家族好感度 ${delta >= 0 ? '+' : ''}${delta}` });
+            }
+          }
+        }
+      }
     }
 
     // 2. Handle NPC dialogue
@@ -116,7 +157,7 @@ export const Game = () => {
       const npcId = choice.npcDialogue;
       markNpcMet(npcId); // persist NPC memory
       const entry = NPC_DIALOGUE[npcId];
-      const alreadyMet = metNpcs.includes(npcId);
+      const alreadyMet = useGameStore.getState().metNpcs.includes(npcId);
 
       if (entry) {
         // Scripted response with simulated delay for consistency
@@ -154,7 +195,7 @@ export const Game = () => {
         setScenePath(prev => [...prev, next.id]);
       }
     }
-  }, [activeScene, metNpcs, modifyTalent]);
+  }, [activeScene, modifyTalent]);
 
   const handleContinue = useCallback(() => {
     if (!activeScene) return;
@@ -173,6 +214,7 @@ export const Game = () => {
       setDialogueText(undefined);
       setNpcName(undefined);
       setNpcRole(undefined);
+      setTriggerVersion(v => v + 1);
     } else {
       setSceneState('CHOOSING');
       setDialogueText(undefined);
@@ -192,6 +234,7 @@ export const Game = () => {
     setNpcName(undefined);
     setNpcRole(undefined);
     setDisconnectError(false);
+    setTriggerVersion(v => v + 1);
   }, [clearLlmTimer]);
 
   const handleFallback = useCallback(() => {
@@ -214,7 +257,7 @@ export const Game = () => {
     <div className="relative w-screen h-screen bg-zinc-950 overflow-hidden font-sans text-zinc-300">
       {/* 2.5D 地图层 */}
       <div className="absolute inset-0 z-0">
-        <Map2D onProximityTrigger={handleSceneTrigger} />
+        <Map2D onProximityTrigger={handleSceneTrigger} triggerVersion={triggerVersion} />
       </div>
 
       {/* UI 覆盖层 */}
