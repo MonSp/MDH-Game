@@ -1,4 +1,4 @@
-import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM } from '../store/gameStore';
+import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST } from '../store/gameStore';
 import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
@@ -15,6 +15,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
   const [showBreakthrough, setShowBreakthrough] = useState(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cultivatingRef = useRef(false);
 
   // 清理冷却计时器（组件卸载时）
   useEffect(() => {
@@ -39,7 +40,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const hasFlypanStone = (player.inventory['飞升令'] || 0) >= 1;
   const hasEnoughSpiritStones = (player.inventory['灵石'] || 0) >= 100000;
   const canCycleRebirth = player.heavenLevel >= 6 && checkCycleCooldown();
-  const realmList = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'] as const;
+  const realmList = REALM_LIST;
   const nextRealm = (() => {
     const idx = realmList.indexOf(player.realm as typeof realmList[number]);
     return idx >= 0 && idx < realmList.length - 1 ? realmList[idx + 1] : null;
@@ -127,7 +128,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           </div>
           {player.stats.exp >= player.stats.maxExp && (
             <div className="text-xs text-amber-400 mt-1">
-              突破需: {REALM_BREAKTHROUGH_COST[player.realm] || 0} 灵石 (当前: {player.inventory['灵石'] || 0})
+              突破需: {breakthroughCost} 灵石 (当前: {player.inventory['灵石'] || 0})
             </div>
           )}
           
@@ -243,12 +244,14 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         ) : (
           <button
             onClick={() => {
+              if (cultivatingRef.current) return;
+              cultivatingRef.current = true;
               useGameStore.getState().cultivate();
               setCultivateCooldown(3);
               if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
               cooldownTimerRef.current = setInterval(() => {
                 setCultivateCooldown(prev => {
-                  if (prev <= 1) { clearInterval(cooldownTimerRef.current!); cooldownTimerRef.current = null; return 0; }
+                  if (prev <= 1) { clearInterval(cooldownTimerRef.current!); cooldownTimerRef.current = null; cultivatingRef.current = false; return 0; }
                   return prev - 1;
                 });
               }, 1000);

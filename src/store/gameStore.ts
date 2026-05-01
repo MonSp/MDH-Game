@@ -25,6 +25,8 @@ export const HEAVEN_INFO: Record<HeavenLevel, {
 
 export type Realm = '凡人' | '练气' | '筑基' | '金丹' | '元婴' | '化神' | '炼虚' | '合体' | '大乘' | '渡劫';
 
+export const REALM_LIST: Realm[] = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
+
 export const REALM_BREAKTHROUGH_COST: Record<Realm, number> = {
   '凡人': 100,
   '练气': 300,
@@ -842,12 +844,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     const fortuneProc = Math.random() < (state.player.talent?.fortune ?? 20) / 100;
     const fortuneMult = fortuneProc ? 2 : 1;
 
+    const fortuneTag = fortuneProc ? '（双倍）' : '';
     if (resource.type === '灵田') {
       expGain = Math.floor(30 * fortuneMult);
-      logMsg = `你在灵田采摘了仙草，获得了 ${expGain} 点修为。`;
+      logMsg = `你在灵田采摘了仙草，获得了 ${expGain} 点修为${fortuneTag}。`;
     } else if (resource.type === '矿脉') {
       const yieldAmt = Math.floor(50 * fortuneMult);
-      logMsg = `你在矿脉开采了 ${yieldAmt} 块灵石`;
+      logMsg = `你在矿脉开采了 ${yieldAmt} 块灵石${fortuneTag}`;
       set(s => {
         if (!s.player) return s;
         const newInventory = { ...s.player.inventory };
@@ -857,7 +860,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     } else if (resource.type === '遗迹') {
       const foundAmt = Math.floor(100 * fortuneMult);
       const isLucky = Math.random() < 0.3 * fortuneMult;
-      logMsg = `你在遗迹中探索，发现了 ${foundAmt} 块灵石`;
+      logMsg = `你在遗迹中探索，发现了 ${foundAmt} 块灵石${fortuneTag}`;
       if (isLucky) {
         logMsg += '，以及一枚珍贵的【洗髓丹】！';
       } else {
@@ -874,9 +877,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
     }
 
-    if (fortuneProc) {
-      logMsg += ' 机缘触发！获得双倍资源！';
-    }
 
     state.addLog({ type: 'event', message: logMsg });
     state.updateMarketPrices();
@@ -993,34 +993,39 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (player.country === '齐') expGain = Math.floor(expGain * 1.2);
     
     let newExp = player.stats.exp + expGain;
+    const wasExpFull = player.stats.exp >= player.stats.maxExp;
     const maxRealm = HEAVEN_MAX_REALM[player.heavenLevel];
-    const realmIndex = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'].indexOf(player.realm);
-    const maxRealmIndex = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'].indexOf(maxRealm);
-    
+    const realmIndex = REALM_LIST.indexOf(player.realm);
+    const maxRealmIndex = REALM_LIST.indexOf(maxRealm);
+
     if (newExp >= player.stats.maxExp) {
       newExp = player.stats.maxExp;
-      
-      if (realmIndex < maxRealmIndex) {
+
+      if (realmIndex >= maxRealmIndex) {
+        state.addLog({ type: 'system', message: `你已达到当前世界最高境界【${maxRealm}】，修炼无法再提升修为。` });
+        return;
+      }
+
+      if (wasExpFull) {
         const baseCost = REALM_BREAKTHROUGH_COST[player.realm] || 0;
         const compFactor = 1 - (player.talent?.comprehension ?? 40) / 200;
         const cost = Math.floor(baseCost * compFactor);
         const currentStones = player.inventory['灵石'] || 0;
-        
+
         if (currentStones >= cost) {
-          const realms: Realm[] = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
-          const nextRealmIdx = realms.indexOf(player.realm) + 1;
-          const nextRealm = realms[nextRealmIdx] || player.realm;
-          
+          const nextRealmIdx = REALM_LIST.indexOf(player.realm) + 1;
+          const nextRealm = REALM_LIST[nextRealmIdx] || player.realm;
+
           if (nextRealm !== player.realm) {
             state.addLog({ type: 'system', message: `消耗了 ${cost} 灵石，天地灵气汇聚！你突破到了【${nextRealm}】境界！` });
-            
+
             if (nextRealm === maxRealm) {
               state.addLog({ type: 'system', message: `你已达到当前世界【${HEAVEN_INFO[player.heavenLevel].name}】最高境界！可以准备飞升上界了！` });
             }
-            
+
             const newInventory = { ...player.inventory };
             newInventory['灵石'] = currentStones - cost;
-            
+
             set({
               player: {
                 ...player,
@@ -1047,8 +1052,13 @@ export const useGameStore = create<GameState>((set, get) => ({
           });
         }
       } else {
-        state.addLog({ type: 'system', message: `你已达到当前世界最高境界【${maxRealm}】，修炼无法再提升修为。` });
-        return;
+        // 修炼自然充满修为 — 不自动突破，等待玩家手动点击突破按钮
+        set({
+          player: {
+            ...player,
+            stats: { ...player.stats, exp: newExp }
+          }
+        });
       }
     } else {
       set({
