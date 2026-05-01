@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { useGameStore, NPC, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile } from '../utils/terrain';
+import { getSceneIdByCoordinate } from '../content/scenes/sceneRegistry';
 
 // Constants
 const VIEW_RADIUS = 15;
@@ -312,11 +313,16 @@ const PlayerMesh = ({ player }: { player: any }) => {
   );
 };
 
-export const Map2D = () => {
+interface Map2DProps {
+  onProximityTrigger?: (sceneId: string) => void;
+}
+
+export const Map2D = ({ onProximityTrigger }: Map2DProps) => {
   const { player, nearbyNPCs, resourcePoints, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
+  const triggeredRef = useRef<Set<string>>(new Set());
 
-  // Keyboard Movement
+  // Keyboard Movement + proximity trigger
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       switch(e.key) {
@@ -333,6 +339,16 @@ export const Map2D = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [movePlayer]);
+
+  // Check coordinate proximity for scene triggers
+  useEffect(() => {
+    if (!player || !onProximityTrigger) return;
+    const sceneId = getSceneIdByCoordinate(player.position.x, player.position.y);
+    if (sceneId && !triggeredRef.current.has(sceneId)) {
+      triggeredRef.current.add(sceneId);
+      onProximityTrigger(sceneId);
+    }
+  }, [player?.position.x, player?.position.y, onProximityTrigger]);
 
   if (!player) return null;
 
