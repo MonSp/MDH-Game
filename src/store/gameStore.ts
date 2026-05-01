@@ -1065,16 +1065,17 @@ export const useGameStore = create<GameState>((set, get) => ({
   modifyTalent: (effect: Partial<TalentAttributes>) => {
     const state = get();
     if (!state.player?.talent) return;
-    const clamped: Partial<TalentAttributes> = {};
+    const updated: Partial<TalentAttributes> = {};
     for (const [key, val] of Object.entries(effect)) {
       if (typeof val === 'number') {
-        clamped[key as keyof TalentAttributes] = Math.max(0, Math.min(100, val));
+        const current = state.player.talent[key as keyof TalentAttributes] ?? 50;
+        updated[key as keyof TalentAttributes] = Math.max(0, Math.min(100, current + val));
       }
     }
     set({
       player: {
         ...state.player,
-        talent: { ...state.player.talent, ...clamped }
+        talent: { ...state.player.talent, ...updated }
       }
     });
   },

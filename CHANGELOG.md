@@ -2,6 +2,26 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.2.0.1] - 2026-05-01
+
+### Added
+- Scene registry system with area organization (intro/family/sect/wild) and coordinate proximity triggers
+- 4 family compound scenes forming the first narrative arc: corridor exploration → yard encounters → patriarch's hall → audience with the clan leader
+- Coordinate-based proximity scene triggers on the 2.5D map: walking to the family compound at (55,48) auto-starts the scene chain
+- NPC dialogue logging to LogBox for player reference
+- Unit tests for scene registry (34 tests covering lookup, coordinate proximity, data integrity) and NPC dialogue branching (7 tests)
+- Scene breadcrumb labels for family area scenes
+
+### Fixed
+- modifyTalent now applies delta values instead of absolute overwrites (fixes talent effects in all scene choices)
+- Invalid Tailwind transition duration class (duration-400 → duration-300)
+- Removed unused SCENE_REGISTRY import from Game.tsx
+- Coordinate distance comparison uses squared distance to avoid unnecessary Math.sqrt
+
+### Changed
+- Scene transition animations: 300ms fade (from 500ms), dynamic backdrop blur, staggered title slide-down entrance
+- NPC dialogue data restructured with dedicated NPC entries (servant_02, junior_01, patriarch_01)
+
 ## [1.2.0.0] - 2026-05-01
 
 ### Added

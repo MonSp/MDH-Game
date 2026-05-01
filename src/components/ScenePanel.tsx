@@ -29,18 +29,14 @@ export const ScenePanel = ({
   disconnectError,
 }: ScenePanelProps) => {
   const [fadeIn, setFadeIn] = useState(false);
+  const [showTitle, setShowTitle] = useState(false);
 
-  useEffect(() => {
-    // 场景切换淡入
-    const t = setTimeout(() => setFadeIn(true), 50);
-    return () => clearTimeout(t);
-  }, [scene.id]);
-
-  // 场景切换时重置淡入状态
   useEffect(() => {
     setFadeIn(false);
-    const t = setTimeout(() => setFadeIn(true), 50);
-    return () => clearTimeout(t);
+    setShowTitle(false);
+    const t1 = setTimeout(() => setFadeIn(true), 50);
+    const t2 = setTimeout(() => setShowTitle(true), 200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [scene.id]);
 
   // 键盘导航：Escape 关闭
@@ -62,8 +58,12 @@ export const ScenePanel = ({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center transition-opacity duration-500"
-      style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', opacity: fadeIn ? 1 : 0 }}
+      className="fixed inset-0 z-40 flex items-center justify-center transition-all duration-300"
+      style={{
+        backgroundColor: fadeIn ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0)',
+        backdropFilter: fadeIn ? 'blur(6px)' : 'blur(0px)',
+        opacity: fadeIn ? 1 : 0,
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={scene.title}
@@ -88,7 +88,11 @@ export const ScenePanel = ({
                 {id === 'wake_up' ? '初醒' :
                  id === 'look_around' ? '环顾' :
                  id === 'check_body' ? '内视' :
-                 id === 'call_someone' ? '呼唤' : id}
+                 id === 'call_someone' ? '呼唤' :
+                 id === 'family_corridor' ? '家族走廊' :
+                 id === 'family_yard' ? '家族院落' :
+                 id === 'family_hall' ? '正厅' :
+                 id === 'patriarch_audience' ? '族长训话' : id}
               </span>
             </span>
           ))}
@@ -100,7 +104,7 @@ export const ScenePanel = ({
         {(state === 'CHOOSING') && (
           <div className="space-y-6">
             {/* 标题 */}
-            <h2 className="text-3xl font-serif text-emerald-400 tracking-wide text-center">
+            <h2 className={`text-3xl font-serif text-emerald-400 tracking-wide text-center transition-all duration-500 ${showTitle ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
               {scene.title}
             </h2>
 
