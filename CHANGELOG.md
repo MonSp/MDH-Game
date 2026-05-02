@@ -2,6 +2,24 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.4.0.0] - 2026-05-02
+
+### Added
+- Autonomous Worldbox-style combat system: 7 monster types (赤焰蛇 through 金翅大鹏) spanning 练气 to 合体 realms
+- Wild monster spawning: 15% chance per tick, within 5-10 tiles of player, max 6 concurrent, despawn beyond 20 tiles
+- Monster movement AI: monsters seek nearest entity (player or NPC) at 1 tile/tick
+- Player auto-combat: adjacent monsters engaged automatically using proportional damage formula
+- NPC auto-combat: NPCs engage nearby monsters independently with retreat/recovery behavior (5 tick recovery)
+- Proportional damage formula: `atk²/(atk+def)` with floor rounding and minimum 1 damage
+- Player defense stat: initialized from bone constitution, scales with breakthroughs and ascension
+- Monster kills grant exp, spirit stone loot, and increment kill counter
+- Player death handling: flee to capital with 1 HP on reaching 0
+- 2.5D monster rendering: red glowing crystal mesh with floating HP bar and animated damage numbers
+- Kill count and defense displayed in HUD stats panel
+
+### Fixed
+- NPC retreatTicksRemaining field properly cleaned up after recovery (destructured to undefined instead of leaving 0)
+
 ## [1.3.0.0] - 2026-05-01
 
 ### Added
