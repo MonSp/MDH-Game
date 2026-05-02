@@ -107,6 +107,29 @@ export function computeTalentGrade(value: number, gradeKey: 'spiritual' | 'bone'
   return TALENT_GRADE_TABLE.find(t => clamped >= t.min && clamped <= t.max)?.[gradeKey] ?? '未知';
 }
 
+// 声望系统
+export const REPUTATION_TITLES = [
+  { min: 50000, title: '千古流芳' },
+  { min: 20000, title: '名满天下' },
+  { min: 10000, title: '威震四海' },
+  { min: 5000, title: '声名远扬' },
+  { min: 2000, title: '名动一方' },
+  { min: 500, title: '小有名气' },
+  { min: 100, title: '初出茅庐' },
+  { min: 0, title: '无名小卒' },
+];
+
+export function getReputationTitle(reputation: number): string {
+  return REPUTATION_TITLES.find(t => reputation >= t.min)?.title ?? '无名小卒';
+}
+
+export const REPUTATION_SOURCES: Record<string, { base: number; label: string }> = {
+  monster_kill: { base: 5, label: '斩妖除魔' },
+  npc_combat_win: { base: 10, label: '击败修士' },
+  breakthrough: { base: 100, label: '境界突破' },
+  gather: { base: 2, label: '采集资源' },
+};
+
 export interface Player {
   id: string;
   name: string;
@@ -118,6 +141,7 @@ export interface Player {
   clanId: string;
   stats: { hp: number; maxHp: number; mp: number; maxMp: number; attack: number; defense: number; exp: number; maxExp: number };
   hiddenStats: { killCount: number; cultivateCount: number; gatherCount: number; ascensionCount: number; merit: number };
+  reputation: number;
   position: { x: number; y: number };
   inventory: Record<string, number>;
   cycleInfo: {
@@ -324,6 +348,7 @@ interface GameState {
   cultivate: () => void;
   modifyTalent: (effect: Partial<TalentAttributes>) => void;
   updateNPCs: () => void;
+  addReputation: (amount: number, source: string) => void;
   buyItem: (itemName: string, amount: number) => void;
   sellItem: (itemName: string, amount: number) => void;
   updateMarketPrices: () => void;
@@ -763,6 +788,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       bodyType: '凡体',
       potential: '无',
       hiddenStats: { killCount: 0, cultivateCount: 0, gatherCount: 0, ascensionCount: 0, merit: 0 },
+      reputation: 0,
       country: randomClan.country,
       clanId: randomClan.id,
       stats: {
@@ -921,6 +947,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
         
         const clan = get().clans.find(c => c.id === npc.clanId);
+        // 击败NPC获得声望
+        get().addReputation(Math.floor((npc.power / 1000) + 5), 'npc_combat_win');
         if (clan && clan.reputation < 0) {
           get().addLog({ type: 'system', message: `警告！${clan.name} 对你的仇恨已达冰点，已派出执法堂长老前来围剿！` });
         } else if (clan && clan.reputation < 20) {
@@ -997,6 +1025,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
 
     state.addLog({ type: 'event', message: logMsg });
+    // 采集获得声望
+    get().addReputation(REPUTATION_SOURCES.gather.base, 'gather');
     state.updateMarketPrices();
     
     set(s => {
@@ -1137,6 +1167,10 @@ export const useGameStore = create<GameState>((set, get) => ({
           if (nextRealm !== player.realm) {
             state.addLog({ type: 'system', message: `消耗了 ${cost} 灵石，天地灵气汇聚！你突破到了【${nextRealm}】境界！` });
 
+            // 突破获得声望
+            const realmRepMap: Record<string, number> = { '练气': 50, '筑基': 100, '金丹': 200, '元婴': 350, '化神': 500, '炼虚': 750, '合体': 1000, '大乘': 1500, '渡劫': 2000 };
+            get().addReputation(realmRepMap[nextRealm] ?? 50, 'breakthrough');
+
             if (nextRealm === maxRealm) {
               state.addLog({ type: 'system', message: `你已达到当前世界【${HEAVEN_INFO[player.heavenLevel].name}】最高境界！可以准备飞升上界了！` });
             }
@@ -1215,6 +1249,22 @@ export const useGameStore = create<GameState>((set, get) => ({
         talent: { ...state.player.talent, ...updated }
       }
     });
+  },
+
+  addReputation: (amount, source) => {
+    const state = get();
+    if (!state.player) return;
+    const oldTitle = getReputationTitle(state.player.reputation);
+    const newRep = state.player.reputation + amount;
+    const newTitle = getReputationTitle(newRep);
+    const sourceLabel = REPUTATION_SOURCES[source]?.label ?? source;
+    set(s => ({
+      player: s.player ? { ...s.player, reputation: newRep } : s.player
+    }));
+    state.addLog({ type: 'event', message: `声望 +${amount}（${sourceLabel}）。` });
+    if (newTitle !== oldTitle) {
+      state.addLog({ type: 'event', message: `【声望提升】你从【${oldTitle}】晋升为【${newTitle}】！` });
+    }
   },
 
   buyItem: (itemName: string, amount: number) => {
@@ -1685,6 +1735,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           killCount: updatedPlayer.hiddenStats.killCount + 1,
         };
         state.addLog({ type: 'combat', message: `你击败了 ${monster.name}！获得 ${expGain} 点修为和 ${stonesGain} 灵石。` });
+        // 击杀怪物获得声望
+        get().addReputation(Math.max(2, Math.floor(monster.expReward / 6)), 'monster_kill');
       }
 
       // Player death: flee to capital with HP=1
@@ -1761,7 +1813,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       const { gameState } = raw as { gameState: any };
       if (!gameState) return false;
       set({
-        player: gameState.player ?? null,
+        player: gameState.player ? { ...gameState.player, reputation: gameState.player.reputation ?? 0 } : null,
         clans: gameState.clans ?? [],
         nearbyNPCs: gameState.nearbyNPCs ?? [],
         wildMonsters: gameState.wildMonsters ?? [],

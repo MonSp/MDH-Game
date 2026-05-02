@@ -1,4 +1,4 @@
-import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST } from '../store/gameStore';
+import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import type { SaveSlotInfo } from '../store/saveManager';
 import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
@@ -87,6 +87,12 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
               )}
             </div>
           </div>
+        </div>
+
+        {/* 声望 */}
+        <div className="mb-3 text-xs text-zinc-400 text-center border-b border-zinc-800 pb-2">
+          <span className="text-emerald-400 font-medium">{getReputationTitle(player.reputation)}</span>
+          <span className="text-zinc-600"> · 声望 {player.reputation}</span>
         </div>
 
         <div className="space-y-3 text-sm">
