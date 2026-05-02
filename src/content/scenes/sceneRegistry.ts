@@ -1,8 +1,9 @@
 import type { SceneEntry } from '../../shared/types/scene';
 import { INTRO_SCENE } from './intro';
 import { FAMILY_SCENES } from './family';
+import { GRUDGE_SCENE_ENTRIES } from './grudge/grudgeScene';
 
-export type SceneArea = 'intro' | 'family' | 'sect' | 'wild';
+export type SceneArea = 'intro' | 'family' | 'grudge' | 'sect' | 'wild';
 
 export interface SceneRegistryEntry {
   id: string;
@@ -29,6 +30,15 @@ const buildRegistry = (): Record<string, SceneRegistryEntry> => {
       entry.triggerAt = { x: 55, y: 48, radius: 3 };
     }
 
+    registry[scene.id] = entry;
+  }
+
+  for (const scene of GRUDGE_SCENE_ENTRIES) {
+    const entry: SceneRegistryEntry = { id: scene.id, area: 'grudge', scene };
+    // Trigger the village gate scene when player approaches coordinates (55,45)
+    if (scene.id === 'grudge_village_gate') {
+      entry.triggerAt = { x: 55, y: 45, radius: 3 };
+    }
     registry[scene.id] = entry;
   }
 

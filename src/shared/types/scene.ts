@@ -19,6 +19,10 @@ export interface Choice {
   switchToMap?: boolean;
   npcDialogue?: string;
   sceneContext?: string;
+  /** Show this choice only when npcMemory matches */
+  condition?: {
+    npcMemory: { npcId: string; equals: string };
+  };
 }
 
 export interface SceneEntry {

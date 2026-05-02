@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from './saveManager';
 
 export type HeavenLevel = 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1;
 
@@ -333,6 +334,14 @@ interface GameState {
   completeAscensionQuest: (questName: string) => void;
   markNpcMet: (npcId: string) => void;
   metNpcs: string[];
+  setNpcMemory: (npcId: string, state: string) => void;
+  npcMemory: Record<string, string>;
+
+  // Save / Load
+  saveToSlot: (slot: number) => void;
+  loadFromSlot: (slot: number) => boolean;
+  getSaveSlots: () => SaveSlotInfo[];
+  deleteSaveSlot: (slot: number) => void;
 }
 
 export interface CountryInfo {
@@ -735,6 +744,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     '飞升令': { name: '飞升令', basePrice: 10000, currentPrice: 10000, stock: 5 },
   },
   metNpcs: [],
+  npcMemory: {},
   ascensionQuests: [],
 
   joinServer: (serverId, playerName) => {
@@ -1720,5 +1730,57 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!state.metNpcs.includes(npcId)) {
       set({ metNpcs: [...state.metNpcs, npcId] });
     }
+  },
+  setNpcMemory: (npcId: string, memoryState: string) => {
+    set(state => ({
+      npcMemory: { ...state.npcMemory, [npcId]: memoryState }
+    }));
+  },
+
+  saveToSlot: (slot: number) => {
+    const s = get();
+    if (!s.player) return;
+    saveGame(slot, {
+      player: s.player,
+      clans: s.clans,
+      nearbyNPCs: s.nearbyNPCs,
+      wildMonsters: s.wildMonsters,
+      resourcePoints: s.resourcePoints,
+      logs: s.logs.slice(-50),
+      market: s.market,
+      metNpcs: s.metNpcs,
+      npcMemory: s.npcMemory,
+      ascensionQuests: s.ascensionQuests,
+    }, s.player.name, s.player.realm, s.player.heavenLevel);
+  },
+
+  loadFromSlot: (slot: number) => {
+    const raw = loadGame(slot);
+    if (!raw) return false;
+    try {
+      const { gameState } = raw as { gameState: any };
+      if (!gameState) return false;
+      set({
+        player: gameState.player ?? null,
+        clans: gameState.clans ?? [],
+        nearbyNPCs: gameState.nearbyNPCs ?? [],
+        wildMonsters: gameState.wildMonsters ?? [],
+        resourcePoints: gameState.resourcePoints ?? [],
+        logs: (gameState.logs ?? []).slice(-50),
+        market: gameState.market ?? {},
+        metNpcs: gameState.metNpcs ?? [],
+        npcMemory: gameState.npcMemory ?? {},
+        ascensionQuests: gameState.ascensionQuests ?? [],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  getSaveSlots: () => getSaveSlots(),
+
+  deleteSaveSlot: (slot: number) => {
+    deleteSave(slot);
   },
 }));

@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile } from '../utils/terrain';
-import { getSceneIdByCoordinate } from '../content/scenes/sceneRegistry';
+import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
 
 // Constants
 const VIEW_RADIUS = 15;
@@ -402,20 +402,48 @@ const PlayerMesh = ({ player }: { player: any }) => {
   );
 };
 
+// 6. Scene Trigger Zone Marker (for points of interest on the map)
+const SceneTriggerMarker = ({ marker, playerPos }: { marker: { id: string; x: number; y: number; label: string }; playerPos: { x: number; y: number } }) => {
+  const dx = marker.x - playerPos.x;
+  const dy = marker.y - playerPos.y;
+  if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
+
+  const tile = getTerrainTile(marker.x, marker.y);
+  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+
+  return (
+    <group position={[dx, baseHeight + 0.05, dy]}>
+      {/* Glowing circle marker on ground */}
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.8, 1.2, 32]} />
+        <meshBasicMaterial color="#fbbf24" transparent opacity={0.6} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.8, 32]} />
+        <meshBasicMaterial color="#fbbf24" transparent opacity={0.15} />
+      </mesh>
+      {/* Label */}
+      <Html position={[0, 0.8, 0]} center style={{ pointerEvents: 'none' }}>
+        <div className="bg-amber-900/80 border border-amber-500/60 px-2 py-0.5 rounded text-xs whitespace-nowrap shadow-lg text-amber-300 font-medium backdrop-blur-sm">
+          {marker.label}
+        </div>
+      </Html>
+    </group>
+  );
+};
+
 interface Map2DProps {
   onProximityTrigger?: (sceneId: string) => void;
   triggerVersion?: number;
 }
 
+// Module-level scene trigger cooldown (persists across re-renders)
+const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside: boolean }> = {};
+const TRIGGER_COOLDOWN_MS = 30000;
+
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
   const { player, nearbyNPCs, wildMonsters, resourcePoints, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
-  const triggeredRef = useRef<Set<string>>(new Set());
-
-  // Clear triggered scenes when the scene panel closes (triggerVersion increments)
-  useEffect(() => {
-    triggeredRef.current.clear();
-  }, [triggerVersion]);
 
   // Keyboard Movement + proximity trigger
   useEffect(() => {
@@ -435,13 +463,32 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [movePlayer]);
 
-  // Check coordinate proximity for scene triggers
+  // Proximity trigger with anti-spam: requires player to leave the zone AND wait 30s
+  // before the same scene can re-trigger
   useEffect(() => {
     if (!player || !onProximityTrigger) return;
+    const now = Date.now();
+
+    // Track which zone the player is currently inside
+    for (const [id, entry] of Object.entries(SCENE_REGISTRY)) {
+      if (!entry.triggerAt) continue;
+      const state = sceneTriggerCooldowns[id] || { lastTriggerAt: 0, wasOutside: true };
+      const dx = player.position.x - entry.triggerAt.x;
+      const dy = player.position.y - entry.triggerAt.y;
+      const inZone = (dx * dx + dy * dy) <= entry.triggerAt.radius * entry.triggerAt.radius;
+      if (!inZone) state.wasOutside = true;
+      sceneTriggerCooldowns[id] = state;
+    }
+
+    // Check if player entered a trigger zone
     const sceneId = getSceneIdByCoordinate(player.position.x, player.position.y);
-    if (sceneId && !triggeredRef.current.has(sceneId)) {
-      triggeredRef.current.add(sceneId);
-      onProximityTrigger(sceneId);
+    if (sceneId) {
+      const state = sceneTriggerCooldowns[sceneId]!;
+      if (state.wasOutside && (now - state.lastTriggerAt) >= TRIGGER_COOLDOWN_MS) {
+        state.lastTriggerAt = now;
+        state.wasOutside = false;
+        onProximityTrigger(sceneId);
+      }
     }
   }, [player?.position.x, player?.position.y, onProximityTrigger]);
 
@@ -511,6 +558,23 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
 
         {capitals}
 
+        {/* Scene trigger zone markers (points of interest) */}
+        {Object.entries(SCENE_REGISTRY)
+          .filter(([_, entry]) => entry.triggerAt)
+          .map(([id, entry]) => (
+            <SceneTriggerMarker
+              key={`trigger-${id}`}
+              marker={{
+                id,
+                x: entry.triggerAt!.x,
+                y: entry.triggerAt!.y,
+                label: id === 'family_corridor' ? '🏯 家族大院' :
+                       id === 'grudge_village_gate' ? '🏘️ 荒村' : id,
+              }}
+              playerPos={player.position}
+            />
+          ))}
+
         {resourcePoints.map(res => {
           const dx = res.position.x - player.position.x;
           const dy = res.position.y - player.position.y;
@@ -535,11 +599,63 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         <PlayerMesh player={player} />
       </Canvas>
 
-      {/* 控制提示 */}
+      {/* 坐标 + 控制提示 */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-zinc-500 text-sm flex space-x-4 bg-zinc-900/50 px-4 py-2 rounded-full backdrop-blur pointer-events-none">
+        <span className="text-emerald-400 font-mono font-bold">({player.position.x}, {player.position.y})</span>
+        <span className="text-zinc-500">|</span>
         <span>[W A S D] 或 [方向键] 移动</span>
         <span>点击 NPC/资源点 交互</span>
       </div>
+
+      {/* 指南针 — 指向视口外的场景触发点和都城 */}
+      {(() => {
+        const pois: { label: string; x: number; y: number }[] = [];
+
+        // Add scene trigger zones
+        for (const [id, entry] of Object.entries(SCENE_REGISTRY)) {
+          if (entry.triggerAt) {
+            const dx = entry.triggerAt.x - player.position.x;
+            const dy = entry.triggerAt.y - player.position.y;
+            if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) {
+              pois.push({
+                label: id === 'family_corridor' ? '家族' : id === 'grudge_village_gate' ? '荒村' : id,
+                x: entry.triggerAt.x,
+                y: entry.triggerAt.y,
+              });
+            }
+          }
+        }
+
+        // Add capitals outside view
+        for (const country of COUNTRIES) {
+          const capital = COUNTRIES_DATA[country].capital;
+          const dx = capital.x - player.position.x;
+          const dy = capital.y - player.position.y;
+          if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) {
+            pois.push({ label: `${country}都`, x: capital.x, y: capital.y });
+          }
+        }
+
+        if (pois.length === 0) return null;
+
+        return (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 flex space-x-3 bg-zinc-900/70 px-4 py-2 rounded-full backdrop-blur border border-zinc-800/50 pointer-events-none z-20">
+            {pois.slice(0, 6).map(poi => {
+              const dx = poi.x - player.position.x;
+              const dy = poi.y - player.position.y;
+              const angle = Math.atan2(-dx, -dy) * (180 / Math.PI); // degrees, top=0
+              const arrow = angle > 22.5 ? (angle < 67.5 ? '↗' : angle < 112.5 ? '→' : angle < 157.5 ? '↘' : angle < 202.5 ? '↓' : angle < 247.5 ? '↙' : angle < 292.5 ? '←' : angle < 337.5 ? '↖' : '↑') : '↑';
+              return (
+                <span key={poi.label} className="text-xs text-zinc-400 flex items-center space-x-1">
+                  <span className="text-amber-400 font-mono">{arrow}</span>
+                  <span>{poi.label}</span>
+                </span>
+              );
+            })}
+            {pois.length > 6 && <span className="text-xs text-zinc-600">+{pois.length - 6}</span>}
+          </div>
+        );
+      })()}
 
       {/* 交互菜单层 */}
       {selectedNPC && (

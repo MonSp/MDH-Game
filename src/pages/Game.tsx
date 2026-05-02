@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useGameStore } from '../store/gameStore';
 import { HUD } from '../components/HUD';
 import { Map2D } from '../components/Map2D';
 import { LogBox } from '../components/LogBox';
 import { ChroniclePanel } from '../components/ChroniclePanel';
 import { ScenePanel } from '../components/ScenePanel';
+import { SurveyPopup } from '../components/SurveyPopup';
 import { getSceneEntry } from '../content/scenes/sceneRegistry';
+import { GRUDGE_NPC_DIALOGUE } from '../content/scenes/grudge/npcDialogue';
+import { LI_SI_ID, LI_SI_ROBBED, LI_SI_HELPED } from '../content/scenes/grudge/grudgeScene';
 import type { SceneEntry, ScenePanelState } from '../shared/types/scene';
 
 // Scripted NPC dialogue responses for intro scene (D5: scripted intro)
@@ -40,9 +43,13 @@ const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; m
 
 const NPC_FALLBACK = '……你找我有何事？';
 
+// Merge scripted dialogue with grudge prototype NPCs
+const NPC_DIALOGUE_ALL = { ...NPC_DIALOGUE, ...GRUDGE_NPC_DIALOGUE };
+
 export const Game = () => {
   const navigate = useNavigate();
-  const { player, updateNPCs, modifyTalent, markNpcMet, addLog } = useGameStore();
+  const location = useLocation();
+  const { player, updateNPCs, modifyTalent, markNpcMet, setNpcMemory, addLog, saveToSlot, npcMemory } = useGameStore();
   const [showChronicle, setShowChronicle] = useState(false);
 
   // Scene state
@@ -56,18 +63,20 @@ export const Game = () => {
   const llmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneStartedRef = useRef(false);
   const [triggerVersion, setTriggerVersion] = useState(0);
+  const [showSurvey, setShowSurvey] = useState(false);
 
-  // Start scene on mount (one-shot — do not re-trigger on close)
+  // Start scene on mount (one-shot — skip if loading from save)
   useEffect(() => {
     if (player && !sceneStartedRef.current) {
       sceneStartedRef.current = true;
+      if (location.state?.fromSave) return; // loading a save, skip intro
       const first = getSceneEntry('wake_up');
       if (first) {
         setActiveScene(first);
         setScenePath([first.id]);
       }
     }
-  }, [player]);
+  }, [player, location.state?.fromSave]);
 
   // Coordinate proximity → trigger scene (e.g., walk to family compound)
   const handleSceneTrigger = useCallback((sceneId: string) => {
@@ -79,17 +88,23 @@ export const Game = () => {
     setSceneState('CHOOSING');
   }, [activeScene]);
 
-  // NPC自治演化
+  // NPC自治演化 + 自动存档
   useEffect(() => {
     if (!player) {
       navigate('/');
       return;
     }
-    const interval = setInterval(() => {
+    const npcInterval = setInterval(() => {
       updateNPCs();
     }, 1000);
-    return () => clearInterval(interval);
-  }, [player, navigate, updateNPCs]);
+
+    // Auto-save every 60 seconds
+    const saveInterval = setInterval(() => {
+      saveToSlot(0);
+    }, 60000);
+
+    return () => { clearInterval(npcInterval); clearInterval(saveInterval); };
+  }, [player, navigate, updateNPCs, saveToSlot]);
 
   const clearLlmTimer = useCallback(() => {
     if (llmTimerRef.current) {
@@ -156,7 +171,15 @@ export const Game = () => {
       setDisconnectError(false);
       const npcId = choice.npcDialogue;
       markNpcMet(npcId); // persist NPC memory
-      const entry = NPC_DIALOGUE[npcId];
+
+      // 宿怨 prototype: set NPC memory based on dialogue outcome
+      if (npcId === 'grudge_lisi_robbed') {
+        setNpcMemory(LI_SI_ID, LI_SI_ROBBED);
+      } else if (npcId === 'grudge_lisi_give_back') {
+        setNpcMemory(LI_SI_ID, LI_SI_HELPED);
+      }
+
+      const entry = NPC_DIALOGUE_ALL[npcId];
       const alreadyMet = useGameStore.getState().metNpcs.includes(npcId);
 
       if (entry) {
@@ -181,6 +204,10 @@ export const Game = () => {
 
     // 3. Switch to map
     if (choice.switchToMap) {
+      // Show survey after grudge prototype epilogue
+      if (activeScene.id === 'grudge_epilogue') {
+        setShowSurvey(true);
+      }
       setActiveScene(null);
       setScenePath([]);
       setSceneState('CHOOSING');
@@ -267,6 +294,9 @@ export const Game = () => {
         {showChronicle && <ChroniclePanel onClose={() => setShowChronicle(false)} />}
       </div>
 
+      {/* 宿怨原型调查 */}
+      {showSurvey && <SurveyPopup onClose={() => setShowSurvey(false)} />}
+
       {/* 场景叙事层 */}
       {activeScene && (
         <ScenePanel
@@ -281,6 +311,7 @@ export const Game = () => {
           onContinue={handleContinue}
           onClose={handleClose}
           onFallback={handleFallback}
+          npcMemory={npcMemory}
         />
       )}
     </div>

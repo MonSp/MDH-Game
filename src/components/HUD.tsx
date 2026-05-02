@@ -1,5 +1,6 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST } from '../store/gameStore';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen } from 'lucide-react';
+import type { SaveSlotInfo } from '../store/saveManager';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 
@@ -8,10 +9,13 @@ interface HUDProps {
 }
 
 export const HUD = ({ onOpenChronicle }: HUDProps) => {
-  const { player, clans, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown } = useGameStore();
+  const { player, clans, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot } = useGameStore();
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
   const [showCycle, setShowCycle] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [savedFeedback, setSavedFeedback] = useState('');
+  const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
   const [showBreakthrough, setShowBreakthrough] = useState(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -197,6 +201,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             <div className="text-zinc-400">所属势力：<span className="text-zinc-200">{clan?.name} ({clan?.type})</span></div>
             <div className="text-zinc-400">家族好感：<span className="text-zinc-200">{clan?.reputation}</span></div>
             <div className="text-zinc-400">当前境界：<span className="text-emerald-400">{player.realm}</span> / <span className="text-amber-400">{maxRealm}</span></div>
+            <div className="text-zinc-400">当前坐标：<span className="text-emerald-400 font-mono">({player.position.x}, {player.position.y})</span></div>
             <div className="text-zinc-400">资源倍率：<span className="text-purple-400">×{heavenInfo.resourceMultiplier}</span></div>
           </div>
         </div>
@@ -289,6 +294,14 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           className="flex items-center justify-center space-x-2 w-full py-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded transition-colors text-purple-300 font-medium"
         >
           <span>宗门事务</span>
+        </button>
+
+        <button
+          onClick={() => { setSaveSlots(getSaveSlots()); setShowSaveDialog(true); }}
+          className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
+        >
+          <Save size={14} />
+          <span>保存游戏</span>
         </button>
       </div>
 
@@ -462,9 +475,73 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
                 <div className="text-zinc-400 text-xs mt-1">飞升时选择，在原家族留下传承石碑。后人参悟可获得功法。</div>
               </div>
             </div>
-            
+
             <button
               onClick={() => setShowCycle(false)}
+              className="mt-4 w-full py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded transition-colors"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showSaveDialog && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96">
+            <h3 className="text-xl font-bold text-zinc-100 mb-4 flex items-center">
+              <Save size={18} className="mr-2 text-emerald-400" />保存游戏
+            </h3>
+
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {saveSlots.map(slot => (
+                <div
+                  key={slot.slot}
+                  className="flex items-center justify-between p-3 bg-zinc-800 rounded cursor-pointer hover:bg-zinc-700 transition-colors"
+                  onClick={() => {
+                    saveToSlot(slot.slot);
+                    setSavedFeedback(`已保存到槽位 ${slot.slot}`);
+                    setSaveSlots(getSaveSlots());
+                    setTimeout(() => setSavedFeedback(''), 2000);
+                  }}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-400 text-sm font-bold">
+                      {slot.slot}
+                    </div>
+                    <div>
+                      {slot.meta ? (
+                        <>
+                          <div className="text-zinc-200 text-sm">{slot.meta.playerName}</div>
+                          <div className="text-zinc-500 text-xs">
+                            {slot.meta.playerRealm} · {new Date(slot.meta.timestamp).toLocaleString('zh-CN')}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-zinc-500 text-sm">空</div>
+                      )}
+                    </div>
+                  </div>
+                  {slot.meta && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteSaveSlot(slot.slot); setSaveSlots(getSaveSlots()); }}
+                      className="px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 rounded transition-colors"
+                    >
+                      删除
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {savedFeedback && (
+              <div className="mt-3 p-2 bg-emerald-900/30 border border-emerald-700/50 rounded text-emerald-400 text-sm text-center">
+                {savedFeedback}
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowSaveDialog(false)}
               className="mt-4 w-full py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded transition-colors"
             >
               关闭

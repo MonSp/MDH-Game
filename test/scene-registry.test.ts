@@ -8,6 +8,8 @@ import {
 } from '../src/content/scenes/sceneRegistry';
 import { FAMILY_SCENES } from '../src/content/scenes/family';
 import { INTRO_SCENE } from '../src/content/scenes/intro';
+import { GRUDGE_SCENE_ENTRIES, LI_SI_ID, WANG_WU_ID, LI_SI_ROBBED, LI_SI_HELPED, LI_SI_UNMET } from '../src/content/scenes/grudge/grudgeScene';
+import { GRUDGE_NPC_DIALOGUE } from '../src/content/scenes/grudge/npcDialogue';
 import type { SceneEntry } from '../src/shared/types/scene';
 
 // =============================================================
@@ -65,9 +67,9 @@ describe('formatTime (family.ts internal helper)', () => {
 // =============================================================
 
 describe('SCENE_REGISTRY build integrity', () => {
-  it('contains all 4 intro scenes plus all 4 family scenes = 8 total', () => {
+  it('contains all intro, family, and grudge scenes', () => {
     const ids = Object.keys(SCENE_REGISTRY);
-    expect(ids).toHaveLength(4 + 4);
+    expect(ids.length).toBe(4 + 4 + GRUDGE_SCENE_ENTRIES.length);
     expect(ids).toContain('wake_up');
     expect(ids).toContain('look_around');
     expect(ids).toContain('check_body');
@@ -76,15 +78,21 @@ describe('SCENE_REGISTRY build integrity', () => {
     expect(ids).toContain('family_yard');
     expect(ids).toContain('family_hall');
     expect(ids).toContain('patriarch_audience');
+    expect(ids).toContain('grudge_village_gate');
+    expect(ids).toContain('grudge_epilogue');
   });
 
-  it('family_corridor is the only scene with a triggerAt coordinate', () => {
+  it('family_corridor and grudge_village_gate have triggerAt coordinates', () => {
+    const triggerScenes: Record<string, { x: number; y: number; radius: number }> = {
+      'family_corridor': { x: 55, y: 48, radius: 3 },
+      'grudge_village_gate': { x: 55, y: 45, radius: 3 },
+    };
     for (const [id, entry] of Object.entries(SCENE_REGISTRY)) {
-      if (id === 'family_corridor') {
+      if (triggerScenes[id]) {
         expect(entry.triggerAt).toBeDefined();
-        expect(entry.triggerAt!.x).toBe(55);
-        expect(entry.triggerAt!.y).toBe(48);
-        expect(entry.triggerAt!.radius).toBe(3);
+        expect(entry.triggerAt!.x).toBe(triggerScenes[id].x);
+        expect(entry.triggerAt!.y).toBe(triggerScenes[id].y);
+        expect(entry.triggerAt!.radius).toBe(triggerScenes[id].radius);
       } else {
         expect(entry.triggerAt).toBeUndefined();
       }
@@ -93,19 +101,23 @@ describe('SCENE_REGISTRY build integrity', () => {
 
   it('all scenes are correctly assigned to area', () => {
     for (const entry of Object.values(SCENE_REGISTRY)) {
-      expect(entry.area).toMatch(/^(intro|family|sect|wild)$/);
+      expect(entry.area).toMatch(/^(intro|family|grudge|sect|wild)$/);
     }
   });
 
-  it('intro scenes are area "intro" and family scenes are area "family"', () => {
+  it('intro scenes are area "intro", family scenes are "family", grudge scenes are "grudge"', () => {
     const introIds = ['wake_up', 'look_around', 'check_body', 'call_someone'];
     const familyIds = ['family_corridor', 'family_yard', 'family_hall', 'patriarch_audience'];
+    const grudgeIds = GRUDGE_SCENE_ENTRIES.map(s => s.id);
 
     for (const id of introIds) {
       expect(SCENE_REGISTRY[id].area).toBe('intro');
     }
     for (const id of familyIds) {
       expect(SCENE_REGISTRY[id].area).toBe('family');
+    }
+    for (const id of grudgeIds) {
+      expect(SCENE_REGISTRY[id].area).toBe('grudge');
     }
   });
 });
@@ -156,6 +168,13 @@ describe('getScenesByArea', () => {
     expect(scenes).toHaveLength(4);
     expect(scenes[0].id).toBe('family_corridor');
     expect(scenes[3].id).toBe('patriarch_audience');
+  });
+
+  it('returns grudge scenes for "grudge" area', () => {
+    const scenes = getScenesByArea('grudge');
+    expect(scenes.length).toBe(GRUDGE_SCENE_ENTRIES.length);
+    expect(scenes[0].id).toBe('grudge_village_gate');
+    expect(scenes[scenes.length - 1].id).toBe('grudge_epilogue');
   });
 
   it('returns empty array for "sect" area (no scenes registered yet)', () => {
@@ -290,5 +309,80 @@ describe('Scene data integrity', () => {
         }
       }
     }
+  });
+
+  // =============================================================
+  // GRUDGE_SCENE_ENTRIES data integrity
+  // =============================================================
+
+  describe('GRUDGE_SCENE_ENTRIES data integrity', () => {
+    it('all grudge scene IDs are unique across intro and family', () => {
+      const introIds = INTRO_SCENE.map(s => s.id);
+      const familyIds = FAMILY_SCENES.map(s => s.id);
+      const grudgeIds = GRUDGE_SCENE_ENTRIES.map(s => s.id);
+      const allIds = [...introIds, ...familyIds, ...grudgeIds];
+      const uniqueIds = new Set(allIds);
+      expect(uniqueIds.size).toBe(allIds.length);
+    });
+
+    it('every grudge scene has at least one choice', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        expect(scene.choices.length).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it('every grudge scene choice has a text field', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          expect(typeof choice.text).toBe('string');
+          expect(choice.text.length).toBeGreaterThan(0);
+        }
+      }
+    });
+
+    it('all nextEntry references in GRUDGE_SCENE_ENTRIES point to valid grudge scenes', () => {
+      const grudgeIds = new Set(GRUDGE_SCENE_ENTRIES.map(s => s.id));
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.nextEntry) {
+            expect(grudgeIds.has(choice.nextEntry)).toBe(true);
+          }
+        }
+      }
+    });
+
+    it('no grudge scene has both switchToMap and nextEntry on the same choice', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.switchToMap && choice.nextEntry) {
+            expect.fail(`GRUDGE scene ${scene.id} choice has both switchToMap and nextEntry`);
+          }
+        }
+      }
+    });
+
+    it('all npcDialogue references in GRUDGE_SCENE_ENTRIES exist in GRUDGE_NPC_DIALOGUE', () => {
+      const dialogueKeys = Object.keys(GRUDGE_NPC_DIALOGUE);
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.npcDialogue) {
+            expect(dialogueKeys).toContain(choice.npcDialogue);
+          }
+        }
+      }
+    });
+
+    it('all conditional choices reference valid NPC IDs and states', () => {
+      const validNpcIds = [LI_SI_ID, WANG_WU_ID];
+      const validStates = [LI_SI_ROBBED, LI_SI_HELPED, LI_SI_UNMET];
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.condition?.npcMemory) {
+            expect(validNpcIds).toContain(choice.condition.npcMemory.npcId);
+            expect(validStates).toContain(choice.condition.npcMemory.equals);
+          }
+        }
+      }
+    });
   });
 });

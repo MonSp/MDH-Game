@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { SceneEntry, ScenePanelState } from '../shared/types/scene';
 
 interface ScenePanelProps {
@@ -13,6 +13,7 @@ interface ScenePanelProps {
   onClose: () => void;
   onFallback?: () => void;        // fallback after disconnect/timeout
   disconnectError?: boolean;
+  npcMemory?: Record<string, string>;  // NPC memory state for conditional choices
 }
 
 export const ScenePanel = ({
@@ -27,6 +28,7 @@ export const ScenePanel = ({
   onClose,
   onFallback,
   disconnectError,
+  npcMemory = {},
 }: ScenePanelProps) => {
   const [fadeIn, setFadeIn] = useState(false);
   const [showTitle, setShowTitle] = useState(false);
@@ -47,6 +49,21 @@ export const ScenePanel = ({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
+
+  // Filter choices by NPC memory conditions
+  const visibleChoices = useMemo(() => {
+    return scene.choices.filter(choice => {
+      if (!choice.condition?.npcMemory) return true;
+      const { npcId, equals } = choice.condition.npcMemory;
+      return npcMemory[npcId] === equals;
+    });
+  }, [scene.choices, npcMemory]);
+
+  // Re-index: map filtered choice index back to original
+  const handleFilteredChoice = useCallback((filteredIndex: number) => {
+    const originalIndex = scene.choices.indexOf(visibleChoices[filteredIndex]);
+    if (originalIndex !== -1) onChoice(originalIndex);
+  }, [scene.choices, visibleChoices, onChoice]);
 
   // 自动聚焦首个选项
   const choicesRef = useCallback((node: HTMLDivElement | null) => {
@@ -117,19 +134,23 @@ export const ScenePanel = ({
 
             {/* 选项按钮 - 玉牌风格 */}
             <div className="space-y-3" ref={choicesRef}>
-              {scene.choices.map((choice, i) => (
-                <button
-                  key={i}
-                  className="w-full text-left px-6 py-3 rounded-md border transition-all duration-200
-                    bg-emerald-900/80 border-amber-700/60 text-amber-200
-                    hover:bg-emerald-800 hover:border-amber-500 hover:text-amber-100
-                    active:bg-emerald-700 text-base font-medium"
-                  onClick={() => onChoice(i)}
-                  role="menuitem"
-                >
-                  {choice.text}
-                </button>
-              ))}
+              {visibleChoices.length > 0 ? (
+                visibleChoices.map((choice, i) => (
+                  <button
+                    key={i}
+                    className="w-full text-left px-6 py-3 rounded-md border transition-all duration-200
+                      bg-emerald-900/80 border-amber-700/60 text-amber-200
+                      hover:bg-emerald-800 hover:border-amber-500 hover:text-amber-100
+                      active:bg-emerald-700 text-base font-medium"
+                    onClick={() => handleFilteredChoice(i)}
+                    role="menuitem"
+                  >
+                    {choice.text}
+                  </button>
+                ))
+              ) : (
+                <p className="text-zinc-500 text-center py-4">（没有可用的选项）</p>
+              )}
             </div>
           </div>
         )}
