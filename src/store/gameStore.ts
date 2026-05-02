@@ -115,7 +115,7 @@ export interface Player {
   potential: string;
   country: string;
   clanId: string;
-  stats: { hp: number; maxHp: number; mp: number; maxMp: number; attack: number; exp: number; maxExp: number };
+  stats: { hp: number; maxHp: number; mp: number; maxMp: number; attack: number; defense: number; exp: number; maxExp: number };
   hiddenStats: { killCount: number; cultivateCount: number; gatherCount: number; ascensionCount: number; merit: number };
   position: { x: number; y: number };
   inventory: Record<string, number>;
@@ -167,6 +167,111 @@ export interface NPC {
   position: { x: number; y: number };
   targetPlayerId?: string;
   tradeTarget?: string;
+  retreatTicksRemaining?: number;
+}
+
+export type MonsterType = '赤焰蛇' | '冰晶蝎' | '幽冥狼' | '雷纹虎' | '血玉蛛' | '玄冰蟒' | '金翅大鹏';
+
+export interface WildMonster {
+  id: string;
+  name: MonsterType;
+  realm: Realm;
+  hp: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  expReward: number;
+  position: { x: number; y: number };
+  isAlive: boolean;
+  targetId?: string;
+}
+
+export const MONSTER_TYPES_DATA: Record<MonsterType, {
+  name: string;
+  realm: Realm;
+  hp: number;
+  attack: number;
+  defense: number;
+  expReward: number;
+  spiritStoneDrop: number;
+}> = {
+  '赤焰蛇': { name: '赤焰蛇', realm: '练气', hp: 200, attack: 15, defense: 5, expReward: 30, spiritStoneDrop: 50 },
+  '冰晶蝎': { name: '冰晶蝎', realm: '筑基', hp: 800, attack: 40, defense: 15, expReward: 80, spiritStoneDrop: 150 },
+  '幽冥狼': { name: '幽冥狼', realm: '金丹', hp: 3000, attack: 120, defense: 40, expReward: 200, spiritStoneDrop: 300 },
+  '雷纹虎': { name: '雷纹虎', realm: '元婴', hp: 10000, attack: 400, defense: 120, expReward: 500, spiritStoneDrop: 800 },
+  '血玉蛛': { name: '血玉蛛', realm: '化神', hp: 50000, attack: 1500, defense: 400, expReward: 2000, spiritStoneDrop: 3000 },
+  '玄冰蟒': { name: '玄冰蟒', realm: '炼虚', hp: 200000, attack: 5000, defense: 1500, expReward: 8000, spiritStoneDrop: 10000 },
+  '金翅大鹏': { name: '金翅大鹏', realm: '合体', hp: 800000, attack: 20000, defense: 5000, expReward: 30000, spiritStoneDrop: 50000 },
+};
+
+export const MONSTER_REALM_ORDER: { realm: Realm; types: MonsterType[] }[] = [
+  { realm: '练气', types: ['赤焰蛇'] },
+  { realm: '筑基', types: ['冰晶蝎'] },
+  { realm: '金丹', types: ['幽冥狼'] },
+  { realm: '元婴', types: ['雷纹虎'] },
+  { realm: '化神', types: ['血玉蛛'] },
+  { realm: '炼虚', types: ['玄冰蟒'] },
+  { realm: '合体', types: ['金翅大鹏'] },
+];
+
+export const MAX_MONSTERS = 6;
+export const SPAWN_CHANCE = 0.15;
+export const SPAWN_MIN_DIST = 5;
+export const SPAWN_MAX_DIST = 10;
+export const DESPAWN_DIST = 20;
+
+export function calculateDamage(attack: number, defense: number): number {
+  if (attack <= 0) return 1;
+  return Math.max(1, Math.floor(attack * attack / (attack + defense)));
+}
+
+export function getMonstersForPlayerRealm(playerRealm: Realm): MonsterType[] {
+  const playerIdx = REALM_LIST.indexOf(playerRealm);
+  const available: MonsterType[] = [];
+  for (const entry of MONSTER_REALM_ORDER) {
+    const monsterIdx = REALM_LIST.indexOf(entry.realm);
+    if (Math.abs(monsterIdx - playerIdx) <= 1) {
+      available.push(...entry.types);
+    }
+  }
+  // Fallback: if player is too high (渡劫), use highest tier
+  if (available.length === 0 && MONSTER_REALM_ORDER.length > 0) {
+    available.push(...MONSTER_REALM_ORDER[MONSTER_REALM_ORDER.length - 1].types);
+  }
+  // Fallback: if player is too low (凡人), use lowest tier
+  if (available.length === 0 && MONSTER_REALM_ORDER.length > 0) {
+    available.push(...MONSTER_REALM_ORDER[0].types);
+  }
+  return available;
+}
+
+export function createWildMonster(playerPos: { x: number; y: number }, playerRealm: Realm): WildMonster | null {
+  const availableTypes = getMonstersForPlayerRealm(playerRealm);
+  if (availableTypes.length === 0) return null;
+
+  const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+  const data = MONSTER_TYPES_DATA[type];
+
+  // Spawn within 5-10 tiles of player (not right on top)
+  const angle = Math.random() * Math.PI * 2;
+  const dist = SPAWN_MIN_DIST + Math.random() * (SPAWN_MAX_DIST - SPAWN_MIN_DIST);
+  const pos = {
+    x: Math.round(playerPos.x + Math.cos(angle) * dist),
+    y: Math.round(playerPos.y + Math.sin(angle) * dist),
+  };
+
+  return {
+    id: `monster-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name: type,
+    realm: data.realm,
+    hp: data.hp,
+    maxHp: data.hp,
+    attack: data.attack,
+    defense: data.defense,
+    expReward: data.expReward,
+    position: pos,
+    isAlive: true,
+  };
 }
 
 export interface LogEntry {
@@ -203,6 +308,7 @@ interface GameState {
   player: Player | null;
   clans: Clan[];
   nearbyNPCs: NPC[];
+  wildMonsters: WildMonster[];
   resourcePoints: ResourcePoint[];
   logs: LogEntry[];
   market: Record<string, MarketItem>;
@@ -618,6 +724,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   player: null,
   clans: [],
   nearbyNPCs: [],
+  wildMonsters: [],
   resourcePoints: [],
   logs: [],
   market: {
@@ -648,14 +755,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       hiddenStats: { killCount: 0, cultivateCount: 0, gatherCount: 0, ascensionCount: 0, merit: 0 },
       country: randomClan.country,
       clanId: randomClan.id,
-      stats: { 
-        hp: 100, 
-        maxHp: 100 * spiritMultiplier + (defaultTalent.boneConstitution) * 2, 
-        mp: randomClan.country === '魏' ? Math.floor(22 * spiritMultiplier) : Math.floor(20 * spiritMultiplier), 
-        maxMp: randomClan.country === '魏' ? Math.floor(22 * spiritMultiplier) : Math.floor(20 * spiritMultiplier), 
-        attack: Math.floor(5 * spiritMultiplier + (defaultTalent.boneConstitution) * 0.5), 
-        exp: 0, 
-        maxExp: REALM_MAX_EXP['凡人'] 
+      stats: {
+        hp: 100,
+        maxHp: 100 * spiritMultiplier + (defaultTalent.boneConstitution) * 2,
+        mp: randomClan.country === '魏' ? Math.floor(22 * spiritMultiplier) : Math.floor(20 * spiritMultiplier),
+        maxMp: randomClan.country === '魏' ? Math.floor(22 * spiritMultiplier) : Math.floor(20 * spiritMultiplier),
+        attack: Math.floor(5 * spiritMultiplier + (defaultTalent.boneConstitution) * 0.5),
+        defense: Math.floor(10 + (defaultTalent.boneConstitution) * 0.5),
+        exp: 0,
+        maxExp: REALM_MAX_EXP['凡人']
       },
       position: initialPos,
       inventory: { '灵石': 500 },
@@ -1036,6 +1144,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                   hp: player.stats.maxHp * 2,
                   maxHp: Math.floor(player.stats.maxHp * 2 * spiritMultiplier + (player.talent?.boneConstitution ?? 30) * 2),
                   attack: Math.floor(player.stats.attack * 2 * spiritMultiplier + (player.talent?.boneConstitution ?? 30) * 0.5),
+                  defense: Math.floor((player.stats.defense || 10) * 2 * spiritMultiplier + (player.talent?.boneConstitution ?? 30) * 0.3),
                   exp: 0,
                   maxExp: REALM_MAX_EXP[nextRealm]
                 }
@@ -1272,6 +1381,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             mp: Math.floor(player.stats.maxMp * 0.5),
             maxMp: Math.floor(player.stats.maxMp * 0.5),
             attack: Math.floor(player.stats.attack * 0.5),
+            defense: Math.floor((player.stats.defense || 10) * 0.5),
             exp: 0,
             maxExp: REALM_MAX_EXP['凡人']
           },
@@ -1341,6 +1451,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             mp: 20,
             maxMp: 20,
             attack: 5,
+            defense: 10,
             exp: 0,
             maxExp: REALM_MAX_EXP['凡人']
           },
@@ -1407,32 +1518,178 @@ export const useGameStore = create<GameState>((set, get) => ({
   updateNPCs: () => {
     const state = get();
     if (!state.player) return;
-    
-    let playerHit = false;
-    let clanTreasuryUpdates: Record<string, number> = {};
 
-    let npcs = state.nearbyNPCs.map(npc => {
-      const updatedNpc = evaluateNPCBehavior(npc, state);
-      
-      if (updatedNpc.activity === '坊市跑商') {
-        const profit = 10; 
-        if (updatedNpc.resources.spiritStone >= profit) {
-          updatedNpc.resources.spiritStone -= profit;
-          clanTreasuryUpdates[updatedNpc.clanId] = (clanTreasuryUpdates[updatedNpc.clanId] || 0) + profit;
+    // --- Monster spawning ---
+    let monsters = state.wildMonsters.filter(m => m.isAlive);
+    if (monsters.length < MAX_MONSTERS && Math.random() < SPAWN_CHANCE) {
+      const newMonster = createWildMonster(state.player.position, state.player.realm);
+      if (newMonster) monsters.push(newMonster);
+    }
+
+    // --- Monster despawn (farther than 20 tiles from player) ---
+    monsters = monsters.filter(m => {
+      const dx = Math.abs(m.position.x - state.player!.position.x);
+      const dy = Math.abs(m.position.y - state.player!.position.y);
+      return dx <= DESPAWN_DIST && dy <= DESPAWN_DIST;
+    });
+
+    // --- Monster movement: seek nearest entity ---
+    monsters = monsters.map(m => {
+      // Find nearest target (player or NPC)
+      let targetPos = state.player!.position;
+      let minDist = Math.abs(m.position.x - targetPos.x) + Math.abs(m.position.y - targetPos.y);
+
+      for (const npc of state.nearbyNPCs) {
+        const d = Math.abs(m.position.x - npc.position.x) + Math.abs(m.position.y - npc.position.y);
+        if (d < minDist) {
+          minDist = d;
+          targetPos = npc.position;
         }
       }
 
-      if (updatedNpc.role === '执法堂长老' && updatedNpc.targetPlayerId === state.player!.id) {
-        const dx = state.player!.position.x - updatedNpc.position.x;
-        const dy = state.player!.position.y - updatedNpc.position.y;
+      // Move 1 tile toward target
+      const dx = Math.sign(targetPos.x - m.position.x);
+      const dy = Math.sign(targetPos.y - m.position.y);
+      return { ...m, position: { x: m.position.x + dx, y: m.position.y + dy } };
+    });
+
+    // Track which monsters already fought this tick
+    const foughtThisTick = new Set<string>();
+
+    let playerHit = false;
+    let clanTreasuryUpdates: Record<string, number> = {};
+    let playerMonsterHit = false; // player engaged with a monster this tick
+
+    // Process NPCs: behavior + NPC vs Monster combat
+    let npcs = state.nearbyNPCs.map(npc => {
+      // Phase 3: NPC retreat handling
+      if (npc.retreatTicksRemaining && npc.retreatTicksRemaining > 0) {
+        const next = npc.retreatTicksRemaining - 1;
+        if (next <= 0) {
+          state.addLog({ type: 'combat', message: `${npc.name} 伤势恢复，重回战场！` });
+          const { retreatTicksRemaining: _, ...rest } = npc;
+          return { ...rest, hp: rest.maxHp };
+        }
+        return { ...npc, retreatTicksRemaining: next };
+      }
+
+      // Phase 1: NPC vs Monster
+      let updatedNpc = { ...npc };
+      let nearestMonster: WildMonster | null = null;
+      let nearestDist = Infinity;
+
+      for (const monster of monsters) {
+        if (!monster.isAlive || foughtThisTick.has(monster.id)) continue;
+        const dx = Math.abs(monster.position.x - updatedNpc.position.x);
+        const dy = Math.abs(monster.position.y - updatedNpc.position.y);
+        if (dx <= 1 && dy <= 1) {
+          const dist = Math.max(dx, dy);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestMonster = monster;
+          }
+        }
+      }
+
+      if (nearestMonster) {
+        foughtThisTick.add(nearestMonster.id);
+        const npcAtk = Math.floor(updatedNpc.power / 10);
+        const npcDef = Math.floor(updatedNpc.power / 20);
+        const dmgToMonster = calculateDamage(npcAtk, nearestMonster.defense);
+        const dmgToNpc = calculateDamage(nearestMonster.attack, npcDef);
+
+        nearestMonster.hp -= dmgToMonster;
+        updatedNpc.hp -= dmgToNpc;
+
+        state.addLog({ type: 'combat', message: `${updatedNpc.name} 向 ${nearestMonster.name} 发起攻击，造成 ${dmgToMonster} 点伤害！` });
+
+        if (nearestMonster.hp <= 0) {
+          nearestMonster.isAlive = false;
+          state.addLog({ type: 'combat', message: `${updatedNpc.name} 击败了 ${nearestMonster.name}！` });
+        }
+
+        if (updatedNpc.hp <= 0) {
+          updatedNpc.hp = 0;
+          updatedNpc.retreatTicksRemaining = 5;
+          state.addLog({ type: 'combat', message: `${updatedNpc.name} 不敌 ${nearestMonster.name}，重伤退却！` });
+        }
+      }
+
+      // Existing behavior tree evaluation
+      const behaviorNpc = evaluateNPCBehavior(updatedNpc, state);
+
+      // Existing trade route logic
+      if (behaviorNpc.activity === '坊市跑商') {
+        const profit = 10;
+        if (behaviorNpc.resources.spiritStone >= profit) {
+          behaviorNpc.resources.spiritStone -= profit;
+          clanTreasuryUpdates[behaviorNpc.clanId] = (clanTreasuryUpdates[behaviorNpc.clanId] || 0) + profit;
+        }
+      }
+
+      // Existing enforcer pursuit
+      if (behaviorNpc.role === '执法堂长老' && behaviorNpc.targetPlayerId === state.player!.id) {
+        const dx = state.player!.position.x - behaviorNpc.position.x;
+        const dy = state.player!.position.y - behaviorNpc.position.y;
         if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
           playerHit = true;
         }
       }
-      
-      return updatedNpc;
+
+      return behaviorNpc;
     });
 
+    // Phase 2: Player vs Monster
+    let updatedPlayer = state.player ? { ...state.player } : null;
+    for (const monster of monsters) {
+      if (!monster.isAlive || foughtThisTick.has(monster.id) || playerMonsterHit) continue;
+      if (!updatedPlayer) continue;
+
+      const dx = Math.abs(monster.position.x - updatedPlayer.position.x);
+      const dy = Math.abs(monster.position.y - updatedPlayer.position.y);
+      if (dx > 1 || dy > 1) continue;
+
+      foughtThisTick.add(monster.id);
+      playerMonsterHit = true;
+
+      const playerDmg = calculateDamage(updatedPlayer.stats.attack, monster.defense);
+      const monsterDmg = calculateDamage(monster.attack, updatedPlayer.stats.defense || 0);
+
+      monster.hp -= playerDmg;
+      updatedPlayer.stats.hp -= monsterDmg;
+
+      state.addLog({ type: 'combat', message: `你向 ${monster.name} 发起攻击，造成 ${playerDmg} 点伤害！` });
+      state.addLog({ type: 'combat', message: `${monster.name} 向你反击，造成 ${monsterDmg} 点伤害！` });
+
+      if (monster.hp <= 0) {
+        monster.isAlive = false;
+        // Grant exp + loot to player
+        const expGain = monster.expReward;
+        const stonesGain = MONSTER_TYPES_DATA[monster.name].spiritStoneDrop;
+        updatedPlayer.stats.exp = Math.min(updatedPlayer.stats.exp + expGain, updatedPlayer.stats.maxExp);
+        const newInventory = { ...updatedPlayer.inventory };
+        newInventory['灵石'] = (newInventory['灵石'] || 0) + stonesGain;
+        updatedPlayer.inventory = newInventory;
+        updatedPlayer.hiddenStats = {
+          ...updatedPlayer.hiddenStats,
+          killCount: updatedPlayer.hiddenStats.killCount + 1,
+        };
+        state.addLog({ type: 'combat', message: `你击败了 ${monster.name}！获得 ${expGain} 点修为和 ${stonesGain} 灵石。` });
+      }
+
+      // Player death: flee to capital with HP=1
+      if (updatedPlayer.stats.hp <= 0) {
+        const capital = COUNTRIES_DATA[updatedPlayer.country]?.capital || { x: 50, y: 50 };
+        updatedPlayer.stats.hp = 1;
+        updatedPlayer.position = { ...capital };
+        state.addLog({ type: 'combat', message: `你不敌 ${monster.name}，重伤逃遁至${updatedPlayer.country}国都城！` });
+      }
+    }
+
+    // Remove dead monsters
+    const aliveMonsters = monsters.filter(m => m.isAlive);
+
+    // Update clans treasury
     let updatedClans = [...state.clans];
     if (Object.keys(clanTreasuryUpdates).length > 0) {
       updatedClans = updatedClans.map(c => {
@@ -1443,8 +1700,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
     }
 
-    set({ nearbyNPCs: npcs, clans: updatedClans });
+    set({
+      nearbyNPCs: npcs,
+      clans: updatedClans,
+      wildMonsters: aliveMonsters,
+      player: updatedPlayer || state.player,
+    });
 
+    // Handle enforcer combat (existing)
     if (playerHit) {
       const enforcer = npcs.find(n => n.role === '执法堂长老' && Math.abs(state.player!.position.x - n.position.x) <= 1 && Math.abs(state.player!.position.y - n.position.y) <= 1);
       if (enforcer) {

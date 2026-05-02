@@ -108,9 +108,21 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
 
           <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
             <div className="flex items-center text-amber-400 space-x-1">
-              <Sword size={14} /><span>战力</span>
+              <Sword size={14} /><span>攻击</span>
             </div>
             <div className="text-zinc-300">{player.stats.attack}</div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center text-orange-400 space-x-1">
+              <Shield size={14} /><span>防御</span>
+            </div>
+            <div className="text-zinc-300">{player.stats.defense ?? 0}</div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center text-rose-400 space-x-1">
+              <Sword size={14} /><span>妖兽击杀</span>
+            </div>
+            <div className="text-zinc-300">{player.hiddenStats.killCount}</div>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center text-emerald-400 space-x-1">

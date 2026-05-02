@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGameStore, NPC, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
+import { useGameStore, NPC, WildMonster, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile } from '../utils/terrain';
 import { getSceneIdByCoordinate } from '../content/scenes/sceneRegistry';
@@ -273,7 +273,96 @@ const NPCMesh = ({ npc, dx, dy, onClick }: { npc: NPC, dx: number, dy: number, o
   );
 };
 
-// 4. Player Mesh
+// 4. Monster Mesh
+const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy: number }) => {
+  const tile = getTerrainTile(monster.position.x, monster.position.y);
+  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+
+  // Floating damage numbers
+  const [damageNumbers, setDamageNumbers] = useState<{ id: number; value: number; color: string }[]>([]);
+  const prevHpRef = useRef(monster.hp);
+  const damageIdRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const prevHp = prevHpRef.current;
+    if (monster.hp < prevHp) {
+      const dmg = prevHp - monster.hp;
+      const id = damageIdRef.current++;
+      const color = dmg > monster.attack ? '#ffffff' : '#ff6666';
+      setDamageNumbers(prev => [...prev, { id, value: dmg, color }]);
+      setTimeout(() => {
+        if (mountedRef.current) {
+          setDamageNumbers(prev => prev.filter(n => n.id !== id));
+        }
+      }, 1200);
+    }
+    prevHpRef.current = monster.hp;
+    return () => { mountedRef.current = false; };
+  }, [monster.hp, monster.attack]);
+
+  // HP bar color
+  const hpRatio = monster.hp / monster.maxHp;
+  const hpColor = hpRatio > 0.6 ? '#22c55e' : hpRatio > 0.3 ? '#eab308' : '#ef4444';
+
+  return (
+    <group position={[dx, baseHeight, dy]}>
+      {/* Red aura circle */}
+      <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.6, 32]} />
+        <meshBasicMaterial color="#ef4444" transparent opacity={0.3} />
+      </mesh>
+
+      {/* Monster body - red glowing crystal */}
+      <mesh position={[0, 0.5, 0]} castShadow>
+        <boxGeometry args={[0.5, 0.8, 0.5]} />
+        <meshStandardMaterial color="#991b1b" emissive="#ef4444" emissiveIntensity={0.3} />
+      </mesh>
+
+      {/* Eyes - small bright dots */}
+      <mesh position={[-0.15, 0.6, 0.26]}>
+        <sphereGeometry args={[0.05, 8, 8]} />
+        <meshBasicMaterial color="#fef08a" />
+      </mesh>
+      <mesh position={[0.15, 0.6, 0.26]}>
+        <sphereGeometry args={[0.05, 8, 8]} />
+        <meshBasicMaterial color="#fef08a" />
+      </mesh>
+
+      {/* HP Bar */}
+      <Html position={[0, 1.2, 0]} center style={{ pointerEvents: 'none' }}>
+        <div className="flex flex-col items-center">
+          {/* Name + Realm */}
+          <div className="text-red-300 text-[10px] font-bold mb-0.5 whitespace-nowrap drop-shadow-lg">
+            {monster.name}
+          </div>
+          {/* HP bar */}
+          <div className="w-12 h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{ width: `${Math.max(0, hpRatio * 100)}%`, backgroundColor: hpColor }}
+            />
+          </div>
+        </div>
+      </Html>
+
+      {/* Floating damage numbers */}
+      {damageNumbers.map(n => (
+        <Html key={n.id} position={[0, 1.5, 0]} center style={{ pointerEvents: 'none' }}>
+          <div
+            className="font-bold text-sm pointer-events-none animate-fade-up"
+            style={{ color: n.color }}
+          >
+            -{n.value}
+          </div>
+        </Html>
+      ))}
+    </group>
+  );
+};
+
+// 5. Player Mesh
 const PlayerMesh = ({ player }: { player: any }) => {
   const appearance = useMemo(() => generateCharacterStyle(player.realm, player.bodyType, '玩家'), [player]);
 
@@ -319,7 +408,7 @@ interface Map2DProps {
 }
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, resourcePoints, movePlayer } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
   const triggeredRef = useRef<Set<string>>(new Set());
 
@@ -434,6 +523,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           const dy = npc.position.y - player.position.y;
           if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
           return <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} onClick={() => setSelectedNPC(npc)} />;
+        })}
+
+        {wildMonsters.map(monster => {
+          const dx = monster.position.x - player.position.x;
+          const dy = monster.position.y - player.position.y;
+          if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
+          return <MonsterMesh key={monster.id} monster={monster} dx={dx} dy={dy} />;
         })}
 
         <PlayerMesh player={player} />

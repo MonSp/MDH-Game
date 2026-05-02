@@ -7,7 +7,17 @@ export default {
     container: {
       center: true,
     },
-    extend: {},
+    extend: {
+      keyframes: {
+        'fade-up': {
+          '0%': { transform: 'translateY(0)', opacity: '1' },
+          '100%': { transform: 'translateY(-1rem)', opacity: '0' },
+        },
+      },
+      animation: {
+        'fade-up': 'fade-up 1.2s ease-out forwards',
+      },
+    },
   },
   plugins: [],
 };

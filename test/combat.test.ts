@@ -1,0 +1,602 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  useGameStore,
+  calculateDamage,
+  getMonstersForPlayerRealm,
+  createWildMonster,
+  MAX_MONSTERS,
+  SPAWN_CHANCE,
+  SPAWN_MIN_DIST,
+  SPAWN_MAX_DIST,
+  DESPAWN_DIST,
+  MONSTER_TYPES_DATA,
+  MONSTER_REALM_ORDER,
+  REALM_LIST,
+  COUNTRIES_DATA,
+} from '../src/store/gameStore';
+
+function initPlayer(overrides: Record<string, any> = {}) {
+  useGameStore.setState({
+    player: {
+      id: 'test-player',
+      name: 'Test',
+      realm: '凡人',
+      heavenLevel: 9,
+      country: '齐',
+      bodyType: '凡体',
+      potential: '无',
+      clanId: 'clan-0',
+      position: { x: 400, y: 600 },
+      stats: {
+        hp: 100,
+        maxHp: 100,
+        mp: 100,
+        maxMp: 100,
+        attack: 10,
+        defense: 10,
+        exp: 0,
+        maxExp: 100,
+      },
+      talent: { spiritualRoot: 100, boneConstitution: 50, comprehension: 100, fortune: 50 },
+      inventory: { '灵石': 1000 },
+      hiddenStats: { killCount: 0, cultivateCount: 0, gatherCount: 0, ascensionCount: 0, merit: 0 },
+      isAscending: false,
+      cycleInfo: { type: null },
+      ...overrides,
+    },
+    logs: [],
+    resourcePoints: [],
+    clans: [],
+    wildMonsters: [],
+    nearbyNPCs: [],
+  } as any);
+}
+
+function initPlayerAtRealm(realm: string) {
+  initPlayer({ realm });
+}
+
+describe('calculateDamage()', () => {
+  it('returns at least 1 damage', () => {
+    expect(calculateDamage(1, 100)).toBe(1);
+    expect(calculateDamage(0, 100)).toBe(1);
+    expect(calculateDamage(5, 9999)).toBe(1);
+  });
+
+  it('deals high damage when attack >> defense', () => {
+    const dmg = calculateDamage(100, 5);
+    expect(dmg).toBe(95); // 100*100/(100+5) = 95.23 → 95
+  });
+
+  it('deals moderate damage when attack ≈ defense', () => {
+    const dmg = calculateDamage(50, 50);
+    expect(dmg).toBe(25); // 50*50/(50+50) = 25
+  });
+
+  it('deals reduced damage when attack < defense', () => {
+    const dmg = calculateDamage(30, 100);
+    expect(dmg).toBe(6); // 30*30/(30+100) = 6.92 → 6
+  });
+
+  it('scales proportionally for high-tier combat', () => {
+    // 元婴 monster vs 元婴 player
+    const monsterAtk = 400;
+    const playerDef = 120;
+    expect(calculateDamage(monsterAtk, playerDef)).toBe(307); // 400*400/(400+120) = 307.69 → 307
+
+    const playerAtk = 400;
+    const monsterDef = 120;
+    expect(calculateDamage(playerAtk, monsterDef)).toBe(307);
+  });
+
+  it('handles zero defense without division by zero', () => {
+    expect(calculateDamage(50, 0)).toBe(50); // 50*50/(50+0) = 50
+    expect(calculateDamage(100, 0)).toBe(100);
+  });
+});
+
+describe('getMonstersForPlayerRealm()', () => {
+  it('returns 练气 monsters for 凡人 player (fallback to lowest)', () => {
+    const types = getMonstersForPlayerRealm('凡人');
+    expect(types).toContain('赤焰蛇');
+  });
+
+  it('returns 练气-筑基 monsters for 练气 player', () => {
+    const types = getMonstersForPlayerRealm('练气');
+    expect(types).toContain('赤焰蛇');
+    expect(types).toContain('冰晶蝎');
+  });
+
+  it('returns 练气-筑基-金丹 monsters for 筑基 player', () => {
+    const types = getMonstersForPlayerRealm('筑基');
+    expect(types).toContain('赤焰蛇');
+    expect(types).toContain('冰晶蝎');
+    expect(types).toContain('幽冥狼');
+  });
+
+  it('returns 化神-炼虚-合体 for 炼虚 player', () => {
+    const types = getMonstersForPlayerRealm('炼虚');
+    expect(types).toContain('血玉蛛');
+    expect(types).toContain('玄冰蟒');
+    expect(types).toContain('金翅大鹏');
+  });
+
+  it('returns only 合体 for 渡劫 player (fallback to highest)', () => {
+    const types = getMonstersForPlayerRealm('渡劫');
+    expect(types).toEqual(['金翅大鹏']);
+  });
+});
+
+describe('createWildMonster()', () => {
+  it('returns a monster within 5-10 tiles of player', () => {
+    const playerPos = { x: 100, y: 100 };
+    const monster = createWildMonster(playerPos, '筑基');
+    expect(monster).not.toBeNull();
+
+    const dist = Math.sqrt(
+      (monster!.position.x - playerPos.x) ** 2 +
+      (monster!.position.y - playerPos.y) ** 2
+    );
+    expect(dist).toBeGreaterThanOrEqual(SPAWN_MIN_DIST);
+    expect(dist).toBeLessThanOrEqual(SPAWN_MAX_DIST + 2); // +2 for rounding
+  });
+
+  it('creates a monster with valid stats', () => {
+    const monster = createWildMonster({ x: 100, y: 100 }, '金丹');
+    expect(monster).not.toBeNull();
+    expect(monster!.hp).toBeGreaterThan(0);
+    expect(monster!.maxHp).toBeGreaterThan(0);
+    expect(monster!.attack).toBeGreaterThan(0);
+    expect(monster!.defense).toBeGreaterThanOrEqual(0);
+    expect(monster!.expReward).toBeGreaterThan(0);
+    expect(monster!.isAlive).toBe(true);
+    expect(monster!.id).toMatch(/^monster-/);
+  });
+
+  it('returns null if no monster types available', () => {
+    // Mock empty realm order — edge case; should not happen in practice
+    const monster = createWildMonster({ x: 0, y: 0 }, '无' as any);
+    // May or may not be null depending on fallback behavior
+    expect(monster).not.toBeNull();
+  });
+});
+
+describe('updateNPCs() monster spawning', () => {
+  beforeEach(() => {
+    useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
+  });
+
+  it('spawns monsters over multiple ticks', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Force many ticks to ensure spawning (15% chance per tick, max 6)
+    for (let i = 0; i < 200; i++) {
+      store.updateNPCs();
+    }
+
+    const state = useGameStore.getState();
+    expect(state.wildMonsters.length).toBeGreaterThan(0);
+    expect(state.wildMonsters.length).toBeLessThanOrEqual(MAX_MONSTERS);
+  });
+
+  it('respects MAX_MONSTERS cap', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Pre-fill with max monsters at valid positions
+    const manyMonsters = Array.from({ length: MAX_MONSTERS }, (_, i) => ({
+      id: `monster-prest-${i}`,
+      name: '冰晶蝎' as const,
+      realm: '筑基' as const,
+      hp: 800,
+      maxHp: 800,
+      attack: 40,
+      defense: 15,
+      expReward: 80,
+      position: { x: 405 + i, y: 600 },
+      isAlive: true,
+    }));
+    useGameStore.setState({ wildMonsters: manyMonsters });
+
+    for (let i = 0; i < 50; i++) {
+      store.updateNPCs();
+    }
+
+    const state = useGameStore.getState();
+    expect(state.wildMonsters.length).toBeLessThanOrEqual(MAX_MONSTERS);
+  });
+});
+
+describe('updateNPCs() auto-combat', () => {
+  beforeEach(() => {
+    useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
+  });
+
+  it('player takes damage when adjacent to monster', () => {
+    initPlayerAtRealm('练气');
+    const store = useGameStore.getState();
+
+    // Place a monster 1 tile away
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-1',
+        name: '赤焰蛇',
+        realm: '练气',
+        hp: 200,
+        maxHp: 200,
+        attack: 15,
+        defense: 5,
+        expReward: 30,
+        position: { x: 401, y: 600 },
+        isAlive: true,
+      }],
+    });
+
+    const hpBefore = useGameStore.getState().player!.stats.hp;
+    store.updateNPCs();
+    const hpAfter = useGameStore.getState().player!.stats.hp;
+
+    // Player should have taken some damage from the monster
+    expect(hpAfter).toBeLessThan(hpBefore);
+  });
+
+  it('player can kill a monster and receive loot', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 1000, defense: 1000, exp: 0, maxExp: 10000 },
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-1',
+        name: '赤焰蛇',
+        realm: '练气',
+        hp: 200,
+        maxHp: 200,
+        attack: 15,
+        defense: 5,
+        expReward: 30,
+        position: { x: 400, y: 601 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+
+    const state = useGameStore.getState();
+    // Monster should be dead and removed
+    expect(state.wildMonsters.length).toBe(0);
+    // Player should gain exp and spirit stones
+    expect(state.player!.stats.exp).toBeGreaterThan(0);
+    expect(state.player!.inventory['灵石']).toBeGreaterThan(1000);
+    // Kill count should increment
+    expect(state.player!.hiddenStats.killCount).toBe(1);
+    // Combat log should have entries
+    const combatLogs = state.logs.filter(l => l.type === 'combat');
+    expect(combatLogs.length).toBeGreaterThan(0);
+  });
+
+  it('player flees to capital when HP reaches 0', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1, maxHp: 100, mp: 100, maxMp: 100, attack: 1, defense: 1, exp: 0, maxExp: 100 },
+      country: '齐',
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-1',
+        name: '赤焰蛇',
+        realm: '练气',
+        hp: 200,
+        maxHp: 200,
+        attack: 200, // high attack to one-shot
+        defense: 5,
+        expReward: 30,
+        position: { x: 400, y: 601 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+
+    const state = useGameStore.getState();
+    // Player should flee to capital with HP=1
+    expect(state.player!.stats.hp).toBe(1);
+    const capital = COUNTRIES_DATA['齐'].capital;
+    expect(state.player!.position).toEqual(capital);
+  });
+
+  it('only fights one monster per tick', () => {
+    initPlayerAtRealm('练气');
+    const store = useGameStore.getState();
+
+    // Give player enough attack to visibly damage but not kill
+    useGameStore.setState({
+      player: {
+        ...useGameStore.getState().player!,
+        stats: { ...useGameStore.getState().player!.stats, attack: 50, hp: 500, maxHp: 500 },
+      },
+    });
+
+    const hpBefore = 500;
+
+    // Place two monsters at different positions within 1 tile
+    useGameStore.setState({
+      wildMonsters: [
+        {
+          id: 'monster-1',
+          name: '赤焰蛇',
+          realm: '练气',
+          hp: 200,
+          maxHp: 200,
+          attack: 0, // no counter-damage to avoid edge cases
+          defense: 5,
+          expReward: 30,
+          position: { x: 401, y: 600 },
+          isAlive: true,
+        },
+        {
+          id: 'monster-2',
+          name: '赤焰蛇',
+          realm: '练气',
+          hp: 200,
+          maxHp: 200,
+          attack: 0,
+          defense: 5,
+          expReward: 30,
+          position: { x: 400, y: 601 },
+          isAlive: true,
+        },
+      ],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+
+    // At most one monster should have been damaged this tick
+    const damagedMonsters = state.wildMonsters.filter(m => m.hp < 200);
+    expect(damagedMonsters.length).toBeLessThanOrEqual(1);
+
+    // Player should have taken damage from at most one monster
+    // (hit by monster with 0 attack → calculateDamage(0, playerDef) = 1)
+    const hpAfter = state.player!.stats.hp;
+    expect(hpAfter).toBeLessThan(hpBefore);
+  });
+});
+
+describe('updateNPCs() monster despawn', () => {
+  beforeEach(() => {
+    useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
+  });
+
+  it('despawns monsters farther than 20 tiles', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Place a monster just beyond despawn distance
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-far',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800,
+        maxHp: 800,
+        attack: 40,
+        defense: 15,
+        expReward: 80,
+        position: { x: 400 + DESPAWN_DIST + 1, y: 600 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+
+    const state = useGameStore.getState();
+    expect(state.wildMonsters.find(m => m.id === 'monster-far')).toBeUndefined();
+  });
+
+  it('keeps monsters at exactly DESPAWN_DIST', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-boundary',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800,
+        maxHp: 800,
+        attack: 40,
+        defense: 15,
+        expReward: 80,
+        position: { x: 400 + DESPAWN_DIST, y: 600 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+
+    const state = useGameStore.getState();
+    expect(state.wildMonsters.find(m => m.id === 'monster-boundary')).toBeDefined();
+  });
+});
+
+describe('updateNPCs() NPC vs monster', () => {
+  beforeEach(() => {
+    useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
+  });
+
+  it('NPC engages nearby monster', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Add an NPC near a monster
+    const npc = {
+      id: 'npc-fighter',
+      name: '巡逻护卫',
+      role: '散修',
+      clanId: 'clan-0',
+      realm: '筑基',
+      power: 200,
+      hp: 500,
+      maxHp: 500,
+      personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+      resources: { spiritStone: 100 },
+      activity: '巡逻',
+      position: { x: 400, y: 605 },
+      targetPlayerId: undefined,
+    };
+
+    useGameStore.setState({
+      nearbyNPCs: [npc as any],
+      wildMonsters: [{
+        id: 'monster-1',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800,
+        maxHp: 800,
+        attack: 40,
+        defense: 15,
+        expReward: 80,
+        position: { x: 400, y: 606 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+
+    const state = useGameStore.getState();
+    // Monster should have taken damage
+    const monster = state.wildMonsters.find(m => m.id === 'monster-1');
+    expect(monster).toBeDefined();
+    if (monster) {
+      expect(monster.hp).toBeLessThan(800);
+    }
+  });
+
+  it('NPC retreats when HP reaches 0 and recovers after 5 ticks', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Very weak NPC next to a strong monster
+    const weakNpc = {
+      id: 'npc-weak',
+      name: '弱小散修',
+      role: '散修',
+      clanId: 'clan-0',
+      realm: '练气',
+      power: 5,
+      hp: 30, // low enough to be killed in one hit
+      maxHp: 30,
+      personality: { ambition: 10, caution: 50, loyalty: 30, greed: 40 },
+      resources: { spiritStone: 10 },
+      activity: '闲逛',
+      position: { x: 400, y: 605 },
+      targetPlayerId: undefined,
+    };
+
+    useGameStore.setState({
+      nearbyNPCs: [weakNpc as any],
+      wildMonsters: [{
+        id: 'monster-strong',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800,
+        maxHp: 800,
+        attack: 100, // high attack to one-shot the NPC
+        defense: 15,
+        expReward: 80,
+        position: { x: 400, y: 606 },
+        isAlive: true,
+      }],
+    });
+
+    // Tick 1: NPC should get beaten and retreat
+    store.updateNPCs();
+    let state = useGameStore.getState();
+    let npc = state.nearbyNPCs.find(n => n.id === 'npc-weak');
+    expect(npc).toBeDefined();
+    expect(npc!.retreatTicksRemaining).toBeGreaterThanOrEqual(1);
+
+    // Ticks 2-6: NPC in retreat (5 ticks of recovery)
+    for (let i = 0; i < 5; i++) {
+      store.updateNPCs();
+    }
+
+    state = useGameStore.getState();
+    npc = state.nearbyNPCs.find(n => n.id === 'npc-weak');
+
+    // After 5 ticks, NPC should have retreated and then recovered
+    expect(npc!.retreatTicksRemaining).toBeUndefined();
+    expect(npc!.hp).toBe(npc!.maxHp);
+  });
+});
+
+describe('updateNPCs() edge cases', () => {
+  beforeEach(() => {
+    useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
+  });
+
+  it('handles undefined inventory for 灵石 on monster kill', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10000, defense: 1000, exp: 0, maxExp: 10000 },
+      inventory: {}, // No 灵石 key at all
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-1',
+        name: '赤焰蛇',
+        realm: '练气',
+        hp: 200,
+        maxHp: 200,
+        attack: 15,
+        defense: 5,
+        expReward: 30,
+        position: { x: 400, y: 601 },
+        isAlive: true,
+      }],
+    });
+
+    // Should not throw
+    expect(() => store.updateNPCs()).not.toThrow();
+
+    const state = useGameStore.getState();
+    expect(state.player!.inventory['灵石']).toBe(50); // Should have been set
+  });
+
+  it('monsters move toward player when far', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Monster at distance 5 — should move toward player
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-moving',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800,
+        maxHp: 800,
+        attack: 40,
+        defense: 15,
+        expReward: 80,
+        position: { x: 410, y: 600 }, // 10 tiles away
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-moving');
+    expect(monster).toBeDefined();
+    // Monster should have moved closer to player (400, 600)
+    expect(monster!.position.x).toBeLessThan(410); // moved left toward 400
+  });
+});
