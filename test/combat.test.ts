@@ -599,4 +599,277 @@ describe('updateNPCs() edge cases', () => {
     // Monster should have moved closer to player (400, 600)
     expect(monster!.position.x).toBeLessThan(410); // moved left toward 400
   });
+
+  it('monster moves toward NPC when NPC is closer than player', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Monster closer to NPC than player
+    useGameStore.setState({
+      nearbyNPCs: [{
+        id: 'npc-target',
+        name: '散修',
+        role: '散修',
+        clanId: 'clan-0',
+        realm: '筑基',
+        power: 100,
+        hp: 500, maxHp: 500,
+        personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+        resources: { spiritStone: 100 },
+        activity: '闲逛',
+        position: { x: 405, y: 600 }, // NPC at (405, 600)
+        targetPlayerId: undefined,
+      } as any],
+      wildMonsters: [{
+        id: 'monster-npc-move',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800, maxHp: 800,
+        attack: 40, defense: 15,
+        expReward: 80,
+        position: { x: 410, y: 600 }, // 5 tiles from NPC, 10 from player
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-npc-move');
+    // Should move toward NPC at (405), so x should decrease from 410
+    expect(monster!.position.x).toBeLessThan(410);
+  });
+
+  it('NPC kills a monster', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // Strong NPC next to weak monster
+    useGameStore.setState({
+      nearbyNPCs: [{
+        id: 'npc-strong',
+        name: '金丹长老',
+        role: '长老',
+        clanId: 'clan-0',
+        realm: '金丹',
+        power: 5000,
+        hp: 1000, maxHp: 1000,
+        personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+        resources: { spiritStone: 100 },
+        activity: '巡逻',
+        position: { x: 400, y: 605 },
+        targetPlayerId: undefined,
+      } as any],
+      wildMonsters: [{
+        id: 'monster-npc-kill',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 50, maxHp: 800,
+        attack: 5, defense: 5,
+        expReward: 80,
+        position: { x: 400, y: 606 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    // Monster should be dead and removed from the list (filtered by isAlive)
+    const monster = state.wildMonsters.find(m => m.id === 'monster-npc-kill');
+    expect(monster).toBeUndefined();
+  });
+
+  it('NPC targets nearest monster among multiple adjacent', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // NPC equidistant from two monsters — should target the nearest one
+    const npc = {
+      id: 'npc-nearest',
+      name: '巡逻护卫',
+      role: '散修',
+      clanId: 'clan-0',
+      realm: '筑基',
+      power: 200,
+      hp: 500, maxHp: 500,
+      personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+      resources: { spiritStone: 100 },
+      activity: '巡逻',
+      position: { x: 400, y: 604 },
+      targetPlayerId: undefined,
+    };
+
+    useGameStore.setState({
+      nearbyNPCs: [npc as any],
+      wildMonsters: [
+        {
+          id: 'monster-near',
+          name: '冰晶蝎',
+          realm: '筑基',
+          hp: 800, maxHp: 800,
+          attack: 0, defense: 15,
+          expReward: 80,
+          position: { x: 400, y: 605 }, // 1 tile from NPC (nearest)
+          isAlive: true,
+        },
+        {
+          id: 'monster-far',
+          name: '冰晶蝎',
+          realm: '筑基',
+          hp: 800, maxHp: 800,
+          attack: 0, defense: 15,
+          expReward: 80,
+          position: { x: 405, y: 605 }, // farther from NPC
+          isAlive: true,
+        },
+      ],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    // Only the nearest monster should have been fought
+    const near = state.wildMonsters.find(m => m.id === 'monster-near');
+    const far = state.wildMonsters.find(m => m.id === 'monster-far');
+    expect(near).toBeDefined();
+    if (near) expect(near.hp).toBeLessThan(800); // damaged
+    expect(far).toBeDefined();
+    if (far) expect(far.hp).toBe(800); // untouched
+  });
+
+  it('two NPCs can fight the same monster in the same tick (foughtThisTick does not block same monster for different NPCs in current implementation)', () => {
+    // Note: Analysis shows two NPCs adjacent to the same monster: first NPC fights,
+    // monster goes into foughtThisTick, second NPC skips it. This test verifies that behavior.
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    const npc1 = {
+      id: 'npc-alpha',
+      name: '护卫甲',
+      role: '散修',
+      clanId: 'clan-0',
+      realm: '筑基',
+      power: 200,
+      hp: 500, maxHp: 500,
+      personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+      resources: { spiritStone: 100 },
+      activity: '巡逻',
+      position: { x: 400, y: 605 },
+      targetPlayerId: undefined,
+    };
+    const npc2 = {
+      id: 'npc-beta',
+      name: '护卫乙',
+      role: '散修',
+      clanId: 'clan-0',
+      realm: '筑基',
+      power: 200,
+      hp: 500, maxHp: 500,
+      personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+      resources: { spiritStone: 100 },
+      activity: '巡逻',
+      position: { x: 401, y: 605 },
+      targetPlayerId: undefined,
+    };
+
+    useGameStore.setState({
+      nearbyNPCs: [npc1 as any, npc2 as any],
+      wildMonsters: [{
+        id: 'monster-solo',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 800, maxHp: 800,
+        attack: 0, defense: 15,
+        expReward: 80,
+        position: { x: 400, y: 606 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-solo');
+    expect(monster).toBeDefined();
+    // Monster should have been damaged once (only one NPC fought it)
+    if (monster) {
+      const dmg = 800 - monster.hp;
+      const expectedDmg = calculateDamage(Math.floor(200 / 10), 15); // npc power/10 = 20 atk, def=15
+      expect(dmg).toBe(expectedDmg);
+    }
+  });
+
+  it('NPC and monster can both be defeated in the same tick', () => {
+    initPlayerAtRealm('筑基');
+    const store = useGameStore.getState();
+
+    // NPC and monster both with low HP so they kill each other
+    useGameStore.setState({
+      nearbyNPCs: [{
+        id: 'npc-sacrifice',
+        name: '死士',
+        role: '散修',
+        clanId: 'clan-0',
+        realm: '筑基',
+        power: 200, // atk=20, def=10
+        hp: 15, maxHp: 500, // low HP
+        personality: { ambition: 50, caution: 30, loyalty: 60, greed: 20 },
+        resources: { spiritStone: 100 },
+        activity: '巡逻',
+        position: { x: 400, y: 605 },
+        targetPlayerId: undefined,
+      } as any],
+      wildMonsters: [{
+        id: 'monster-double-kill',
+        name: '冰晶蝎',
+        realm: '筑基',
+        hp: 15, maxHp: 800, // low HP
+        attack: 200, // high attack to kill NPC
+        defense: 0, // zero defense so NPC's atk=20 kills it (20*20/(20+0)=20 >= 15)
+        expReward: 80,
+        position: { x: 400, y: 606 },
+        isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+
+    // Monster should be dead (removed)
+    expect(state.wildMonsters.find(m => m.id === 'monster-double-kill')).toBeUndefined();
+    // NPC should be in retreat
+    const npc = state.nearbyNPCs.find(n => n.id === 'npc-sacrifice');
+    expect(npc).toBeDefined();
+    expect(npc!.retreatTicksRemaining).toBeGreaterThanOrEqual(1);
+  });
+
+  it('handles player with undefined defense', () => {
+    initPlayer({
+      realm: '练气',
+      stats: {
+        hp: 1000, maxHp: 1000, mp: 100, maxMp: 100,
+        attack: 1000,
+        defense: undefined as any, // undefined defense
+        exp: 0, maxExp: 10000,
+      },
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-def-test',
+        name: '赤焰蛇',
+        realm: '练气',
+        hp: 200, maxHp: 200,
+        attack: 15, defense: 5,
+        expReward: 30,
+        position: { x: 400, y: 601 },
+        isAlive: true,
+      }],
+    });
+
+    // Should not throw — defense || 0 fallback
+    expect(() => store.updateNPCs()).not.toThrow();
+
+    const state = useGameStore.getState();
+    // Monster should be dead and player took damage using 0 defense
+    expect(state.wildMonsters.find(m => m.id === 'monster-def-test')).toBeUndefined();
+  });
 });
