@@ -249,6 +249,106 @@ describe('Squad System — equipMember / unequipMember', () => {
     expect(useGameStore.getState().player!.inventory['低级法器']).toBe(2); // not consumed
   });
 
+  it('equipMember no-ops when player is null', () => {
+    useGameStore.setState({
+      player: null,
+      squadMembers: [],
+    });
+    // Should not throw
+    useGameStore.getState().equipMember('member-1', '低级法器');
+    expect(useGameStore.getState().player).toBeNull();
+  });
+
+  it('equipMember no-ops when item not in inventory', () => {
+    useGameStore.setState({
+      player: createTestPlayer({ reputation: 1000, inventory: { '灵石': 1000 } }),
+      squadMembers: [{
+        id: 'member-1',
+        npcId: 'npc-1', name: '赵云', clanId: 'test-clan',
+        role: '战斗型' as const, realm: '练气' as const,
+        power: 30, hp: 80, maxHp: 80, mp: 15, maxMp: 15,
+        personality: { ambition: 70, caution: 30, loyalty: 60, greed: 40 },
+        joinDate: Date.now(), kills: 0, isAlive: true,
+        position: { x: 50, y: 50 }, activity: '跟随中',
+        equipment: [], level: 1, exp: 0, maxExp: 80,
+      }],
+    });
+    // 低级法器 not in inventory — should no-op
+    useGameStore.getState().equipMember('member-1', '低级法器');
+    const member = useGameStore.getState().squadMembers.find(m => m.id === 'member-1')!;
+    expect(member.equipment).toEqual([]);
+    expect(member.power).toBe(30);
+  });
+
+  it('unequipMember no-ops when player is null', () => {
+    useGameStore.setState({
+      player: null,
+      squadMembers: [],
+    });
+    // Should not throw
+    useGameStore.getState().unequipMember('member-1', '低级法器');
+  });
+
+  it('unequipMember no-ops on dead member', () => {
+    useGameStore.setState({
+      player: createTestPlayer({ reputation: 1000, inventory: { '低级法器': 1 } }),
+      squadMembers: [{
+        id: 'member-1',
+        npcId: 'npc-1', name: '赵云', clanId: 'test-clan',
+        role: '战斗型' as const, realm: '练气' as const,
+        power: 40, hp: 0, maxHp: 80, mp: 0, maxMp: 15,
+        personality: { ambition: 70, caution: 30, loyalty: 60, greed: 40 },
+        joinDate: Date.now(), kills: 0, isAlive: false,
+        position: { x: 50, y: 50 }, activity: '已阵亡',
+        equipment: ['低级法器'], level: 1, exp: 0, maxExp: 80,
+      }],
+    });
+    // Dead member — inventory should not be modified
+    useGameStore.getState().unequipMember('member-1', '低级法器');
+    expect(useGameStore.getState().player!.inventory['低级法器']).toBe(1);
+  });
+
+  it('unequipMember no-ops when member does not have item', () => {
+    useGameStore.setState({
+      player: createTestPlayer({ reputation: 1000, inventory: { '低级法器': 1 } }),
+      squadMembers: [{
+        id: 'member-1',
+        npcId: 'npc-1', name: '赵云', clanId: 'test-clan',
+        role: '战斗型' as const, realm: '练气' as const,
+        power: 30, hp: 80, maxHp: 80, mp: 15, maxMp: 15,
+        personality: { ambition: 70, caution: 30, loyalty: 60, greed: 40 },
+        joinDate: Date.now(), kills: 0, isAlive: true,
+        position: { x: 50, y: 50 }, activity: '跟随中',
+        equipment: [], level: 1, exp: 0, maxExp: 80,
+      }],
+    });
+    // Member has no '低级法器' equipped — inventory unchanged
+    useGameStore.getState().unequipMember('member-1', '低级法器');
+    expect(useGameStore.getState().player!.inventory['低级法器']).toBe(1);
+  });
+
+  it('unequipMember clamps power to minimum 1', () => {
+    useGameStore.setState({
+      player: createTestPlayer({ reputation: 1000, inventory: { '灵石': 1000, '低级法器': 1 } }),
+      squadMembers: [{
+        id: 'member-1',
+        npcId: 'npc-1', name: '赵云', clanId: 'test-clan',
+        role: '战斗型' as const, realm: '练气' as const,
+        power: 1, // base power 1, equipment bonus made it 11
+        hp: 80, maxHp: 80, mp: 15, maxMp: 15,
+        personality: { ambition: 70, caution: 30, loyalty: 60, greed: 40 },
+        joinDate: Date.now(), kills: 0, isAlive: true,
+        position: { x: 50, y: 50 }, activity: '跟随中',
+        equipment: [], // no equip — power floor is tested statically
+        level: 1, exp: 0, maxExp: 80,
+      }],
+    });
+    // Power is already 1, unequip should not drop below 1
+    useGameStore.getState().unequipMember('member-1', '低级法器');
+    const member = useGameStore.getState().squadMembers.find(m => m.id === 'member-1')!;
+    expect(member.power).toBeGreaterThanOrEqual(1);
+  });
+
   it('unequip removes item, restores power, returns to inventory', () => {
     useGameStore.setState({
       player: createTestPlayer({ reputation: 1000, inventory: { '灵石': 1000, '低级法器': 1 } }),

@@ -2,6 +2,16 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.7.0.0] - 2026-05-03
+
+### Fixed
+- Frozen Zustand state mutation in combat tick: squad members are now deep-cloned before mutation to prevent TypeError when Zustand freezes state in dev mode
+- Hard-coded equipment filter in SquadPanel replaced with dynamic EQUIPPABLE_ITEMS constant lookup
+
+### Added
+- 13 squad system tests covering max squad size tiers, recruit cap enforcement, member initialization fields (equipment, level, exp), equip/unequip lifecycle with power bonuses, and equipment return on dismissal
+- EQUIPPABLE_ITEMS exportable constant mapping item names to power bonuses, used by equipMember/unequipMember and the SquadPanel filter
+
 ## [1.6.0.0] - 2026-05-03
 
 ### Added
