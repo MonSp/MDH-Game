@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGameStore, NPC, WildMonster, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
+import { useGameStore, NPC, WildMonster, type SquadMember, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile } from '../utils/terrain';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
@@ -273,6 +273,39 @@ const NPCMesh = ({ npc, dx, dy, onClick }: { npc: NPC, dx: number, dy: number, o
   );
 };
 
+// 3b. Squad Member Mesh
+const SquadMemberMesh = ({ member, dx, dy }: { member: SquadMember; dx: number; dy: number }) => {
+  const appearance = useMemo(() => generateCharacterStyle(member.realm, '凡体', '核心子弟'), [member]);
+
+  const tile = getTerrainTile(member.position.x, member.position.y);
+  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+
+  return (
+    <group position={[dx, baseHeight, dy]}>
+      {/* Golden aura to distinguish squad members */}
+      <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.6, 32]} />
+        <meshBasicMaterial color="#fbbf24" transparent opacity={0.25} />
+      </mesh>
+      {/* Body */}
+      <group>
+        <CultivatorModel appearance={appearance} isMoving={false} isFloating={tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER'} />
+      </group>
+      {/* Tags */}
+      <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
+        <div className="flex flex-col items-center">
+          <div className="bg-amber-900/80 px-1.5 py-0.5 rounded text-[10px] text-amber-300 border border-amber-700/50 whitespace-nowrap shadow-sm mb-1">
+            {member.role}
+          </div>
+          <div className="bg-zinc-900/80 px-1 py-0.5 rounded text-[10px] text-zinc-400 border border-zinc-800 whitespace-nowrap">
+            {member.name}
+          </div>
+        </div>
+      </Html>
+    </group>
+  );
+};
+
 // 4. Monster Mesh
 const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy: number }) => {
   const tile = getTerrainTile(monster.position.x, monster.position.y);
@@ -442,7 +475,7 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, movePlayer } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
   // Keyboard Movement + proximity trigger
@@ -589,6 +622,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           return <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} onClick={() => setSelectedNPC(npc)} />;
         })}
 
+        {squadMembers.filter(m => m.isAlive).map(member => {
+          const dx = member.position.x - player.position.x;
+          const dy = member.position.y - player.position.y;
+          if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
+          return <SquadMemberMesh key={member.id} member={member} dx={dx} dy={dy} />;
+        })}
+
         {wildMonsters.map(monster => {
           const dx = monster.position.x - player.position.x;
           const dy = monster.position.y - player.position.y;
@@ -672,26 +712,47 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
               <p>性格：<span className="text-purple-400">野心 {selectedNPC.personality.ambition} | 谨慎 {selectedNPC.personality.caution} | 忠诚 {selectedNPC.personality.loyalty} | 贪婪 {selectedNPC.personality.greed}</span></p>
               <p className="text-zinc-500 italic mt-2 text-xs">“修仙之路，逆天而行，你找我有何事？”</p>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <button 
-                className="py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition-colors"
-                onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '交谈'); setSelectedNPC(null); }}
-              >
-                交谈
-              </button>
-              <button 
-                className="py-2 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded transition-colors"
-                onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '交易'); setSelectedNPC(null); }}
-              >
-                交易
-              </button>
-              <button 
-                className="py-2 bg-rose-900/50 hover:bg-rose-800 text-rose-400 rounded transition-colors border border-rose-900"
-                onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '攻击'); setSelectedNPC(null); }}
-              >
-                攻击
-              </button>
-            </div>
+            {(() => {
+              const recruitCost = useGameStore.getState().getRecruitCost(selectedNPC);
+              return (
+                <div className="grid grid-cols-4 gap-2">
+                  <button
+                    className="py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition-colors text-sm"
+                    onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '交谈'); setSelectedNPC(null); }}
+                  >
+                    交谈
+                  </button>
+                  <button
+                    className="py-2 bg-zinc-800 hover:bg-zinc-700 text-blue-400 rounded transition-colors text-sm"
+                    onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '交易'); setSelectedNPC(null); }}
+                  >
+                    交易
+                  </button>
+                  <button
+                    className="py-2 bg-rose-900/50 hover:bg-rose-800 text-rose-400 rounded transition-colors border border-rose-900 text-sm"
+                    onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '攻击'); setSelectedNPC(null); }}
+                  >
+                    攻击
+                  </button>
+                  <button
+                    className={`py-2 rounded transition-colors text-sm ${
+                      recruitCost.canRecruit
+                        ? 'bg-amber-900/50 hover:bg-amber-800 text-amber-400 border border-amber-900'
+                        : 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
+                    }`}
+                    onClick={() => {
+                      if (recruitCost.canRecruit) {
+                        useGameStore.getState().recruitToSquad(selectedNPC.id);
+                        setSelectedNPC(null);
+                      }
+                    }}
+                    title={recruitCost.reason || `需要${recruitCost.reputationRequired}声望 + ${recruitCost.spiritStoneCost}灵石`}
+                  >
+                    招募
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

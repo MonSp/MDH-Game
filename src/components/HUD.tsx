@@ -1,19 +1,21 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
+import { SquadPanel } from './SquadPanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
 }
 
 export const HUD = ({ onOpenChronicle }: HUDProps) => {
-  const { player, clans, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot } = useGameStore();
+  const { player, clans, squadMembers, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot } = useGameStore();
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
   const [showCycle, setShowCycle] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showSquad, setShowSquad] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState('');
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
@@ -303,6 +305,19 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         </button>
 
         <button
+          onClick={() => setShowSquad(true)}
+          className="flex items-center justify-center space-x-2 w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded transition-colors text-amber-300 font-medium"
+        >
+          <Users size={16} />
+          <span>小队管理</span>
+          {squadMembers.filter(m => m.isAlive).length > 0 && (
+            <span className="inline-flex items-center justify-center w-5 h-5 bg-emerald-500/20 border border-emerald-500/50 rounded-full text-xs text-emerald-400">
+              {squadMembers.filter(m => m.isAlive).length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => { setSaveSlots(getSaveSlots()); setShowSaveDialog(true); }}
           className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
         >
@@ -375,6 +390,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       )}
 
       {showMarket && <MarketPanel onClose={() => setShowMarket(false)} />}
+      {showSquad && <SquadPanel onClose={() => setShowSquad(false)} />}
       
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">

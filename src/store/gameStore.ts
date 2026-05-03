@@ -130,6 +130,30 @@ export const REPUTATION_SOURCES: Record<string, { base: number; label: string }>
   gather: { base: 2, label: '采集资源' },
 };
 
+// 小队系统
+export type SquadRole = '战斗型' | '斥候型' | '军师型' | '后勤型';
+
+export const SQUAD_ROLE_INFO: Record<SquadRole, { label: string; description: string; statBonus: string }> = {
+  '战斗型': { label: '战斗型', description: '擅长正面作战', statBonus: '队伍战力+15%' },
+  '斥候型': { label: '斥候型', description: '擅长侦察探索', statBonus: '采集量+20%，预警危险' },
+  '军师型': { label: '军师型', description: '擅长谋略布局', statBonus: '修炼速度+10%' },
+  '后勤型': { label: '后勤型', description: '擅长后勤支援', statBonus: '丹药效果+15%' },
+};
+
+export const RECRUIT_REPUTATION_TIER: Record<SquadRole, number> = {
+  '战斗型': 100,
+  '斥候型': 500,
+  '军师型': 2000,
+  '后勤型': 500,
+};
+
+export const RECRUIT_SPIRITSTONE_COST: Record<SquadRole, number> = {
+  '战斗型': 200,
+  '斥候型': 350,
+  '军师型': 500,
+  '后勤型': 300,
+};
+
 export interface Player {
   id: string;
   name: string;
@@ -155,6 +179,26 @@ export interface Player {
   isAscending: boolean;
   ascensionTarget?: HeavenLevel;
   talent: TalentAttributes;
+}
+
+export interface SquadMember {
+  id: string;
+  npcId: string;
+  name: string;
+  clanId: string;
+  role: SquadRole;
+  realm: Realm;
+  power: number;
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  personality: { ambition: number; caution: number; loyalty: number; greed: number };
+  joinDate: number;
+  kills: number;
+  isAlive: boolean;
+  position: { x: number; y: number };
+  activity: string;
 }
 
 export interface Clan {
@@ -361,6 +405,10 @@ interface GameState {
   metNpcs: string[];
   setNpcMemory: (npcId: string, state: string) => void;
   npcMemory: Record<string, string>;
+  squadMembers: SquadMember[];
+  recruitToSquad: (npcId: string) => void;
+  dismissFromSquad: (squadMemberId: string) => void;
+  assignSquadRole: (squadMemberId: string, role: SquadRole) => void;
 
   // Save / Load
   saveToSlot: (slot: number) => void;
@@ -770,6 +818,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   metNpcs: [],
   npcMemory: {},
+  squadMembers: [],
   ascensionQuests: [],
 
   joinServer: (serverId, playerName) => {
@@ -1267,6 +1316,123 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
+  getRecruitCost: (npc) => {
+    const state = get();
+    if (!state.player) return { reputationRequired: 0, spiritStoneCost: 0, canRecruit: false, reason: '无玩家数据' };
+
+    // Auto-detect best role from personality
+    let role: SquadRole;
+    if (npc.personality.ambition > 60 && npc.personality.caution < 40) role = '战斗型';
+    else if (npc.personality.ambition > 50 && npc.personality.caution > 50) role = '军师型';
+    else if (npc.personality.caution > 60 && npc.personality.greed > 50) role = '后勤型';
+    else role = '斥候型';
+
+    const repRequired = RECRUIT_REPUTATION_TIER[role];
+    const baseCost = RECRUIT_SPIRITSTONE_COST[role];
+    const greedMod = npc.personality.greed > 70 ? 1 + (npc.personality.greed - 70) / 100 : 1;
+    const stoneCost = Math.floor(baseCost * greedMod);
+
+    if (state.player.reputation < repRequired) {
+      return { reputationRequired: repRequired, spiritStoneCost: stoneCost, canRecruit: false, reason: `声望不足，需要【${getReputationTitle(repRequired)}】` };
+    }
+    if ((state.player.inventory['灵石'] || 0) < stoneCost) {
+      return { reputationRequired: repRequired, spiritStoneCost: stoneCost, canRecruit: false, reason: `灵石不足，需要 ${stoneCost} 块` };
+    }
+    if (npc.personality.loyalty > 80) {
+      return { reputationRequired: repRequired, spiritStoneCost: stoneCost, canRecruit: false, reason: '此人极为忠诚，难以招揽' };
+    }
+    return { reputationRequired: repRequired, spiritStoneCost: stoneCost, canRecruit: true, reason: '' };
+  },
+
+  recruitToSquad: (npcId) => {
+    const state = get();
+    if (!state.player) return;
+    const npc = state.nearbyNPCs.find(n => n.id === npcId);
+    if (!npc) { state.addLog({ type: 'system', message: '该修士不在附近。' }); return; }
+
+    const { canRecruit, reason, spiritStoneCost } = get().getRecruitCost(npc);
+    if (!canRecruit) {
+      state.addLog({ type: 'system', message: `无法招募 ${npc.name}：${reason}` });
+      return;
+    }
+
+    // Auto-detect role
+    let role: SquadRole;
+    if (npc.personality.ambition > 60 && npc.personality.caution < 40) role = '战斗型';
+    else if (npc.personality.ambition > 50 && npc.personality.caution > 50) role = '军师型';
+    else if (npc.personality.caution > 60 && npc.personality.greed > 50) role = '后勤型';
+    else role = '斥候型';
+
+    const newMember: SquadMember = {
+      id: `squad-${Date.now()}`,
+      npcId: npc.id,
+      name: npc.name,
+      clanId: npc.clanId,
+      role,
+      realm: npc.realm,
+      power: npc.power,
+      hp: npc.hp,
+      maxHp: npc.maxHp,
+      mp: npc.mp,
+      maxMp: npc.maxMp,
+      personality: { ...npc.personality },
+      joinDate: Date.now(),
+      kills: 0,
+      isAlive: true,
+      position: { ...npc.position },
+      activity: '跟随中',
+    };
+
+    set(s => ({
+      squadMembers: [...s.squadMembers, newMember],
+      nearbyNPCs: s.nearbyNPCs.filter(n => n.id !== npcId),
+      player: s.player ? {
+        ...s.player,
+        inventory: { ...s.player.inventory, '灵石': (s.player.inventory['灵石'] || 0) - spiritStoneCost }
+      } : s.player,
+    }));
+    state.addLog({ type: 'event', message: `【招募】${npc.name} 加入了你的队伍，定位【${role}】！消耗了 ${spiritStoneCost} 块灵石。` });
+  },
+
+  dismissFromSquad: (squadMemberId) => {
+    const state = get();
+    if (!state.player) return;
+    const member = state.squadMembers.find(m => m.id === squadMemberId);
+    if (!member) return;
+
+    // Convert back to NPC and add to nearby
+    const newNpc: NPC = {
+      id: `former-squad-${Date.now()}`,
+      clanId: member.clanId,
+      name: member.name,
+      role: '支脉子弟',
+      realm: member.realm,
+      power: member.power,
+      hp: member.maxHp,
+      maxHp: member.maxHp,
+      mp: member.maxMp,
+      maxMp: member.maxMp,
+      personality: { ...member.personality },
+      resources: { spiritStone: Math.floor(Math.random() * 50) },
+      activity: '闲逛中',
+      position: { ...state.player.position },
+    };
+
+    set(s => ({
+      squadMembers: s.squadMembers.filter(m => m.id !== squadMemberId),
+      nearbyNPCs: [...s.nearbyNPCs, newNpc],
+    }));
+    state.addLog({ type: 'event', message: `${member.name} 离开了你的队伍。` });
+  },
+
+  assignSquadRole: (squadMemberId, role) => {
+    const state = get();
+    set(s => ({
+      squadMembers: s.squadMembers.map(m => m.id === squadMemberId ? { ...m, role } : m),
+    }));
+    state.addLog({ type: 'event', message: `小队成员职务已调整。` });
+  },
+
   buyItem: (itemName: string, amount: number) => {
     const state = get();
     if (!state.player) return;
@@ -1450,6 +1616,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         },
         resourcePoints: generateResourcePoints(player.position.x, player.position.y, nextHeavenLevel),
         nearbyNPCs: generateNearbyNPCs(newRandomClan.id, player.position.x, player.position.y, newRandomClan.country, nextHeavenLevel),
+        squadMembers: [],
         logs: [
           ...state.logs,
           { id: Date.now().toString() + 'a1', time: new Date().toLocaleTimeString(), type: 'ascension', message: `【飞升成功】你渡过九重天劫，肉身重塑，魂魄升华！` },
@@ -1534,7 +1701,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         },
         clans: generateClans(9),
         resourcePoints: generateResourcePoints(50, 50, 9),
-        nearbyNPCs: generateNearbyNPCs('9-秦-1级-1', 50, 50, '秦', 9)
+        nearbyNPCs: generateNearbyNPCs('9-秦-1级-1', 50, 50, '秦', 9),
+        squadMembers: [],
       });
       
       state.addLog({ type: 'cycle', message: `你以【转世灵童】之身重生于凡界，保留了前世的部分记忆与体质！` });
@@ -1748,6 +1916,75 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
+    // Phase 3: Squad member combat with monsters
+    let updatedSquadMembers = [...state.squadMembers];
+    for (const member of updatedSquadMembers) {
+      if (!member.isAlive) continue;
+      for (const monster of monsters) {
+        if (!monster.isAlive || foughtThisTick.has(monster.id)) continue;
+        const dx = Math.abs(monster.position.x - member.position.x);
+        const dy = Math.abs(monster.position.y - member.position.y);
+        if (dx <= 1 && dy <= 1) {
+          foughtThisTick.add(monster.id);
+
+          const memberAtk = Math.floor(member.power / 10);
+          const memberDef = Math.floor(member.power / 20);
+          const dmgToMonster = calculateDamage(memberAtk, monster.defense);
+          const dmgToMember = calculateDamage(monster.attack, memberDef);
+
+          monster.hp -= dmgToMonster;
+          member.hp -= dmgToMember;
+
+          state.addLog({ type: 'combat', message: `【${member.name}】向 ${monster.name} 发起攻击，造成 ${dmgToMonster} 点伤害！` });
+
+          if (monster.hp <= 0) {
+            monster.isAlive = false;
+            member.kills += 1;
+            state.addLog({ type: 'combat', message: `【${member.name}】击败了 ${monster.name}！` });
+          }
+
+          if (member.hp <= 0) {
+            member.isAlive = false;
+            member.hp = 0;
+            state.addLog({ type: 'combat', message: `【战死】${member.name} 在战斗中力竭身亡！你的心腹就此陨落...` });
+          }
+          break; // one monster per member per tick
+        }
+      }
+    }
+
+    // Phase 4: Squad follow behavior
+    if (state.player) {
+      updatedSquadMembers = updatedSquadMembers.map(member => {
+        if (!member.isAlive) return member;
+
+        const roleOrder: SquadRole[] = ['战斗型', '斥候型', '军师型', '后勤型'];
+        const roleIndex = roleOrder.indexOf(member.role);
+        const angle = (roleIndex / 4) * Math.PI * 2;
+        const radius = member.role === '战斗型' ? 1.5 : member.role === '斥候型' ? 3 : member.role === '军师型' ? 2 : 1.5;
+        const offsetX = Math.round(Math.cos(angle) * radius);
+        const offsetY = Math.round(Math.sin(angle) * radius);
+
+        const targetX = state.player!.position.x + offsetX;
+        const targetY = state.player!.position.y + offsetY;
+        const fdx = targetX - member.position.x;
+        const fdy = targetY - member.position.y;
+
+        if (Math.abs(fdx) <= 1 && Math.abs(fdy) <= 1) {
+          return { ...member, position: { ...member.position }, activity: '待命中' };
+        }
+
+        return {
+          ...member,
+          activity: '跟随中',
+          position: {
+            x: member.position.x + (fdx > 0 ? 1 : fdx < 0 ? -1 : 0),
+            y: member.position.y + (fdy > 0 ? 1 : fdy < 0 ? -1 : 0),
+          }
+        };
+      });
+    }
+
     // Remove dead monsters
     const aliveMonsters = monsters.filter(m => m.isAlive);
 
@@ -1767,6 +2004,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       clans: updatedClans,
       wildMonsters: aliveMonsters,
       player: updatedPlayer || state.player,
+      squadMembers: updatedSquadMembers,
     });
 
     // Handle enforcer combat (existing)
@@ -1802,6 +2040,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       market: s.market,
       metNpcs: s.metNpcs,
       npcMemory: s.npcMemory,
+      squadMembers: s.squadMembers,
       ascensionQuests: s.ascensionQuests,
     }, s.player.name, s.player.realm, s.player.heavenLevel);
   },
@@ -1822,6 +2061,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         market: gameState.market ?? {},
         metNpcs: gameState.metNpcs ?? [],
         npcMemory: gameState.npcMemory ?? {},
+        squadMembers: gameState.squadMembers ?? [],
         ascensionQuests: gameState.ascensionQuests ?? [],
       });
       return true;
