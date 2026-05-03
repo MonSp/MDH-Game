@@ -1,21 +1,23 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 import { SquadPanel } from './SquadPanel';
+import { FactionPanel } from './FactionPanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
 }
 
 export const HUD = ({ onOpenChronicle }: HUDProps) => {
-  const { player, clans, squadMembers, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot } = useGameStore();
+  const { player, clans, squadMembers, playerFactionId, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot } = useGameStore();
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
   const [showCycle, setShowCycle] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showSquad, setShowSquad] = useState(false);
+  const [showFaction, setShowFaction] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState('');
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
@@ -318,7 +320,23 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         </button>
 
         <button
-          onClick={() => { setSaveSlots(getSaveSlots()); setShowSaveDialog(true); }}
+          onClick={() => setShowFaction(true)}
+          className={`flex items-center justify-center space-x-2 w-full py-2 border rounded transition-colors font-medium ${
+            playerFactionId
+              ? 'bg-amber-900/40 hover:bg-amber-800/60 border-amber-700/50 text-amber-300'
+              : 'bg-zinc-800/60 hover:bg-zinc-700/80 border-zinc-700/50 text-zinc-300'
+          }`}
+        >
+          <Flag size={16} />
+          <span>{playerFactionId ? '势力管理' : '创建势力'}</span>
+          {playerFactionId && (
+            <span className="inline-flex items-center justify-center w-5 h-5 bg-amber-500/20 border border-amber-500/50 rounded-full text-xs text-amber-400">
+              {clans.find(c => c.id === playerFactionId)?.type?.replace('级', '') || '?'}
+            </span>
+          )}
+        </button>
+
+        <button
           className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
         >
           <Save size={14} />
@@ -391,6 +409,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
 
       {showMarket && <MarketPanel onClose={() => setShowMarket(false)} />}
       {showSquad && <SquadPanel onClose={() => setShowSquad(false)} />}
+      {showFaction && <FactionPanel onClose={() => setShowFaction(false)} />}
       
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">

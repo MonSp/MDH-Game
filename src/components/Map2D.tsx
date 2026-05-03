@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGameStore, NPC, WildMonster, type SquadMember, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
+import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile } from '../utils/terrain';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
@@ -435,7 +435,48 @@ const PlayerMesh = ({ player }: { player: any }) => {
   );
 };
 
-// 6. Scene Trigger Zone Marker (for points of interest on the map)
+// 6. Faction Base Mesh
+const FactionBaseMesh = ({ faction, playerPos }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; playerPos: { x: number; y: number } }) => {
+  const tile = getTerrainTile(playerPos.x, playerPos.y);
+  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+
+  return (
+    <group position={[0, baseHeight, 0]}>
+      {/* Territory ring */}
+      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.5, 2.5, 32]} />
+        <meshBasicMaterial color="#f59e0b" transparent opacity={0.2} side={THREE.DoubleSide} />
+      </mesh>
+
+      {/* Small building indicators */}
+      {(faction.buildings || []).map((b, i) => {
+        const angle = (i / 6) * Math.PI * 2;
+        const radius = 1.2;
+        const bx = Math.cos(angle) * radius;
+        const bz = Math.sin(angle) * radius;
+        const BUILDING_COLORS_MAP: Record<string, string> = {
+          '议事厅': '#fbbf24', '练功房': '#fb7185', '丹房': '#4ade80',
+          '藏经阁': '#c084fc', '库房': '#facc15', '哨塔': '#22d3ee',
+        };
+        return (
+          <mesh key={b.type} position={[bx, 0.1, bz]} castShadow>
+            <boxGeometry args={[0.2, 0.1 + b.level * 0.05, 0.2]} />
+            <meshStandardMaterial color={BUILDING_COLORS_MAP[b.type] || '#f59e0b'} />
+          </mesh>
+        );
+      })}
+
+      {/* Faction flag label */}
+      <Html position={[0, 1.5, 0]} center style={{ pointerEvents: 'none' }}>
+        <div className="bg-amber-900/80 border border-amber-500/60 px-2 py-0.5 rounded text-xs whitespace-nowrap shadow-lg text-amber-300 font-medium backdrop-blur-sm">
+          ⚐ {faction.name}
+        </div>
+      </Html>
+    </group>
+  );
+};
+
+// 7. Scene Trigger Zone Marker (for points of interest on the map)
 const SceneTriggerMarker = ({ marker, playerPos }: { marker: { id: string; x: number; y: number; label: string }; playerPos: { x: number; y: number } }) => {
   const dx = marker.x - playerPos.x;
   const dy = marker.y - playerPos.y;
@@ -475,7 +516,7 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, movePlayer } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
   // Keyboard Movement + proximity trigger
@@ -636,6 +677,10 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           return <MonsterMesh key={monster.id} monster={monster} dx={dx} dy={dy} />;
         })}
 
+        {playerFactionId && (() => {
+          const faction = clans.find(c => c.id === playerFactionId);
+          return faction ? <FactionBaseMesh faction={faction} playerPos={player.position} /> : null;
+        })()}
         <PlayerMesh player={player} />
       </Canvas>
 
