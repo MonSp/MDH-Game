@@ -252,6 +252,7 @@ export class LLMHttpClient {
     temperature: number,
     maxTokens: number,
     geminiMimeType: string | undefined,
+    logLabel: string,
     validate: (text: string) => { ok: boolean; result: T; error?: string } | { ok: false; result?: null; error: string },
     buildLogSuccess: (responseText: string, latencyMs: number, attempt: number) => Record<string, unknown>,
     buildLogError: (error: string, latencyMs: number, attempt: number) => Record<string, unknown>,
@@ -351,7 +352,7 @@ export class LLMHttpClient {
 
     this.evictExpiredFallbacks();
     this.fallbackUntil.set(context.npcId, Date.now() + FALLBACK_COOLDOWN_MS);
-    console.log(`[LLM] ${context.npcName} fallback (${lastError})`);
+    console.log(`[LLM]${logLabel ? ' ' + logLabel + ' ' : ' '}${context.npcName} fallback (${lastError})`);
 
     return {
       success: false,
@@ -371,6 +372,7 @@ export class LLMHttpClient {
       PLAN_TEMPERATURE,
       PLAN_MAX_TOKENS,
       'application/json',
+      '',
       (text) => {
         const plan = parsePlanResponse(text);
         if (!plan) return { ok: false as const, error: 'Failed to parse LLM response' };
@@ -401,6 +403,7 @@ export class LLMHttpClient {
       DIALOGUE_TEMPERATURE,
       DIALOGUE_MAX_TOKENS,
       undefined,
+      'Dialogue',
       (text) => {
         if (!/[一-鿿㐀-䶿]/.test(text)) {
           return { ok: false as const, error: 'Response contains no Chinese characters' };

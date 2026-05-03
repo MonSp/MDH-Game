@@ -15,7 +15,7 @@ import {
   BUILDING_EFFECTS, BUILDING_VISION_BONUS, type GameState, type Player, type Clan, type NPC,
   type WildMonster, type SquadMember, type Realm, type HeavenLevel, type BodyType,
   type BuildingType, type DiplomaticStatus, type ConflictLevel, type MonsterType,
-  type FactionBuilding, type ClanDiplomacy, type CycleType, type TalentAttributes,
+  type FactionBuilding, type ClanDiplomacy, type CycleType, type SquadRole, type BuildingLevel, type TalentAttributes,
 } from './gameConstants';
 
 // Re-export all public API from gameConstants
