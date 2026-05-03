@@ -154,6 +154,41 @@ export const RECRUIT_SPIRITSTONE_COST: Record<SquadRole, number> = {
   '后勤型': 300,
 };
 
+// 势力系统
+export type BuildingType = '议事厅' | '练功房' | '丹房' | '藏经阁' | '库房' | '哨塔';
+export type BuildingLevel = 1 | 2 | 3;
+export type FactionPosition = '家主' | '长老' | '供奉' | '核心成员' | '支脉子弟';
+
+export interface FactionBuilding {
+  type: BuildingType;
+  level: BuildingLevel;
+  hp: number;
+}
+
+export const BUILDING_EFFECTS: Record<BuildingType, string[]> = {
+  '议事厅': ['税率效率+10%', '税率效率+20%', '税率效率+30%，官员上限+2'],
+  '练功房': ['修炼速度+10%', '修炼速度+20%', '修炼速度+30%'],
+  '丹房': ['丹药效果+10%', '丹药效果+20%', '丹药效果+30%'],
+  '藏经阁': ['队伍战力+5%', '队伍战力+10%', '队伍战力+15%'],
+  '库房': ['被动收入+5/ tick', '被动收入+10/ tick', '被动收入+20/ tick'],
+  '哨塔': ['视野范围+2格', '视野范围+4格', '视野范围+6格'],
+};
+
+export const BUILDING_UPGRADE_COST: Record<BuildingType, number[]> = {
+  '议事厅': [5000, 20000, 50000],
+  '练功房': [3000, 10000, 30000],
+  '丹房': [3000, 10000, 30000],
+  '藏经阁': [5000, 20000, 50000],
+  '库房': [2000, 8000, 20000],
+  '哨塔': [2000, 8000, 20000],
+};
+
+export const FACTION_CREATE_REQUIREMENTS = {
+  reputation: 500,
+  spiritStones: 100000,
+  minSquadMembers: 3,
+};
+
 export interface Player {
   id: string;
   name: string;
@@ -210,6 +245,9 @@ export interface Clan {
   treasury: number;
   heavenLevel: HeavenLevel;
   isAscendingFamily: boolean;
+  buildings?: FactionBuilding[];
+  territory?: number;
+  morale?: number;
 }
 
 export interface NPC {
@@ -382,7 +420,8 @@ interface GameState {
   logs: LogEntry[];
   market: Record<string, MarketItem>;
   ascensionQuests: AscensionQuest[];
-  
+  playerFactionId: string | null;
+
   joinServer: (serverId: string, playerName: string) => void;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;
   movePlayer: (dx: number, dy: number) => void;
@@ -409,6 +448,13 @@ interface GameState {
   recruitToSquad: (npcId: string) => void;
   dismissFromSquad: (squadMemberId: string) => void;
   assignSquadRole: (squadMemberId: string, role: SquadRole) => void;
+
+  // 势力系统
+  createFaction: (name: string) => boolean;
+  upgradeBuilding: (buildingType: BuildingType) => void;
+  appointOfficer: (squadMemberId: string, position: FactionPosition) => void;
+  collectTax: () => number;
+  getFactionUpgradeCost: () => { reputation: number; stones: number };
 
   // Save / Load
   saveToSlot: (slot: number) => void;
@@ -819,6 +865,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   metNpcs: [],
   npcMemory: {},
   squadMembers: [],
+  playerFactionId: null,
   ascensionQuests: [],
 
   joinServer: (serverId, playerName) => {
@@ -1433,7 +1480,153 @@ export const useGameStore = create<GameState>((set, get) => ({
     state.addLog({ type: 'event', message: `小队成员职务已调整。` });
   },
 
-  buyItem: (itemName: string, amount: number) => {
+  // === 势力系统 ===
+
+  createFaction: (name) => {
+    const state = get();
+    if (!state.player) return false;
+    if (state.squadMembers.filter(m => m.isAlive).length < FACTION_CREATE_REQUIREMENTS.minSquadMembers) {
+      state.addLog({ type: 'system', message: `【创建势力】需要至少 ${FACTION_CREATE_REQUIREMENTS.minSquadMembers} 名存活队员。` });
+      return false;
+    }
+    if (state.player.reputation < FACTION_CREATE_REQUIREMENTS.reputation) {
+      state.addLog({ type: 'system', message: `【创建势力】需要声望达到【${getReputationTitle(FACTION_CREATE_REQUIREMENTS.reputation)}】。` });
+      return false;
+    }
+    if ((state.player.inventory['灵石'] || 0) < FACTION_CREATE_REQUIREMENTS.spiritStones) {
+      state.addLog({ type: 'system', message: `【创建势力】需要 ${FACTION_CREATE_REQUIREMENTS.spiritStones} 块灵石。` });
+      return false;
+    }
+
+    const factionId = `faction-${Date.now()}`;
+    const newClan: Clan = {
+      id: factionId,
+      name,
+      country: state.player.country,
+      type: '3级',
+      reputation: 100,
+      treasury: 0,
+      heavenLevel: state.player.heavenLevel,
+      isAscendingFamily: false,
+      buildings: [{ type: '议事厅', level: 1 as BuildingLevel, hp: 100 }],
+      territory: 1,
+      morale: 50,
+    };
+
+    set(s => ({
+      clans: [...s.clans, newClan],
+      player: s.player ? {
+        ...s.player,
+        clanId: factionId,
+        inventory: { ...s.player.inventory, '灵石': (s.player.inventory['灵石'] || 0) - FACTION_CREATE_REQUIREMENTS.spiritStones }
+      } : s.player,
+      playerFactionId: factionId,
+    }));
+    state.addLog({ type: 'event', message: `【创立势力】你消耗了 ${FACTION_CREATE_REQUIREMENTS.spiritStones} 块灵石，创立了【${name}】！` });
+    return true;
+  },
+
+  upgradeBuilding: (buildingType) => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) {
+      state.addLog({ type: 'system', message: '你没有管理任何势力。' });
+      return;
+    }
+
+    const faction = state.clans.find(c => c.id === state.playerFactionId);
+    if (!faction) return;
+    const buildings = faction.buildings || [];
+    const existing = buildings.find(b => b.type === buildingType);
+
+    if (!existing) {
+      // Build new
+      const cost = BUILDING_UPGRADE_COST[buildingType][0];
+      if ((state.player.inventory['灵石'] || 0) < cost) {
+        state.addLog({ type: 'system', message: `灵石不足，需要 ${cost} 块才能建造【${buildingType}】。` });
+        return;
+      }
+      set(s => ({
+        clans: s.clans.map(c => c.id === state.playerFactionId ? {
+          ...c,
+          buildings: [...(c.buildings || []), { type: buildingType, level: 1 as BuildingLevel, hp: 100 }]
+        } : c),
+        player: s.player ? {
+          ...s.player,
+          inventory: { ...s.player.inventory, '灵石': (s.player.inventory['灵石'] || 0) - cost }
+        } : s.player,
+      }));
+      state.addLog({ type: 'event', message: `【建造】你在驻地建造了【${buildingType}】！消耗了 ${cost} 块灵石。` });
+    } else if (existing.level < 3) {
+      const newLevel = (existing.level + 1) as BuildingLevel;
+      const cost = BUILDING_UPGRADE_COST[buildingType][existing.level];
+      if ((state.player.inventory['灵石'] || 0) < cost) {
+        state.addLog({ type: 'system', message: `灵石不足，需要 ${cost} 块才能升级【${buildingType}】。` });
+        return;
+      }
+      set(s => ({
+        clans: s.clans.map(c => c.id === state.playerFactionId ? {
+          ...c,
+          buildings: (c.buildings || []).map(b => b.type === buildingType ? { ...b, level: newLevel } : b)
+        } : c),
+        player: s.player ? {
+          ...s.player,
+          inventory: { ...s.player.inventory, '灵石': (s.player.inventory['灵石'] || 0) - cost }
+        } : s.player,
+      }));
+      state.addLog({ type: 'event', message: `【升级】${buildingType} 升至 ${newLevel} 级！消耗了 ${cost} 块灵石。` });
+    } else {
+      state.addLog({ type: 'system', message: `${buildingType} 已达最高等级。` });
+    }
+  },
+
+  appointOfficer: (squadMemberId, position) => {
+    const state = get();
+    set(s => ({
+      squadMembers: s.squadMembers.map(m => m.id === squadMemberId ? { ...m, activity: `职务：${position}` } : m),
+    }));
+    const member = state.squadMembers.find(m => m.id === squadMemberId);
+    state.addLog({ type: 'event', message: `【任命】${member?.name || '未知'} 被任命为【${position}】。` });
+  },
+
+  collectTax: () => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) {
+      state.addLog({ type: 'system', message: '你没有管理任何势力。' });
+      return 0;
+    }
+    const faction = state.clans.find(c => c.id === state.playerFactionId);
+    if (!faction) return 0;
+
+    const territory = faction.territory || 1;
+    const buildings = faction.buildings || [];
+    const hallLevel = (buildings.find(b => b.type === '议事厅')?.level || 1);
+    const treasuryLevel = (buildings.find(b => b.type === '库房')?.level || 1);
+
+    const baseIncome = territory * 50 + treasuryLevel * 30;
+    const taxMultiplier = 1 + (hallLevel - 1) * 0.1;
+    const total = Math.floor(baseIncome * taxMultiplier);
+
+    set(s => ({
+      clans: s.clans.map(c => c.id === state.playerFactionId ? {
+        ...c,
+        treasury: (c.treasury || 0) + total,
+        morale: Math.min(100, (c.morale || 50) + 1),
+      } : c),
+    }));
+    state.addLog({ type: 'event', message: `【税收】收取了 ${total} 块灵石的势力税收（领地${territory}，税率×${taxMultiplier.toFixed(1)}）。` });
+    return total;
+  },
+
+  getFactionUpgradeCost: () => {
+    const state = get();
+    if (!state.playerFactionId) return { reputation: 0, stones: 0 };
+    const faction = state.clans.find(c => c.id === state.playerFactionId);
+    if (!faction) return { reputation: 0, stones: 0 };
+    if (faction.type === '3级') return { reputation: 2000, stones: 500000 };
+    if (faction.type === '2级') return { reputation: 5000, stones: 2000000 };
+    return { reputation: 0, stones: 0 };
+  },
+  buyItem: (itemName, amount) => {
     const state = get();
     if (!state.player) return;
     const item = state.market[itemName];
@@ -1617,6 +1810,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         resourcePoints: generateResourcePoints(player.position.x, player.position.y, nextHeavenLevel),
         nearbyNPCs: generateNearbyNPCs(newRandomClan.id, player.position.x, player.position.y, newRandomClan.country, nextHeavenLevel),
         squadMembers: [],
+        playerFactionId: null,
         logs: [
           ...state.logs,
           { id: Date.now().toString() + 'a1', time: new Date().toLocaleTimeString(), type: 'ascension', message: `【飞升成功】你渡过九重天劫，肉身重塑，魂魄升华！` },
@@ -1703,6 +1897,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         resourcePoints: generateResourcePoints(50, 50, 9),
         nearbyNPCs: generateNearbyNPCs('9-秦-1级-1', 50, 50, '秦', 9),
         squadMembers: [],
+        playerFactionId: null,
       });
       
       state.addLog({ type: 'cycle', message: `你以【转世灵童】之身重生于凡界，保留了前世的部分记忆与体质！` });
@@ -1999,6 +2194,38 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
     }
 
+    // Faction tick: passive income, morale drift
+    if (state.playerFactionId && state.player) {
+      const faction = updatedClans.find(c => c.id === state.playerFactionId);
+      if (faction) {
+        const buildings = faction.buildings || [];
+        const treasuryLevel = (buildings.find(b => b.type === '库房')?.level || 0);
+        if (treasuryLevel > 0) {
+          const passiveIncome = treasuryLevel * 5;
+          updatedClans = updatedClans.map(c =>
+            c.id === state.playerFactionId
+              ? { ...c, treasury: (c.treasury || 0) + passiveIncome }
+              : c
+          );
+        }
+        // Morale drift toward 50
+        const curMorale = faction.morale ?? 50;
+        if (curMorale < 50) {
+          updatedClans = updatedClans.map(c =>
+            c.id === state.playerFactionId
+              ? { ...c, morale: Math.min(50, curMorale + 1) }
+              : c
+          );
+        } else if (curMorale > 50 && (faction.treasury || 0) > 0) {
+          updatedClans = updatedClans.map(c =>
+            c.id === state.playerFactionId
+              ? { ...c, morale: Math.max(50, curMorale - 1) }
+              : c
+          );
+        }
+      }
+    }
+
     set({
       nearbyNPCs: npcs,
       clans: updatedClans,
@@ -2042,6 +2269,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       npcMemory: s.npcMemory,
       squadMembers: s.squadMembers,
       ascensionQuests: s.ascensionQuests,
+      playerFactionId: s.playerFactionId,
     }, s.player.name, s.player.realm, s.player.heavenLevel);
   },
 
@@ -2063,6 +2291,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         npcMemory: gameState.npcMemory ?? {},
         squadMembers: gameState.squadMembers ?? [],
         ascensionQuests: gameState.ascensionQuests ?? [],
+        playerFactionId: gameState.playerFactionId ?? null,
       });
       return true;
     } catch {
