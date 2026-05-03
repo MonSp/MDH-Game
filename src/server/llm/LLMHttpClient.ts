@@ -54,14 +54,21 @@ const RETRY_BACKOFF_MS = [6000, 12000]; // wait ~6s/~12s (jitter added at use si
 const FETCH_TIMEOUT_MS = 45000;
 const BODY_READ_TIMEOUT_MS = 15000;
 const MAX_RESPONSE_LENGTH = 1000;
+const DIALOGUE_TEMPERATURE = 0.9;
+const DIALOGUE_MAX_TOKENS = 400;
 
 async function readResponseText(res: Response, timeoutMs = BODY_READ_TIMEOUT_MS): Promise<string> {
-  return Promise.race([
-    res.text(),
-    new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error('Body read timeout')), timeoutMs)
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      res.text(),
+      new Promise<string>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Body read timeout')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function loadConfig(): LLMClientConfig {
@@ -371,8 +378,8 @@ export class LLMHttpClient {
         { role: 'system', content: context.systemPrompt },
         { role: 'user', content: context.userPrompt },
       ],
-      temperature: 0.9,
-      max_tokens: 400,
+      temperature: DIALOGUE_TEMPERATURE,
+      max_tokens: DIALOGUE_MAX_TOKENS,
     };
 
     const headers: Record<string, string> = {
@@ -430,8 +437,8 @@ export class LLMHttpClient {
         },
       ],
       generationConfig: {
-        temperature: 0.9,
-        maxOutputTokens: 400,
+        temperature: DIALOGUE_TEMPERATURE,
+        maxOutputTokens: DIALOGUE_MAX_TOKENS,
       },
     };
 

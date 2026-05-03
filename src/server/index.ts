@@ -36,12 +36,17 @@ const DIALOGUE_RATE_LIMIT_MS = 10000;
 
 // Sanitize user-provided scene context to prevent prompt injection
 function sanitizeSceneContext(input: string | undefined): string | undefined {
+  if (typeof input !== 'string') return undefined;
   if (!input) return undefined;
   return input
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // strip control chars
     .replace(/[<>]/g, '') // strip angle brackets
-    .slice(0, 200); // length limit
+    .slice(0, MAX_SCENE_CONTEXT_LENGTH); // length limit
 }
+
+const MAX_SCENE_CONTEXT_LENGTH = 200;
+const MAX_MEMORY_SUMMARY_LENGTH = 60;
+const DIALOGUE_IMPACT_SCORE = 2;
 
 // Validate NPC ID format: alphanumeric + underscore, 1-64 chars
 function isValidNpcId(id: string): boolean {
@@ -295,6 +300,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('scene:npc-dialogue', async (data: { npcId: string; sceneContext?: string }) => {
+    // Auth guard: reject unauthenticated sockets
+    const playerSocket = playerSockets.get(socket.id);
+    if (!playerSocket) return;
+
     // Validate npcId format
     if (!isValidNpcId(data.npcId)) {
       socket.emit('scene:npc-response', {
@@ -383,8 +392,8 @@ io.on('connection', (socket) => {
         timestamp: Date.now(),
         otherNpcId: 'player',
         type: 'dialogue',
-        summary: `与玩家对话：${result.text.slice(0, 60)}`,
-        impactScore: 2,
+        summary: `与玩家对话：${result.text.slice(0, MAX_MEMORY_SUMMARY_LENGTH)}`,
+        impactScore: DIALOGUE_IMPACT_SCORE,
       });
 
       socket.emit('scene:npc-response', {
