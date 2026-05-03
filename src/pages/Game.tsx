@@ -10,10 +10,10 @@ import { SurveyPopup } from '../components/SurveyPopup';
 import { getSceneEntry } from '../content/scenes/sceneRegistry';
 import { GRUDGE_NPC_DIALOGUE } from '../content/scenes/grudge/npcDialogue';
 import { LI_SI_ID, LI_SI_ROBBED, LI_SI_HELPED } from '../content/scenes/grudge/grudgeScene';
+import { getSocket } from '../shared/socket';
 import type { SceneEntry, ScenePanelState } from '../shared/types/scene';
 
-// Scripted NPC dialogue responses for intro scene (D5: scripted intro)
-// Supports "already met" variant when NPC has been encountered before
+// Scripted NPC dialogue responses for fallback when LLM is unavailable
 const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; metText?: string }> = {
   servant_01: {
     name: '小福',
@@ -24,19 +24,19 @@ const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; m
   servant_02: {
     name: '小环',
     role: '内院丫鬟',
-    text: '啊，少爷您醒了！奴婢正要给您送茶呢。\n\n\'这几日族里为了选拔弟子的事忙得不可开交，族长天天在正厅会客。\n\n对了，昨儿个有位青云宗的执事来访，族长设了晚宴招待。',
+    text: '啊，少爷您醒了！奴婢正要给您送茶呢。\n\n这几日族里为了选拔弟子的事忙得不可开交，族长天天在正厅会客。\n\n对了，昨儿个有位青云宗的执事来访，族长设了晚宴招待。',
     metText: '少爷，您有什么事尽管吩咐。',
   },
   junior_01: {
     name: '林泉',
     role: '族中后辈',
-    text: '族兄莫要担心，我看您气息沉稳，不像灵根有损的样子。\n\n\'依我看啊，那些传言都是三房的人散播的——谁让您是大房的独苗呢。',
+    text: '族兄莫要担心，我看您气息沉稳，不像灵根有损的样子。\n\n依我看啊，那些传言都是三房的人散播的——谁让您是大房的独苗呢。',
     metText: '族兄，您要去正厅了吗？可别让族长等久了。',
   },
   patriarch_01: {
     name: '林震天',
     role: '族长',
-    text: '青云宗乃我苍云国第一修仙宗门，立派八百年，门下弟子三千。\n\n\'现任宗主陆沉渊是元婴中期的大能，座下七峰各有传承。\n\n你此番去，若能拜入其中一峰，便算为我林家争了口气。',
+    text: '青云宗乃我苍云国第一修仙宗门，立派八百年，门下弟子三千。\n\n现任宗主陆沉渊是元婴中期的大能，座下七峰各有传承。\n\n你此番去，若能拜入其中一峰，便算为我林家争了口气。',
     metText: '该说的我已经说了，你自己斟酌。',
   },
 };
@@ -45,6 +45,8 @@ const NPC_FALLBACK = '……你找我有何事？';
 
 // Merge scripted dialogue with grudge prototype NPCs
 const NPC_DIALOGUE_ALL = { ...NPC_DIALOGUE, ...GRUDGE_NPC_DIALOGUE };
+
+const DIALOGUE_TIMEOUT_MS = 15000;
 
 export const Game = () => {
   const navigate = useNavigate();
@@ -60,8 +62,13 @@ export const Game = () => {
   const [npcName, setNpcName] = useState<string | undefined>();
   const [npcRole, setNpcRole] = useState<string | undefined>();
   const [disconnectError, setDisconnectError] = useState(false);
+  const [llmError, setLlmError] = useState(false);
   const llmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneStartedRef = useRef(false);
+  const dialogueResolveRef = useRef<((value: { text: string; name: string; role: string; emotion?: string }) => void) | null>(null);
+  const dialogueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNpcIdRef = useRef<string | null>(null);
+  const processingRef = useRef(false);
   const [triggerVersion, setTriggerVersion] = useState(0);
   const [showSurvey, setShowSurvey] = useState(false);
 
@@ -106,6 +113,29 @@ export const Game = () => {
     return () => { clearInterval(npcInterval); clearInterval(saveInterval); };
   }, [player, navigate, updateNPCs, saveToSlot]);
 
+  // Socket.IO listener for scene:npc-response
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handler = (data: { npcId: string; name: string; role: string; text: string; emotion?: string }) => {
+      // Guard: ignore stale responses for a different NPC
+      if (data.npcId !== pendingNpcIdRef.current) return;
+      if (dialogueTimeoutRef.current) {
+        clearTimeout(dialogueTimeoutRef.current);
+        dialogueTimeoutRef.current = null;
+      }
+      if (dialogueResolveRef.current) {
+        dialogueResolveRef.current({ text: data.text, name: data.name, role: data.role, emotion: data.emotion });
+        dialogueResolveRef.current = null;
+      }
+    };
+    socket.on('scene:npc-response', handler);
+
+    return () => {
+      socket.off('scene:npc-response', handler);
+    };
+  }, []);
+
   const clearLlmTimer = useCallback(() => {
     if (llmTimerRef.current) {
       clearTimeout(llmTimerRef.current);
@@ -113,10 +143,15 @@ export const Game = () => {
     }
   }, []);
 
-  const handleChoice = useCallback((choiceIndex: number) => {
+  const handleChoice = useCallback(async (choiceIndex: number) => {
     if (!activeScene) return;
     const choice = activeScene.choices[choiceIndex];
     if (!choice) return;
+
+    // Guard against rapid clicks while a dialogue request is in flight
+    if (processingRef.current) return;
+    processingRef.current = true;
+    try {
 
     // 1. Apply effects
     if (choice.effect) {
@@ -170,6 +205,7 @@ export const Game = () => {
       setSceneState('LOADING');
       setDisconnectError(false);
       const npcId = choice.npcDialogue;
+      pendingNpcIdRef.current = npcId;
       markNpcMet(npcId); // persist NPC memory
 
       // 宿怨 prototype: set NPC memory based on dialogue outcome
@@ -179,25 +215,34 @@ export const Game = () => {
         setNpcMemory(LI_SI_ID, LI_SI_HELPED);
       }
 
-      const entry = NPC_DIALOGUE_ALL[npcId];
-      const alreadyMet = useGameStore.getState().metNpcs.includes(npcId);
+      // Try LLM dialogue via socket
+      try {
+        const socket = getSocket();
+        const dialoguePromise = new Promise<{ text: string; name: string; role: string; emotion?: string }>((resolve) => {
+          dialogueResolveRef.current = resolve;
+        });
 
-      if (entry) {
-        // Scripted response with simulated delay for consistency
-        llmTimerRef.current = setTimeout(() => {
-          setNpcName(entry.name);
-          setNpcRole(entry.role);
-          setDialogueText(alreadyMet && entry.metText ? entry.metText : entry.text);
+        socket.emit('scene:npc-dialogue', {
+          npcId,
+          sceneContext: choice.sceneContext || undefined,
+        });
+
+        const result = await Promise.race([
+          dialoguePromise,
+          new Promise<null>((_, reject) => {
+            dialogueTimeoutRef.current = setTimeout(() => reject(new Error('timeout')), DIALOGUE_TIMEOUT_MS);
+          }),
+        ]);
+
+        if (result) {
+          setNpcName(result.name);
+          setNpcRole(result.role);
+          setDialogueText(result.text);
           setSceneState('DIALOGUE');
-        }, 800);
-      } else {
-        // Fallback for unknown NPC
-        llmTimerRef.current = setTimeout(() => {
-          setNpcName(npcId);
-          setNpcRole('未知');
-          setDialogueText(NPC_FALLBACK);
-          setSceneState('DIALOGUE');
-        }, 800);
+        }
+      } catch {
+        // LLM timeout or socket error — show fallback option
+        setLlmError(true);
       }
       return;
     }
@@ -221,6 +266,9 @@ export const Game = () => {
         setActiveScene(next);
         setScenePath(prev => [...prev, next.id]);
       }
+    }
+    } finally {
+      processingRef.current = false;
     }
   }, [activeScene, modifyTalent]);
 
@@ -250,6 +298,7 @@ export const Game = () => {
     }
     clearLlmTimer();
     setDisconnectError(false);
+    setLlmError(false);
   }, [activeScene, dialogueText, npcName, addLog, clearLlmTimer]);
 
   const handleClose = useCallback(() => {
@@ -261,21 +310,34 @@ export const Game = () => {
     setNpcName(undefined);
     setNpcRole(undefined);
     setDisconnectError(false);
+    setLlmError(false);
     setTriggerVersion(v => v + 1);
   }, [clearLlmTimer]);
 
   const handleFallback = useCallback(() => {
-    setNpcName('小福');
-    setNpcRole('家族仆从');
-    setDialogueText('少爷，您醒了就好。族长在正厅等您。');
+    const npcId = pendingNpcIdRef.current;
+    const entry = npcId ? NPC_DIALOGUE_ALL[npcId] : null;
+    if (entry) {
+      setNpcName(entry.name);
+      setNpcRole(entry.role);
+      setDialogueText(entry.text);
+    } else {
+      setNpcName(npcId || '未知');
+      setNpcRole('未知');
+      setDialogueText(NPC_FALLBACK);
+    }
     setSceneState('DIALOGUE');
     setDisconnectError(false);
+    setLlmError(false);
     clearLlmTimer();
   }, [clearLlmTimer]);
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => clearLlmTimer();
+    return () => {
+      clearLlmTimer();
+      sceneStartedRef.current = false; // reset so re-mount can start intro
+    };
   }, [clearLlmTimer]);
 
   if (!player) return null;
@@ -307,6 +369,7 @@ export const Game = () => {
           npcName={npcName}
           npcRole={npcRole}
           disconnectError={disconnectError}
+          llmError={llmError}
           onChoice={handleChoice}
           onContinue={handleContinue}
           onClose={handleClose}

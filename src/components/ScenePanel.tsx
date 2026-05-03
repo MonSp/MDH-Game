@@ -13,6 +13,7 @@ interface ScenePanelProps {
   onClose: () => void;
   onFallback?: () => void;        // fallback after disconnect/timeout
   disconnectError?: boolean;
+  llmError?: boolean;
   npcMemory?: Record<string, string>;  // NPC memory state for conditional choices
 }
 
@@ -28,6 +29,7 @@ export const ScenePanel = ({
   onClose,
   onFallback,
   disconnectError,
+  llmError,
   npcMemory = {},
 }: ScenePanelProps) => {
   const [fadeIn, setFadeIn] = useState(false);
@@ -173,9 +175,11 @@ export const ScenePanel = ({
               <div className="h-4 bg-zinc-700 rounded animate-pulse w-4/6" />
             </div>
 
-            {disconnectError && (
+            {(disconnectError || llmError) && (
               <div className="mt-6 p-4 bg-rose-900/30 border border-rose-800 rounded-lg" role="alert">
-                <p className="text-rose-300 text-sm mb-3">连接中断，无法获取对话</p>
+                <p className="text-rose-300 text-sm mb-3">
+                  {disconnectError ? '连接中断，无法获取对话' : 'AI 对话响应超时，暂时无法获取'}
+                </p>
                 <button
                   className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition-colors text-sm"
                   onClick={onFallback}

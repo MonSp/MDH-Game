@@ -14,6 +14,8 @@ import {
   ItemService
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
+import { LLMHttpClient, DialogueRequestContext } from './llm/LLMHttpClient';
+import { buildDialogueSystemPrompt, buildDialogueUserPrompt } from './llm/DialoguePrompts';
 
 import { PlayerState, Country, CultivationRealm } from '../shared';
 
@@ -27,6 +29,24 @@ const io = new SocketIOServer(httpServer, {
 });
 
 app.use(express.json());
+
+// Rate limiting for dialogue requests
+const dialogueRateMap = new Map<string, number>();
+const DIALOGUE_RATE_LIMIT_MS = 10000;
+
+// Sanitize user-provided scene context to prevent prompt injection
+function sanitizeSceneContext(input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  return input
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // strip control chars
+    .replace(/[<>]/g, '') // strip angle brackets
+    .slice(0, 200); // length limit
+}
+
+// Validate NPC ID format: alphanumeric + underscore, 1-64 chars
+function isValidNpcId(id: string): boolean {
+  return /^[a-zA-Z0-9_]{1,64}$/.test(id);
+}
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: '修仙世界运行中...' });
@@ -275,6 +295,35 @@ io.on('connection', (socket) => {
   });
 
   socket.on('scene:npc-dialogue', async (data: { npcId: string; sceneContext?: string }) => {
+    // Validate npcId format
+    if (!isValidNpcId(data.npcId)) {
+      socket.emit('scene:npc-response', {
+        npcId: data.npcId,
+        name: '未知',
+        role: '',
+        text: '……你找我有何事？',
+        emotion: '平静',
+      });
+      return;
+    }
+
+    // Rate limiting: 1 request per 10s per socket
+    const lastRequest = dialogueRateMap.get(socket.id);
+    if (lastRequest && Date.now() - lastRequest < DIALOGUE_RATE_LIMIT_MS) {
+      socket.emit('scene:npc-response', {
+        npcId: data.npcId,
+        name: '系统',
+        role: '',
+        text: '……你过于急切了，稍等片刻再说吧。',
+        emotion: '平静',
+      });
+      return;
+    }
+    dialogueRateMap.set(socket.id, Date.now());
+
+    // Sanitize scene context to prevent prompt injection
+    const safeSceneContext = sanitizeSceneContext(data.sceneContext);
+
     const npcWorld = NPCWorldService.getInstance();
     const npc = npcWorld.getNPC(data.npcId);
     if (!npc) {
@@ -288,19 +337,82 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Scripted dialogue based on NPC identity (D5: scripted intro NPC dialogue)
     const name = npc.npc.name;
     const role = npc.npc.role;
     const emotion = npc.emotion || '平静';
 
-    const dialogueMap: Record<string, string> = {
-      'servant_01': '少爷您终于醒了！族长大人已经在正厅等您半天了。\n\n您的衣物已经准备好了，是否需要我为您带路？',
+    // Build memory context
+    const memory = npcWorld.getMemoryStore();
+    const memoryCtx = memory.buildMemoryContext(data.npcId, (otherId: string) => {
+      const other = npcWorld.getNPC(otherId);
+      return other?.npc.name || otherId;
+    });
+
+    // Build dialogue prompts
+    const systemPrompt = buildDialogueSystemPrompt({
+      name,
+      identity: role || '未知',
+      realm: npc.npc.realm || '凡人',
+      background: npcWorld.getBackground(data.npcId) || '一个普通的修仙者',
+      personality: npc.npc.personality,
+      emotion,
+      activity: npc.activity,
+    });
+
+    const userPrompt = buildDialogueUserPrompt(
+      name,
+      safeSceneContext,
+      '你',
+      memoryCtx || '',
+    );
+
+    // Call LLM
+    const llmClient = LLMHttpClient.getInstance();
+    const llmContext: DialogueRequestContext = {
+      npcId: data.npcId,
+      npcName: name,
+      systemPrompt,
+      userPrompt,
     };
 
-    const text = dialogueMap[data.npcId] ||
-      `${name}看了你一眼，缓缓说道：\n\n"修炼之路漫长，${data.sceneContext ? '你说的事我知道了' : '你找我有何事？'}"`;
+    const result = await llmClient.requestDialogue(llmContext);
 
-    socket.emit('scene:npc-response', { npcId: data.npcId, name, role, text, emotion });
+    if (result.success && result.text) {
+      // Record interaction in NPC memory before emitting (fail before client sees success)
+      memory.interactions.add(data.npcId, {
+        timestamp: Date.now(),
+        otherNpcId: 'player',
+        type: 'dialogue',
+        summary: `与玩家对话：${result.text.slice(0, 60)}`,
+        impactScore: 2,
+      });
+
+      socket.emit('scene:npc-response', {
+        npcId: data.npcId,
+        name,
+        role,
+        text: result.text,
+        emotion,
+        source: 'llm',
+      });
+    } else {
+      // Fallback: scripted dialogue map
+      const dialogueMap: Record<string, string> = {
+        'servant_01': '少爷您终于醒了！族长大人已经在正厅等您半天了。\n\n您的衣物已经准备好了，是否需要我为您带路？',
+      };
+
+      const text = dialogueMap[data.npcId] ||
+        `${name}看了你一眼，缓缓说道：\n\n"修炼之路漫长，${safeSceneContext ? '你说的事我知道了' : '你找我有何事？'}"`;
+
+      socket.emit('scene:npc-response', {
+        npcId: data.npcId,
+        name,
+        role,
+        text,
+        emotion,
+        source: 'fallback',
+      });
+    }
   });
 
   socket.on('disconnect', () => {
@@ -309,6 +421,7 @@ io.on('connection', (socket) => {
       PlayerService.getInstance().savePlayerData(playerSocket.playerId);
       playerSockets.delete(socket.id);
     }
+    dialogueRateMap.delete(socket.id); // clean up rate limit state
     console.log(`Client disconnected: ${socket.id}`);
   });
 });

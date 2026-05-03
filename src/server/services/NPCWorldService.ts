@@ -622,6 +622,14 @@ export class NPCWorldService extends EventEmitter {
     }
   }
 
+  getMemoryStore(): NPCMemoryStore {
+    return this.memory;
+  }
+
+  getBackground(npcId: string): string | undefined {
+    return this.backgrounds.get(npcId);
+  }
+
   // --- Queries ---
 
   getNPC(id: string): NPCState | undefined {
