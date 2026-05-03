@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.8.0.0] - 2026-05-03
+
+### Added
+- LLM dynamic NPC dialogue system: when players trigger NPC dialogue, NPC context (personality, emotion, memory, relationships) is sent to the server for LLM-generated Chinese dialogue via OpenAI-compatible or Gemini API
+- Socket.IO client-server dialogue pipeline: `scene:npc-dialogue` request with Promise.race (15s timeout) + `scene:npc-response` event for real-time AI dialogue
+- `DialoguePrompts.buildDialogueSystemPrompt()` and `buildDialogueUserPrompt()` — structured prompt templates with NPC persona fields and memory context
+- `NPCWorldService.getMemoryStore()` and `getBackground()` public accessors for building LLM context
+- NPC memory integration: successful LLM dialogue interactions are recorded in NPC memory with impact scoring for future context
+- Scripted fallback chain: LLM unavailable → dialogueMap → generic NPC template, with 5-minute cooldown per NPC
+- NPC ID validation (`/^[a-zA-Z0-9_]{1,64}$/`) and scene context sanitization (control char/angle bracket stripping, 200-char limit) as prompt injection defenses
+- Per-socket rate limiting (10s window) and player authentication guard on `scene:npc-dialogue` handler
+- 75 new tests covering dialogue prompts, LLM client dialogue retry/fallback/cooldown, sanitization, NPC ID validation, and NPCWorldService accessors (429 total, all passing)
+
+### Changed
+- Game.tsx `handleChoice` now async with socket-based dialogue, processingRef rapid-click guard, and `pendingNpcIdRef` cleanup on error
+- ScenePanel LOADING state now shows conditional error UI with fallback button on LLM timeout only
+
+### Fixed
+- Removed dead `disconnectError` state and `llmTimerRef`/`clearLlmTimer` from Game.tsx
+- Fixed `readResponseText` orphaned timer promise with try/finally cleanup
+- Extracted magic number constants: `MAX_SCENE_CONTEXT_LENGTH`, `MAX_MEMORY_SUMMARY_LENGTH`, `DIALOGUE_IMPACT_SCORE`, `SOCKET_RECONNECT_ATTEMPTS`, `DIALOGUE_TEMPERATURE`, `DIALOGUE_MAX_TOKENS`
+- Unmount cleanup now properly clears `dialogueTimeoutRef` and nulls `dialogueResolveRef`
+- `pendingNpcIdRef` reset on LLM timeout to prevent stale response handling
+
+### Security
+- Added player authentication check to `scene:npc-dialogue` handler (prevents unauthenticated LLM API calls)
+- Added type guard in `sanitizeSceneContext` for non-string input
+
+---
+
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
 ## [1.7.0.0] - 2026-05-03

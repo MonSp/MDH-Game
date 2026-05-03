@@ -98,6 +98,51 @@ describe('NPCWorldService — initialisation and NPC listing', () => {
       expect(r).toHaveProperty('affinity');
     }
   });
+
+  it('getMemoryStore returns NPCMemoryStore with relationships', () => {
+    const store = svc.getMemoryStore();
+    expect(store).toBeDefined();
+    expect(store.relationships).toBeDefined();
+    expect(store.interactions).toBeDefined();
+    expect(store.witnessedEvents).toBeDefined();
+    // After initialization, relationships should exist between NPCs
+    const ids = svc.getNPCList().map(n => n.id);
+    if (ids.length >= 2) {
+      const aff = store.relationships.get(ids[0], ids[1]);
+      expect(typeof aff).toBe('number');
+    }
+  });
+
+  it('getMemoryStore memory store tracks interactions', () => {
+    const store = svc.getMemoryStore();
+    const ids = svc.getNPCList().map(n => n.id);
+    if (ids.length >= 2) {
+      store.interactions.add(ids[0], {
+        timestamp: Date.now(),
+        otherNpcId: ids[1],
+        type: 'dialogue',
+        summary: '测试对话',
+        impactScore: 2,
+      });
+      const recent = store.interactions.getRecent(ids[0], 1);
+      expect(recent).toHaveLength(1);
+      expect(recent[0].type).toBe('dialogue');
+    }
+  });
+
+  it('getBackground returns background for an NPC', () => {
+    const list = svc.getNPCList();
+    if (list.length > 0) {
+      const bg = svc.getBackground(list[0].id);
+      // Background may be undefined if using fallback NPCs without background
+      // but the method should not throw
+      expect(bg === undefined || typeof bg === 'string').toBe(true);
+    }
+  });
+
+  it('getBackground returns undefined for unknown NPC', () => {
+    expect(svc.getBackground('nonexistent')).toBeUndefined();
+  });
 });
 
 describe('NPCWorldService — player action methods', () => {
