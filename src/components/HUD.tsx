@@ -1,10 +1,11 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 import { SquadPanel } from './SquadPanel';
 import { FactionPanel } from './FactionPanel';
+import { DiplomacyPanel } from './DiplomacyPanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
@@ -18,6 +19,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showSquad, setShowSquad] = useState(false);
   const [showFaction, setShowFaction] = useState(false);
+  const [showDiplomacy, setShowDiplomacy] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState('');
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
@@ -336,6 +338,16 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           )}
         </button>
 
+        {playerFactionId && (
+          <button
+            onClick={() => setShowDiplomacy(true)}
+            className="flex items-center justify-center space-x-2 w-full py-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded transition-colors text-purple-300 font-medium text-sm"
+          >
+            <Handshake size={14} />
+            <span>外交</span>
+          </button>
+        )}
+
         <button
           className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
         >
@@ -410,7 +422,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {showMarket && <MarketPanel onClose={() => setShowMarket(false)} />}
       {showSquad && <SquadPanel onClose={() => setShowSquad(false)} />}
       {showFaction && <FactionPanel onClose={() => setShowFaction(false)} />}
-      
+      {showDiplomacy && <DiplomacyPanel onClose={() => setShowDiplomacy(false)} />}
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">

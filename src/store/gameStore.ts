@@ -140,6 +140,23 @@ export const SQUAD_ROLE_INFO: Record<SquadRole, { label: string; description: st
   '后勤型': { label: '后勤型', description: '擅长后勤支援', statBonus: '丹药效果+15%' },
 };
 
+// 外交辅助函数
+function getDiplomaticStatusFrom(state: GameState, fromClanId: string, toClanId: string): DiplomaticStatus {
+  const clan = state.clans.find(c => c.id === fromClanId);
+  if (!clan || !clan.diplomacy) return '中立';
+  const entry = clan.diplomacy[toClanId];
+  if (!entry) return '中立';
+  return entry.status;
+}
+
+function getDiplomaticStatusFromClans(clans: Clan[], fromClanId: string, toClanId: string): DiplomaticStatus {
+  const clan = clans.find(c => c.id === fromClanId);
+  if (!clan || !clan.diplomacy) return '中立';
+  const entry = clan.diplomacy[toClanId];
+  if (!entry) return '中立';
+  return entry.status;
+}
+
 export const RECRUIT_REPUTATION_TIER: Record<SquadRole, number> = {
   '战斗型': 100,
   '斥候型': 500,
@@ -236,6 +253,19 @@ export interface SquadMember {
   activity: string;
 }
 
+// 外交/战争类型
+export type DiplomaticStatus = '中立' | '同盟' | '战争' | '停战' | '臣服';
+export type ConflictLevel = '和平' | '摩擦' | '局部冲突' | '全面战争';
+
+export interface ClanDiplomacy {
+  status: DiplomaticStatus;
+  conflictLevel: ConflictLevel;
+  declaredBy: string;        // 发起方clanId
+  truceUntil?: number;       // 停战到期tick（仅停战状态）
+  allianceDate?: number;     // 结盟时间
+  vassalTribute?: number;    // 臣服方每周期进贡灵石数
+}
+
 export interface Clan {
   id: string;
   name: string;
@@ -248,6 +278,7 @@ export interface Clan {
   buildings?: FactionBuilding[];
   territory?: number;
   morale?: number;
+  diplomacy?: Record<string, ClanDiplomacy>;  // key = target clanId
 }
 
 export interface NPC {
@@ -455,6 +486,17 @@ interface GameState {
   appointOfficer: (squadMemberId: string, position: FactionPosition) => void;
   collectTax: () => number;
   getFactionUpgradeCost: () => { reputation: number; stones: number };
+
+  // 外交/战争系统
+  setDiplomacy: (clanId: string, targetId: string, diplomacy: ClanDiplomacy) => void;
+  removeDiplomacy: (clanId: string, targetId: string) => void;
+  declareWar: (clanId: string) => void;
+  proposeAlliance: (clanId: string) => void;
+  proposeTruce: (clanId: string) => void;
+  surrenderTo: (clanId: string) => void;
+  breakAlliance: (clanId: string) => void;
+  getDiplomaticRelations: () => (Clan & { diplomacyStatus: DiplomaticStatus; conflictLevel: ConflictLevel })[];
+  getDiplomaticStatus: (clanId: string) => DiplomaticStatus;
 
   // Save / Load
   saveToSlot: (slot: number) => void;
@@ -1626,6 +1668,158 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (faction.type === '2级') return { reputation: 5000, stones: 2000000 };
     return { reputation: 0, stones: 0 };
   },
+
+  // === 外交/战争系统 ===
+
+  setDiplomacy: (clanId: string, targetId: string, diplomacy: ClanDiplomacy) => {
+    set(s => ({
+      clans: s.clans.map(c => {
+        if (c.id === clanId) {
+          return { ...c, diplomacy: { ...(c.diplomacy || {}), [targetId]: diplomacy } };
+        }
+        if (c.id === targetId) {
+          // Mirror: set the reverse relation
+          const reverseStatus: DiplomaticStatus = diplomacy.status === '战争' ? '战争' : diplomacy.status === '同盟' ? '同盟' : diplomacy.status === '臣服' ? '皇族' : diplomacy.status;
+          const reverse: ClanDiplomacy = {
+            status: diplomacy.status === '臣服' ? '皇族' : diplomacy.status, // 接收臣服的一方
+            conflictLevel: diplomacy.conflictLevel,
+            declaredBy: targetId,
+            truceUntil: diplomacy.truceUntil,
+            allianceDate: diplomacy.allianceDate,
+            vassalTribute: diplomacy.status === '臣服' ? diplomacy.vassalTribute : undefined,
+          };
+          if (diplomacy.status === '停战') reverse.status = '停战';
+          return { ...c, diplomacy: { ...(c.diplomacy || {}), [clanId]: reverse } };
+        }
+        return c;
+      }),
+    }));
+  },
+
+  removeDiplomacy: (clanId: string, targetId: string) => {
+    set(s => ({
+      clans: s.clans.map(c => {
+        if (c.id === clanId || c.id === targetId) {
+          const d = { ...(c.diplomacy || {}) };
+          delete d[clanId === c.id ? targetId : clanId];
+          return { ...c, diplomacy: d };
+        }
+        return c;
+      }),
+    }));
+  },
+
+  declareWar: (clanId: string) => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) {
+      state.addLog({ type: 'system', message: '你没有管理任何势力，无法宣战。' });
+      return;
+    }
+    if (clanId === state.playerFactionId) {
+      state.addLog({ type: 'system', message: '不能对自己宣战。' });
+      return;
+    }
+    const target = state.clans.find(c => c.id === clanId);
+    if (!target) return;
+    const currentStatus = getDiplomaticStatusFrom(state, state.playerFactionId, clanId);
+    if (currentStatus === '战争') {
+      state.addLog({ type: 'system', message: `已处于战争状态。` });
+      return;
+    }
+
+    get().setDiplomacy(state.playerFactionId, clanId, {
+      status: '战争',
+      conflictLevel: '局部冲突',
+      declaredBy: state.playerFactionId,
+    });
+    state.addLog({ type: 'event', message: `【宣战】向 ${target.name} 正式宣战！` });
+  },
+
+  proposeAlliance: (clanId: string) => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) {
+      state.addLog({ type: 'system', message: '你没有管理任何势力。' });
+      return;
+    }
+    if (clanId === state.playerFactionId) return;
+    const target = state.clans.find(c => c.id === clanId);
+    if (!target) return;
+    const currentStatus = getDiplomaticStatusFrom(state, state.playerFactionId, clanId);
+    if (currentStatus === '同盟') {
+      state.addLog({ type: 'system', message: '已与该势力结盟。' });
+      return;
+    }
+
+    get().setDiplomacy(state.playerFactionId, clanId, {
+      status: '同盟',
+      conflictLevel: '和平',
+      declaredBy: state.playerFactionId,
+      allianceDate: Date.now(),
+    });
+    state.addLog({ type: 'event', message: `【结盟】与 ${target.name} 缔结同盟！` });
+  },
+
+  proposeTruce: (clanId: string) => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) return;
+    const target = state.clans.find(c => c.id === clanId);
+    if (!target) return;
+
+    get().setDiplomacy(state.playerFactionId, clanId, {
+      status: '停战',
+      conflictLevel: '和平',
+      declaredBy: state.playerFactionId,
+      truceUntil: Date.now() + 120000, // 2 minutes truce
+    });
+    state.addLog({ type: 'event', message: `【停战】与 ${target.name} 达成停战协议。` });
+  },
+
+  surrenderTo: (clanId: string) => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) return;
+    const target = state.clans.find(c => c.id === clanId);
+    if (!target) return;
+
+    get().setDiplomacy(state.playerFactionId, clanId, {
+      status: '臣服',
+      conflictLevel: '和平',
+      declaredBy: state.playerFactionId, // 臣服方
+      vassalTribute: Math.floor((state.clans.find(c => c.id === state.playerFactionId)?.treasury || 0) * 0.1),
+    });
+    state.addLog({ type: 'event', message: `【臣服】向 ${target.name} 表示臣服，每周期进贡灵石。` });
+  },
+
+  breakAlliance: (clanId: string) => {
+    const state = get();
+    if (!state.player || !state.playerFactionId) return;
+    const target = state.clans.find(c => c.id === clanId);
+    if (!target) return;
+
+    get().removeDiplomacy(state.playerFactionId, clanId);
+    state.addLog({ type: 'event', message: `【毁盟】解除了与 ${target.name} 的同盟关系。` });
+  },
+
+  getDiplomaticRelations: () => {
+    const state = get();
+    if (!state.playerFactionId) return [];
+    const faction = state.clans.find(c => c.id === state.playerFactionId);
+    if (!faction || !faction.diplomacy) return [];
+
+    return state.clans
+      .filter(c => faction.diplomacy![c.id])
+      .map(c => ({
+        ...c,
+        diplomacyStatus: faction.diplomacy![c.id].status as DiplomaticStatus,
+        conflictLevel: faction.diplomacy![c.id].conflictLevel as ConflictLevel,
+      }));
+  },
+
+  getDiplomaticStatus: (clanId: string) => {
+    const state = get();
+    if (!state.playerFactionId) return '中立';
+    return getDiplomaticStatusFrom(state, state.playerFactionId, clanId);
+  },
+
   buyItem: (itemName, amount) => {
     const state = get();
     if (!state.player) return;
@@ -2059,6 +2253,21 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
       }
 
+      // War hostility: NPCs from enemy clans target player
+      if (state.playerFactionId && behaviorNpc.clanId !== state.playerFactionId && !behaviorNpc.retreatTicksRemaining) {
+        const warStatus = getDiplomaticStatusFromClans(state.clans, state.playerFactionId, behaviorNpc.clanId);
+        if (warStatus === '战争') {
+          const dx = state.player!.position.x - behaviorNpc.position.x;
+          const dy = state.player!.position.y - behaviorNpc.position.y;
+          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
+            playerHit = true;
+            if (!behaviorNpc.targetPlayerId) {
+              behaviorNpc.targetPlayerId = state.player!.id;
+            }
+          }
+        }
+      }
+
       return behaviorNpc;
     });
 
@@ -2225,6 +2434,29 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
       }
     }
+
+    // Diplomacy tick: truce expiry
+    updatedClans = updatedClans.map(c => {
+      if (!c.diplomacy) return c;
+      let updated = { ...c };
+      for (const [targetId, entry] of Object.entries(c.diplomacy)) {
+        if (entry.status === '停战' && entry.truceUntil && Date.now() > entry.truceUntil) {
+          const d = { ...updated.diplomacy! };
+          delete d[targetId];
+          updated = { ...updated, diplomacy: d };
+          // Also clear the reverse
+          updatedClans = updatedClans.map(rc =>
+            rc.id === targetId
+              ? { ...rc, diplomacy: (() => { const rd = { ...(rc.diplomacy || {}) }; delete rd[updated.id]; return rd; })() }
+              : rc
+          );
+          if (c.id === state.playerFactionId) {
+            state.addLog({ type: 'event', message: `【停战到期】与 ${targetId} 的停战协议已到期。` });
+          }
+        }
+      }
+      return updated;
+    });
 
     set({
       nearbyNPCs: npcs,

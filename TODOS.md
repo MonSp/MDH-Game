@@ -1,5 +1,15 @@
 # TODOS
 
+## ~~P3: Diplomatic & War System (外交与战争系统)~~ ✅ DONE
+
+**Completed:** 2026-05-03 (v1.6.0.0)
+**Results:** Full implementation with declareWar, proposeAlliance, proposeTruce, surrenderTo, breakAlliance actions; 5-status diplomatic system; war hostility NPC AI; DiplomacyPanel UI; map war indicator; 23 tests.
+
+## ~~P2: Faction System (势力系统)~~ ✅ DONE
+
+**Completed:** 2026-05-03 (v1.5.0.0)
+**Results:** Full faction system with create, building upgrades, officer appointments, tax collection, faction tick, 30 tests.
+
 ## ~~LLM API smoke test (Phase 1b prerequisite)~~ ✅ DONE
 
 **Completed:** 2026-04-30

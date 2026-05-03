@@ -2,6 +2,20 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.6.0.0] - 2026-05-03
+
+### Added
+- P3 Diplomatic & War System (外交与战争系统): full diplomatic layer for player factions
+- 5 diplomacy actions: declareWar, proposeAlliance, proposeTruce, surrenderTo (vassal), breakAlliance
+- 5 diplomatic statuses (中立/同盟/战争/停战/臣服) with bidirectional state management
+- Conflict levels (和平/摩擦/局部冲突/全面战争) for escalatory detail
+- DiplomacyTick: truce expiry detection with auto-revert to neutral in game loop
+- War hostility: NPCs from enemy clans automatically target player when at war
+- DiplomacyPanel with 2-tab UI: relations overview + actions (search, filter, action buttons)
+- HUD "外交" button (purple, visible when player has a faction)
+- Map war indicator: pulsing red ring on faction base when at war
+- 23 unit tests covering all diplomacy actions, guard clauses, edge cases, and state transitions
+
 ## [1.5.0.0] - 2026-05-03
 
 ### Added

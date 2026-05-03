@@ -436,9 +436,17 @@ const PlayerMesh = ({ player }: { player: any }) => {
 };
 
 // 6. Faction Base Mesh
-const FactionBaseMesh = ({ faction, playerPos }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; playerPos: { x: number; y: number } }) => {
+const FactionBaseMesh = ({ faction, playerPos, isAtWar }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; playerPos: { x: number; y: number }; isAtWar?: boolean }) => {
   const tile = getTerrainTile(playerPos.x, playerPos.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const warRingRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    if (warRingRef.current && isAtWar) {
+      const pulse = Math.sin(state.clock.getElapsedTime() * 3) * 0.5 + 0.5;
+      warRingRef.current.material.opacity = 0.3 + pulse * 0.4;
+    }
+  });
 
   return (
     <group position={[0, baseHeight, 0]}>
@@ -447,6 +455,14 @@ const FactionBaseMesh = ({ faction, playerPos }: { faction: { name: string; buil
         <ringGeometry args={[1.5, 2.5, 32]} />
         <meshBasicMaterial color="#f59e0b" transparent opacity={0.2} side={THREE.DoubleSide} />
       </mesh>
+
+      {/* War indicator: pulsing red ring */}
+      {isAtWar && (
+        <mesh ref={warRingRef} position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[2.0, 2.8, 32]} />
+          <meshBasicMaterial color="#ef4444" transparent opacity={0.5} side={THREE.DoubleSide} />
+        </mesh>
+      )}
 
       {/* Small building indicators */}
       {(faction.buildings || []).map((b, i) => {
@@ -679,7 +695,11 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
 
         {playerFactionId && (() => {
           const faction = clans.find(c => c.id === playerFactionId);
-          return faction ? <FactionBaseMesh faction={faction} playerPos={player.position} /> : null;
+          if (!faction) return null;
+          const isAtWar = faction.diplomacy
+            ? Object.values(faction.diplomacy).some(d => d.status === '战争')
+            : false;
+          return <FactionBaseMesh faction={faction} playerPos={player.position} isAtWar={isAtWar} />;
         })()}
         <PlayerMesh player={player} />
       </Canvas>
