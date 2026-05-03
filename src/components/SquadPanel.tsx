@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useGameStore, type SquadMember, SQUAD_ROLE_INFO, RECRUIT_REPUTATION_TIER, RECRUIT_SPIRITSTONE_COST, getReputationTitle } from '../store/gameStore';
-import { X, Users, UserPlus, Trash2, Shield } from 'lucide-react';
+import { useGameStore, type SquadMember, SQUAD_ROLE_INFO, RECRUIT_REPUTATION_TIER, RECRUIT_SPIRITSTONE_COST, getReputationTitle, EQUIPPABLE_ITEMS } from '../store/gameStore';
+import { X, Users, UserPlus, Trash2, Shield, Sword, AlertTriangle } from 'lucide-react';
 
 export const SquadPanel = ({ onClose }: { onClose: () => void }) => {
   const { player, squadMembers, nearbyNPCs, recruitToSquad, dismissFromSquad, assignSquadRole, getRecruitCost } = useGameStore();
@@ -160,8 +160,14 @@ function MemberDetail({ member, onRoleChange, onDismiss }: {
   onRoleChange: (role: string) => void;
   onDismiss: () => void;
 }) {
+  const { player, equipMember, unequipMember } = useGameStore();
   const roleInfo = SQUAD_ROLE_INFO[member.role];
   const daysSinceJoin = Math.floor((Date.now() - member.joinDate) / (1000 * 60 * 60 * 24));
+
+  // Items from player inventory that can be equipped
+  const equippableItems = player?.inventory
+    ? Object.entries(player.inventory).filter(([name, qty]) => qty > 0 && name in EQUIPPABLE_ITEMS)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -172,7 +178,7 @@ function MemberDetail({ member, onRoleChange, onDismiss }: {
             {member.name}
             {!member.isAlive && ' (已故)'}
           </h3>
-          <p className="text-sm text-zinc-400">【{member.realm}】</p>
+          <p className="text-sm text-zinc-400">【{member.realm}】 Lv.{member.level ?? 1}</p>
         </div>
         {member.isAlive && (
           <button
@@ -202,6 +208,19 @@ function MemberDetail({ member, onRoleChange, onDismiss }: {
         </div>
         <p className="text-xs text-emerald-400">{roleInfo.statBonus}</p>
       </div>
+
+      {/* Exp bar */}
+      {member.isAlive && (
+        <div>
+          <div className="flex justify-between text-xs text-zinc-400 mb-1">
+            <span>经验</span><span>{(member.exp ?? 0)}/{(member.maxExp ?? 80)}</span>
+          </div>
+          <div className="w-full bg-zinc-950 rounded-full h-2">
+            <div className="bg-amber-500 h-2 rounded-full"
+              style={{ width: `${Math.min(100, ((member.exp ?? 0) / (member.maxExp ?? 80)) * 100)}%` }} />
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2 text-sm">
@@ -247,15 +266,66 @@ function MemberDetail({ member, onRoleChange, onDismiss }: {
         </div>
       </div>
 
+      {/* Equipment */}
+      {member.isAlive && (
+        <div className="p-3 bg-zinc-800/50 rounded">
+          <h4 className="text-xs font-medium text-zinc-400 mb-2 flex items-center">
+            <Sword size={12} className="mr-1" /> 装备
+          </h4>
+          {(!member.equipment || member.equipment.length === 0) ? (
+            <p className="text-xs text-zinc-600">无装备</p>
+          ) : (
+            <div className="space-y-1">
+              {member.equipment.map(eq => (
+                <div key={eq} className="flex items-center justify-between text-xs">
+                  <span className="text-emerald-300">{eq}</span>
+                  <button
+                    onClick={() => unequipMember(member.id, eq)}
+                    className="px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 rounded text-zinc-400"
+                  >
+                    卸下
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {equippableItems.length > 0 && (!member.equipment || member.equipment.length === 0) && (
+            <div className="mt-2 pt-2 border-t border-zinc-700">
+              <p className="text-xs text-zinc-500 mb-1">背包中可装备：</p>
+              {equippableItems.map(([itemName, qty]) => (
+                <button
+                  key={itemName}
+                  onClick={() => equipMember(member.id, itemName)}
+                  className="mr-1 px-2 py-0.5 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-xs text-amber-300"
+                >
+                  {itemName} ({qty})
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Personality */}
       <div className="p-3 bg-zinc-800/50 rounded">
         <h4 className="text-xs font-medium text-zinc-400 mb-2">性格</h4>
         <div className="grid grid-cols-4 gap-2 text-xs">
           <div><span className="text-zinc-500">野心</span><p>{member.personality.ambition}</p></div>
           <div><span className="text-zinc-500">谨慎</span><p>{member.personality.caution}</p></div>
-          <div><span className="text-zinc-500">忠诚</span><p>{member.personality.loyalty}</p></div>
+          <div>
+            <span className="text-zinc-500">忠诚</span>
+            <p className={member.personality.loyalty < 20 ? 'text-rose-400' : member.personality.loyalty < 40 ? 'text-yellow-400' : ''}>
+              {member.personality.loyalty}
+            </p>
+          </div>
           <div><span className="text-zinc-500">贪婪</span><p>{member.personality.greed}</p></div>
         </div>
+        {member.isAlive && member.personality.loyalty < 20 && (
+          <div className="mt-2 flex items-center space-x-1 text-rose-400 text-xs">
+            <AlertTriangle size={12} />
+            <span>忠诚度极低，可能在战斗中叛逃！</span>
+          </div>
+        )}
       </div>
 
       {/* Dead member dismiss */}

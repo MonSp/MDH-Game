@@ -164,6 +164,10 @@ export const RECRUIT_REPUTATION_TIER: Record<SquadRole, number> = {
   '后勤型': 500,
 };
 
+export const EQUIPPABLE_ITEMS: Record<string, number> = {
+  '低级法器': 10,
+};
+
 export const RECRUIT_SPIRITSTONE_COST: Record<SquadRole, number> = {
   '战斗型': 200,
   '斥候型': 350,
@@ -268,6 +272,11 @@ export interface SquadMember {
   isAlive: boolean;
   position: { x: number; y: number };
   activity: string;
+  // P1 enhancements
+  equipment: string[];
+  level: number;
+  exp: number;
+  maxExp: number;
 }
 
 // 外交/战争类型
@@ -496,6 +505,9 @@ interface GameState {
   recruitToSquad: (npcId: string) => void;
   dismissFromSquad: (squadMemberId: string) => void;
   assignSquadRole: (squadMemberId: string, role: SquadRole) => void;
+  equipMember: (squadMemberId: string, itemName: string) => void;
+  unequipMember: (squadMemberId: string, itemName: string) => void;
+  getMaxSquadSize: () => number;
 
   // 势力系统
   createFaction: (name: string) => boolean;
@@ -1464,6 +1476,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   recruitToSquad: (npcId) => {
     const state = get();
     if (!state.player) return;
+
+    // Check squad size cap
+    const aliveCount = state.squadMembers.filter(m => m.isAlive).length;
+    const maxSize = get().getMaxSquadSize();
+    if (aliveCount >= maxSize) {
+      state.addLog({ type: 'system', message: `队伍已满（${aliveCount}/${maxSize}）。提升声望可扩大队伍上限。` });
+      return;
+    }
+
     const npc = state.nearbyNPCs.find(n => n.id === npcId);
     if (!npc) { state.addLog({ type: 'system', message: '该修士不在附近。' }); return; }
 
@@ -1498,6 +1519,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       isAlive: true,
       position: { ...npc.position },
       activity: '跟随中',
+      equipment: [],
+      level: 1,
+      exp: 0,
+      maxExp: 80,
     };
 
     set(s => ({
@@ -1535,10 +1560,20 @@ export const useGameStore = create<GameState>((set, get) => ({
       position: { ...state.player.position },
     };
 
-    set(s => ({
-      squadMembers: s.squadMembers.filter(m => m.id !== squadMemberId),
-      nearbyNPCs: [...s.nearbyNPCs, newNpc],
-    }));
+    set(s => {
+      // Return equipment to player inventory on dismissal
+      let inv = s.player ? { ...s.player.inventory } : {};
+      if (member.equipment && member.equipment.length > 0) {
+        for (const eq of member.equipment) {
+          inv[eq] = (inv[eq] || 0) + 1;
+        }
+      }
+      return {
+        squadMembers: s.squadMembers.filter(m => m.id !== squadMemberId),
+        nearbyNPCs: [...s.nearbyNPCs, newNpc],
+        player: s.player ? { ...s.player, inventory: inv } : s.player,
+      };
+    });
     state.addLog({ type: 'event', message: `${member.name} 离开了你的队伍。` });
   },
 
@@ -1548,6 +1583,57 @@ export const useGameStore = create<GameState>((set, get) => ({
       squadMembers: s.squadMembers.map(m => m.id === squadMemberId ? { ...m, role } : m),
     }));
     state.addLog({ type: 'event', message: `小队成员职务已调整。` });
+  },
+
+  // === P1 小队增强 ===
+
+  getMaxSquadSize: () => {
+    const state = get();
+    const rep = state.player?.reputation ?? 0;
+    if (rep >= 500) return 15;
+    if (rep >= 200) return 7;
+    if (rep >= 50) return 3;
+    return 1;
+  },
+
+  equipMember: (squadMemberId, itemName) => {
+    const state = get();
+    if (!state.player) return;
+    const member = state.squadMembers.find(m => m.id === squadMemberId);
+    if (!member || !member.isAlive) { state.addLog({ type: 'system', message: '该队员无法装备。' }); return; }
+    if (!state.player.inventory[itemName] || state.player.inventory[itemName] <= 0) return;
+    // Only allow one equipment item per member
+    if (member.equipment && member.equipment.length > 0) {
+      state.addLog({ type: 'system', message: `该队员已有装备，请先卸下。` });
+      return;
+    }
+    const powerBonus = EQUIPPABLE_ITEMS[itemName] ?? 5;
+    set(s => ({
+      player: s.player ? { ...s.player, inventory: { ...s.player.inventory, [itemName]: (s.player.inventory[itemName] || 0) - 1 } } : s.player,
+      squadMembers: s.squadMembers.map(m =>
+        m.id === squadMemberId
+          ? { ...m, equipment: [...(m.equipment || []), itemName], power: m.power + powerBonus }
+          : m
+      ),
+    }));
+    state.addLog({ type: 'event', message: `${member.name} 装备了【${itemName}】！` });
+  },
+
+  unequipMember: (squadMemberId, itemName) => {
+    const state = get();
+    if (!state.player) return;
+    const member = state.squadMembers.find(m => m.id === squadMemberId);
+    if (!member || !member.isAlive || !member.equipment?.includes(itemName)) return;
+    const powerPenalty = -(EQUIPPABLE_ITEMS[itemName] ?? 5);
+    set(s => ({
+      player: s.player ? { ...s.player, inventory: { ...s.player.inventory, [itemName]: (s.player.inventory[itemName] || 0) + 1 } } : s.player,
+      squadMembers: s.squadMembers.map(m =>
+        m.id === squadMemberId
+          ? { ...m, equipment: (m.equipment || []).filter(e => e !== itemName), power: Math.max(1, m.power + powerPenalty) }
+          : m
+      ),
+    }));
+    state.addLog({ type: 'event', message: `${member.name} 卸下了【${itemName}】。` });
   },
 
   // === 势力系统 ===
@@ -2304,7 +2390,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
 
     // Phase 2: Player vs Monster
-    let updatedPlayer = state.player ? { ...state.player } : null;
+    let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory } } : null;
     for (const monster of monsters) {
       if (!monster.isAlive || foughtThisTick.has(monster.id) || playerMonsterHit) continue;
       if (!updatedPlayer) continue;
@@ -2355,9 +2441,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     // Phase 3: Squad member combat with monsters
     const scriptureLevel = getFactionBuildingLevel(state.clans, state.playerFactionId, '藏经阁');
     const scriptureBonus = scriptureLevel > 0 ? BUILDING_SPEED_MULTIPLIERS['藏经阁'][scriptureLevel - 1] : 1;
-    let updatedSquadMembers = [...state.squadMembers];
+    let updatedSquadMembers = state.squadMembers.map(m => ({ ...m, equipment: [...(m.equipment || [])], position: { ...m.position } }));
     for (const member of updatedSquadMembers) {
       if (!member.isAlive) continue;
+      // Loyalty modifier: 0.7 at 0 -> 1.0 at 100
+      const loyaltyMult = 0.7 + (member.personality?.loyalty ?? 50) * 0.003;
       for (const monster of monsters) {
         if (!monster.isAlive || foughtThisTick.has(monster.id)) continue;
         const dx = Math.abs(monster.position.x - member.position.x);
@@ -2365,8 +2453,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (dx <= 1 && dy <= 1) {
           foughtThisTick.add(monster.id);
 
-          const memberAtk = Math.floor(member.power / 10 * scriptureBonus);
-          const memberDef = Math.floor(member.power / 20 * scriptureBonus);
+          const memberAtk = Math.floor(member.power / 10 * scriptureBonus * loyaltyMult);
+          const memberDef = Math.floor(member.power / 20 * scriptureBonus * loyaltyMult);
           const dmgToMonster = calculateDamage(memberAtk, monster.defense);
           const dmgToMember = calculateDamage(monster.attack, memberDef);
 
@@ -2378,12 +2466,40 @@ export const useGameStore = create<GameState>((set, get) => ({
           if (monster.hp <= 0) {
             monster.isAlive = false;
             member.kills += 1;
-            state.addLog({ type: 'combat', message: `【${member.name}】击败了 ${monster.name}！` });
+
+            // Grant squad exp
+            const squadExp = Math.max(1, Math.floor((monster.expReward ?? 0) / 3));
+            member.exp = (member.exp || 0) + squadExp;
+            state.addLog({ type: 'combat', message: `【${member.name}】击败了 ${monster.name}！获得 ${squadExp} 点经验。` });
+
+            // Level up check
+            const curMaxExp = member.maxExp || 80;
+            if (member.exp >= curMaxExp) {
+              member.exp = 0;
+              member.level = (member.level || 1) + 1;
+              member.maxExp = Math.floor(curMaxExp * 1.4);
+              member.power += 5;
+              member.maxHp += 10;
+              member.maxMp += 5;
+              member.hp = Math.min(member.hp + 20, member.maxHp);
+              state.addLog({ type: 'event', message: `【升级】${member.name} 提升至 ${member.level} 级！战力+5。` });
+            }
           }
 
           if (member.hp <= 0) {
             member.isAlive = false;
             member.hp = 0;
+            // Return equipment to player inventory
+            if (member.equipment && member.equipment.length > 0) {
+              const targetPlayer = updatedPlayer || state.player;
+              if (targetPlayer) {
+                if (!updatedPlayer) updatedPlayer = { ...state.player!, inventory: { ...state.player!.inventory } };
+                for (const eq of member.equipment) {
+                  updatedPlayer.inventory[eq] = (updatedPlayer.inventory[eq] || 0) + 1;
+                }
+              }
+            }
+            member.equipment = [];
             state.addLog({ type: 'combat', message: `【战死】${member.name} 在战斗中力竭身亡！你的心腹就此陨落...` });
           }
           break; // one monster per member per tick
@@ -2425,6 +2541,33 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Remove dead monsters
     const aliveMonsters = monsters.filter(m => m.isAlive);
+
+    // Squad desertion check: low loyalty + low morale
+    const factionMorale = state.playerFactionId
+      ? state.clans.find(c => c.id === state.playerFactionId)?.morale ?? 50
+      : 50;
+    const deserters: SquadMember[] = [];
+    updatedSquadMembers = updatedSquadMembers.filter(m => {
+      if (!m.isAlive) return true;
+      if ((m.personality?.loyalty ?? 50) < 20 && factionMorale < 30 && Math.random() < 0.05) {
+        deserters.push(m);
+        return false;
+      }
+      return true;
+    });
+    for (const d of deserters) {
+      // Return equipment to player inventory before removal
+      if (d.equipment && d.equipment.length > 0) {
+        const targetPlayer = updatedPlayer || state.player;
+        if (targetPlayer) {
+          if (!updatedPlayer) updatedPlayer = { ...state.player! };
+          for (const eq of d.equipment) {
+            updatedPlayer.inventory[eq] = (updatedPlayer.inventory[eq] || 0) + 1;
+          }
+        }
+      }
+      state.addLog({ type: 'event', message: `【叛逃】${d.name} 因忠诚度低下而离开了你的队伍！` });
+    }
 
     // Update clans treasury
     let updatedClans = [...state.clans];
