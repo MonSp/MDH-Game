@@ -81,3 +81,19 @@ Implementation pending. See design doc at `~/.gstack/projects/MyGame/test-main-d
 **Context:** ScenePanel has no keyboard nav or a11y spec. Players who rely on keyboard or screen readers can't interact with the scene.
 **What:** Add Escape to close, Tab between choices, Enter to select. Add ARIA labels for screen readers (`role="dialog"`, `aria-label` for scene title, `aria-describedby` for description).
 **Effort:** ~15 min
+
+## Wire building effects as runtime stat modifiers
+
+**Priority:** P1
+**Added:** 2026-05-03 (deferred from P2 Faction System plan)
+**Context:** `BUILDING_EFFECTS` defines per-level bonuses for all 6 building types (cultivation speed +10/20/30% from 练功房, pill effect +10/20/30% from 丹房, squad power +5/10/15% from 藏经阁, etc.) but they are only displayed in the UI panel — not applied as runtime stat modifiers.
+**What:** Wire 练功房 level into cultivation speed multiplier, 藏经阁 into squad member power bonus, 丹房 into pill consumption effect, 库房 into treasury cap, 哨塔 into map vision radius.
+**Effort:** ~30 min (CC)
+
+## Morale debuff warning when faction morale < 20
+
+**Priority:** P1
+**Added:** 2026-05-03 (deferred from P2 Faction System plan)
+**Context:** The faction morale drift toward 50 is implemented, but the plan specified a debuff warning when morale drops below 20.
+**What:** Add a log warning and visual indicator when faction morale < 20 (e.g., "士气低落，队员可能叛离！"). Optionally apply stat penalties.
+**Effort:** ~10 min (CC)

@@ -2,6 +2,19 @@
 
 All notable changes to 《太古纪元：霸业》 (Xianxia Pixel MMORPG).
 
+## [1.5.0.0] - 2026-05-03
+
+### Added
+- P2 Faction System (势力系统): create your own faction with 500+ reputation, 100K spirit stones, and 3+ squad members
+- 6 building types with 3 upgrade levels: 议事厅 (tax efficiency), 练功房 (cultivation speed), 丹房 (pill effect), 藏经阁 (squad power), 库房 (passive income), 哨塔 (vision range)
+- Faction management panel with create-flow and 3-tab UI: overview (stats, upgrade costs, building effects), buildings (construct/upgrade with cost display), officers (appoint members as 长老/供奉)
+- Faction officer system: assign squad members to faction positions with activity tracking and appointment logging
+- Tax collection: territory-based income calculation with treasury updates and morale effects
+- Passive income tick: 库房 generates treasury per game tick, faction morale drifts toward neutral (50)
+- Faction base on 2.5D world map: amber territory ring, colored building indicator meshes with level-scaled height, faction flag label
+- Faction save/load persistence with proper clearing on ascension and cycle rebirth
+- 29 tests covering all faction store methods including guard clauses, edge cases, and integration paths
+
 ## [1.4.0.0] - 2026-05-02
 
 ### Added
