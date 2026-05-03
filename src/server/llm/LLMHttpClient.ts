@@ -54,8 +54,6 @@ const DIALOGUE_TEMPERATURE = 0.9;
 const DIALOGUE_MAX_TOKENS = 400;
 const PLAN_TEMPERATURE = 0.8;
 const PLAN_MAX_TOKENS = 600;
-const GEMINI_DIALOGUE_MAX_TOKENS = 400;
-const GEMINI_PLAN_MAX_TOKENS = 800;
 
 async function readResponseText(res: Response, timeoutMs = BODY_READ_TIMEOUT_MS): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | null = null;
