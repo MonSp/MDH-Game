@@ -61,9 +61,7 @@ export const Game = () => {
   const [dialogueText, setDialogueText] = useState<string | undefined>();
   const [npcName, setNpcName] = useState<string | undefined>();
   const [npcRole, setNpcRole] = useState<string | undefined>();
-  const [disconnectError, setDisconnectError] = useState(false);
   const [llmError, setLlmError] = useState(false);
-  const llmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneStartedRef = useRef(false);
   const dialogueResolveRef = useRef<((value: { text: string; name: string; role: string; emotion?: string }) => void) | null>(null);
   const dialogueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,13 +134,6 @@ export const Game = () => {
     };
   }, []);
 
-  const clearLlmTimer = useCallback(() => {
-    if (llmTimerRef.current) {
-      clearTimeout(llmTimerRef.current);
-      llmTimerRef.current = null;
-    }
-  }, []);
-
   const handleChoice = useCallback(async (choiceIndex: number) => {
     if (!activeScene) return;
     const choice = activeScene.choices[choiceIndex];
@@ -203,7 +194,6 @@ export const Game = () => {
     // 2. Handle NPC dialogue
     if (choice.npcDialogue) {
       setSceneState('LOADING');
-      setDisconnectError(false);
       const npcId = choice.npcDialogue;
       pendingNpcIdRef.current = npcId;
       markNpcMet(npcId); // persist NPC memory
@@ -243,6 +233,7 @@ export const Game = () => {
       } catch {
         // LLM timeout or socket error — show fallback option
         setLlmError(true);
+        pendingNpcIdRef.current = null;
       }
       return;
     }
@@ -296,23 +287,24 @@ export const Game = () => {
       setNpcName(undefined);
       setNpcRole(undefined);
     }
-    clearLlmTimer();
-    setDisconnectError(false);
     setLlmError(false);
-  }, [activeScene, dialogueText, npcName, addLog, clearLlmTimer]);
+  }, [activeScene, dialogueText, npcName, addLog]);
 
   const handleClose = useCallback(() => {
-    clearLlmTimer();
+    if (dialogueTimeoutRef.current) {
+      clearTimeout(dialogueTimeoutRef.current);
+      dialogueTimeoutRef.current = null;
+    }
+    dialogueResolveRef.current = null;
     setActiveScene(null);
     setScenePath([]);
     setSceneState('CHOOSING');
     setDialogueText(undefined);
     setNpcName(undefined);
     setNpcRole(undefined);
-    setDisconnectError(false);
     setLlmError(false);
     setTriggerVersion(v => v + 1);
-  }, [clearLlmTimer]);
+  }, []);
 
   const handleFallback = useCallback(() => {
     const npcId = pendingNpcIdRef.current;
@@ -327,18 +319,20 @@ export const Game = () => {
       setDialogueText(NPC_FALLBACK);
     }
     setSceneState('DIALOGUE');
-    setDisconnectError(false);
     setLlmError(false);
-    clearLlmTimer();
-  }, [clearLlmTimer]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      clearLlmTimer();
+      if (dialogueTimeoutRef.current) {
+        clearTimeout(dialogueTimeoutRef.current);
+        dialogueTimeoutRef.current = null;
+      }
+      dialogueResolveRef.current = null;
       sceneStartedRef.current = false; // reset so re-mount can start intro
     };
-  }, [clearLlmTimer]);
+  }, []);
 
   if (!player) return null;
 
@@ -368,7 +362,6 @@ export const Game = () => {
           dialogueText={dialogueText}
           npcName={npcName}
           npcRole={npcRole}
-          disconnectError={disconnectError}
           llmError={llmError}
           onChoice={handleChoice}
           onContinue={handleContinue}
