@@ -92,18 +92,12 @@ Implementation pending. See design doc at `~/.gstack/projects/MyGame/test-main-d
 **What:** Add Escape to close, Tab between choices, Enter to select. Add ARIA labels for screen readers (`role="dialog"`, `aria-label` for scene title, `aria-describedby` for description).
 **Effort:** ~15 min
 
-## Wire building effects as runtime stat modifiers
+## ~~Wire building effects as runtime stat modifiers~~ ✅ DONE
 
-**Priority:** P1
-**Added:** 2026-05-03 (deferred from P2 Faction System plan)
-**Context:** `BUILDING_EFFECTS` defines per-level bonuses for all 6 building types (cultivation speed +10/20/30% from 练功房, pill effect +10/20/30% from 丹房, squad power +5/10/15% from 藏经阁, etc.) but they are only displayed in the UI panel — not applied as runtime stat modifiers.
-**What:** Wire 练功房 level into cultivation speed multiplier, 藏经阁 into squad member power bonus, 丹房 into pill consumption effect, 库房 into treasury cap, 哨塔 into map vision radius.
-**Effort:** ~30 min (CC)
+**Completed:** 2026-05-03 (v1.6.0.0+)
+**Results:** 练功房 wired into cultivate() exp gain (1.1/1.2/1.3x), 藏经阁 wired into squad combat memberAtk/memberDef (1.05/1.10/1.15x), 丹房 wired into 洗髓丹 stat bonuses (1.1/1.2/1.3x), 库房 wired into treasury cap (10000+level*5000) in collectTax and factionTick, 哨塔 wired into Map2D fog distance and zoom. 11 tests.
 
-## Morale debuff warning when faction morale < 20
+## ~~Morale debuff warning when faction morale < 20~~ ✅ DONE
 
-**Priority:** P1
-**Added:** 2026-05-03 (deferred from P2 Faction System plan)
-**Context:** The faction morale drift toward 50 is implemented, but the plan specified a debuff warning when morale drops below 20.
-**What:** Add a log warning and visual indicator when faction morale < 20 (e.g., "士气低落，队员可能叛离！"). Optionally apply stat penalties.
-**Effort:** ~10 min (CC)
+**Completed:** 2026-05-03 (v1.6.0.0+)
+**Results:** Log warning (throttled 30s) in factionTick, red animated pulse on morale value in FactionPanel, inline warning banner, and 50% tax income penalty when morale < 20.

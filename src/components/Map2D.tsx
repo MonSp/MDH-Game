@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType } from '../store/gameStore';
+import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile } from '../utils/terrain';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
@@ -535,6 +535,12 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
   const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
+  // 哨塔 vision bonus for fog and zoom
+  const watchtowerLevel = playerFactionId
+    ? (clans.find(c => c.id === playerFactionId)?.buildings?.find(b => b.type === '哨塔')?.level || 0)
+    : 0;
+  const visionBonus = watchtowerLevel > 0 ? BUILDING_VISION_BONUS[watchtowerLevel] || 0 : 0;
+
   // Keyboard Movement + proximity trigger
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -616,15 +622,15 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     <div className="w-full h-full bg-zinc-950 relative overflow-hidden" style={{ width: '100vw', height: '100vh' }}>
       <Canvas shadows style={{ width: '100%', height: '100%' }}>
         {/* 迷雾参数调整：颜色调亮，范围大幅推远，减少压抑感 */}
-        <fog attach="fog" args={['#18181b', 25, 60]} />
+        <fog attach="fog" args={['#18181b', 25 - visionBonus * 2, 60 + visionBonus * 10]} />
 
-        <OrthographicCamera 
-          makeDefault 
-          position={[25, 25, 25]} 
-          zoom={35} 
-          near={-100} 
-          far={200} 
-          onUpdate={c => c.lookAt(0, 0, 0)} 
+        <OrthographicCamera
+          makeDefault
+          position={[25, 25, 25]}
+          zoom={35 - visionBonus * 1.5}
+          near={-100}
+          far={200}
+          onUpdate={c => c.lookAt(0, 0, 0)}
         />
         
         {/* 环境光大幅调亮，模拟明亮的白天天光 */}

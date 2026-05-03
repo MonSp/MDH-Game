@@ -128,9 +128,14 @@ export const FactionPanel = ({ onClose }: { onClose: () => void }) => {
           </div>
           <div className="text-center">
             <div className="text-zinc-500">士气</div>
-            <div className={`font-medium ${(faction.morale ?? 50) > 60 ? 'text-green-400' : (faction.morale ?? 50) < 30 ? 'text-red-400' : 'text-zinc-200'}`}>
+            <div className={`font-medium ${(faction.morale ?? 50) < 20 ? 'text-rose-400 animate-pulse' : (faction.morale ?? 50) > 60 ? 'text-green-400' : (faction.morale ?? 50) < 30 ? 'text-red-400' : 'text-zinc-200'}`}>
               {faction.morale ?? 50}/100
             </div>
+            {(faction.morale ?? 50) < 20 && (
+              <div className="mt-2 px-2 py-1 bg-rose-900/40 border border-rose-700/50 rounded text-rose-300 text-xs">
+                士气低落，队员可能叛离！
+              </div>
+            )}
           </div>
           <div className="text-center">
             <div className="text-zinc-500">成员</div>

@@ -200,6 +200,23 @@ export const BUILDING_UPGRADE_COST: Record<BuildingType, number[]> = {
   '哨塔': [2000, 8000, 20000],
 };
 
+// Building effect multipliers per level (index 0 = level 1)
+const BUILDING_SPEED_MULTIPLIERS: Partial<Record<BuildingType, number[]>> = {
+  '练功房': [1.1, 1.2, 1.3],
+  '丹房': [1.1, 1.2, 1.3],
+  '藏经阁': [1.05, 1.10, 1.15],
+};
+export const BUILDING_TREASURY_CAP_BASE = 10000;
+export const BUILDING_TREASURY_CAP_PER_LEVEL = 5000;
+export const BUILDING_VISION_BONUS: Record<number, number> = { 1: 2, 2: 4, 3: 6 };
+
+function getFactionBuildingLevel(clans: Clan[], factionId: string | null, type: BuildingType): number {
+  if (!factionId) return 0;
+  const faction = clans.find(c => c.id === factionId);
+  if (!faction || !faction.buildings) return 0;
+  return faction.buildings.find(b => b.type === type)?.level || 0;
+}
+
 export const FACTION_CREATE_REQUIREMENTS = {
   reputation: 500,
   spiritStones: 100000,
@@ -884,6 +901,8 @@ function evaluateNPCBehavior(npc: NPC, state: GameState): NPC {
   };
 }
 
+let lastMoraleWarningAt: number | undefined;
+
 export const useGameStore = create<GameState>((set, get) => ({
   servers: [
     { id: 's1-9', name: '太古一区(凡界)', playerCount: 100, status: '爆满' },
@@ -1240,9 +1259,12 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
 
         let buffedStats = { ...s.player.stats, hp: newHp };
+        // 丹房加成：丹药效果提升
+        const pillLevel = getFactionBuildingLevel(s.clans, s.playerFactionId, '丹房');
+        const pillBonus = pillLevel > 0 ? BUILDING_SPEED_MULTIPLIERS['丹房'][pillLevel - 1] : 1;
         // 战体额外加成生命上限
-        if (newType === '战体') buffedStats.maxHp = Math.floor(buffedStats.maxHp * 1.3);
-        if (newType === '剑体') buffedStats.attack = Math.floor(buffedStats.attack * 1.3);
+        if (newType === '战体') buffedStats.maxHp = Math.floor(buffedStats.maxHp * 1.3 * pillBonus);
+        if (newType === '剑体') buffedStats.attack = Math.floor(buffedStats.attack * 1.3 * pillBonus);
 
         return {
           player: {
@@ -1277,6 +1299,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     if (player.country === '燕') expGain = Math.floor(expGain * 1.1);
     if (player.country === '齐') expGain = Math.floor(expGain * 1.2);
+
+    // 练功房加成：修炼速度提升
+    const trainingLevel = getFactionBuildingLevel(state.clans, state.playerFactionId, '练功房');
+    if (trainingLevel > 0) {
+      expGain = Math.floor(expGain * BUILDING_SPEED_MULTIPLIERS['练功房'][trainingLevel - 1]);
+    }
     
     let newExp = player.stats.exp + expGain;
     const wasExpFull = player.stats.exp >= player.stats.maxExp;
@@ -1642,16 +1670,22 @@ export const useGameStore = create<GameState>((set, get) => ({
     const territory = faction.territory || 1;
     const buildings = faction.buildings || [];
     const hallLevel = (buildings.find(b => b.type === '议事厅')?.level || 1);
-    const treasuryLevel = (buildings.find(b => b.type === '库房')?.level || 1);
+    const treasuryBldg = buildings.find(b => b.type === '库房');
+    const treasuryLevel = treasuryBldg?.level || 1;
 
     const baseIncome = territory * 50 + treasuryLevel * 30;
     const taxMultiplier = 1 + (hallLevel - 1) * 0.1;
-    const total = Math.floor(baseIncome * taxMultiplier);
+    let total = Math.floor(baseIncome * taxMultiplier);
+    // Morale debuff: income halved when morale < 20
+    if ((faction.morale ?? 50) < 20) {
+      total = Math.floor(total * 0.5);
+    }
+    const treasuryCap = treasuryBldg ? BUILDING_TREASURY_CAP_BASE + treasuryBldg.level * BUILDING_TREASURY_CAP_PER_LEVEL : null;
 
     set(s => ({
       clans: s.clans.map(c => c.id === state.playerFactionId ? {
         ...c,
-        treasury: (c.treasury || 0) + total,
+        treasury: treasuryCap !== null ? Math.min((c.treasury || 0) + total, treasuryCap) : (c.treasury || 0) + total,
         morale: Math.min(100, (c.morale || 50) + 1),
       } : c),
     }));
@@ -2319,6 +2353,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // Phase 3: Squad member combat with monsters
+    const scriptureLevel = getFactionBuildingLevel(state.clans, state.playerFactionId, '藏经阁');
+    const scriptureBonus = scriptureLevel > 0 ? BUILDING_SPEED_MULTIPLIERS['藏经阁'][scriptureLevel - 1] : 1;
     let updatedSquadMembers = [...state.squadMembers];
     for (const member of updatedSquadMembers) {
       if (!member.isAlive) continue;
@@ -2329,8 +2365,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (dx <= 1 && dy <= 1) {
           foughtThisTick.add(monster.id);
 
-          const memberAtk = Math.floor(member.power / 10);
-          const memberDef = Math.floor(member.power / 20);
+          const memberAtk = Math.floor(member.power / 10 * scriptureBonus);
+          const memberDef = Math.floor(member.power / 20 * scriptureBonus);
           const dmgToMonster = calculateDamage(memberAtk, monster.defense);
           const dmgToMember = calculateDamage(monster.attack, memberDef);
 
@@ -2409,9 +2445,10 @@ export const useGameStore = create<GameState>((set, get) => ({
         const treasuryLevel = (buildings.find(b => b.type === '库房')?.level || 0);
         if (treasuryLevel > 0) {
           const passiveIncome = treasuryLevel * 5;
+          const cap = BUILDING_TREASURY_CAP_BASE + treasuryLevel * BUILDING_TREASURY_CAP_PER_LEVEL;
           updatedClans = updatedClans.map(c =>
             c.id === state.playerFactionId
-              ? { ...c, treasury: (c.treasury || 0) + passiveIncome }
+              ? { ...c, treasury: Math.min((c.treasury || 0) + passiveIncome, cap) }
               : c
           );
         }
@@ -2429,6 +2466,14 @@ export const useGameStore = create<GameState>((set, get) => ({
               ? { ...c, morale: Math.max(50, curMorale - 1) }
               : c
           );
+        }
+        // Morale < 20 warning (throttled to once per 30s)
+        if ((faction.morale ?? 50) < 20) {
+          const now = Date.now();
+          if (now - (lastMoraleWarningAt || 0) > 30000) {
+            state.addLog({ type: 'event', message: '【士气低落】势力士气低于 20，队员可能叛离！' });
+            lastMoraleWarningAt = now;
+          }
         }
       }
     }
