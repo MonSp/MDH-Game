@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.1.0] - 2026-05-03
+
+### Changed
+- Extracted types, constants, and helper functions from gameStore.ts (2728 lines) into dedicated gameConstants.ts module (913 lines) with re-exports — no behavioral change
+- DRY refactored LLMHttpClient: merged 4 provider-specific methods into parameterized callOpenAI()/callGemini(), extracted shared retry/backoff/fallback loop into generic requestWithRetry<T>() method (~170 lines of duplication eliminated)
+- Migrated postcss.config.js to ESM format (.mjs)
+- Improved ScenePanel responsive styling: mobile-optimized padding, text sizing, and touch targets (min-h-[44px])
+
+### Fixed
+- Added missing SquadRole and BuildingLevel type imports in gameStore.ts (regression from module extraction)
+- Restored "Dialogue" prefix in LLMHttpClient fallback log messages (lost during DRY refactoring)
+- Removed unused GEMINI_DIALOGUE_MAX_TOKENS and GEMINI_PLAN_MAX_TOKENS constants
+- Reordered spread in log callback calls to prevent accidental field overrides
+
 ## [1.8.0.0] - 2026-05-03
 
 ### Added
