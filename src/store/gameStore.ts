@@ -1679,7 +1679,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         }
         if (c.id === targetId) {
           // Mirror: set the reverse relation
-          const reverseStatus: DiplomaticStatus = diplomacy.status === '战争' ? '战争' : diplomacy.status === '同盟' ? '同盟' : diplomacy.status === '臣服' ? '皇族' : diplomacy.status;
           const reverse: ClanDiplomacy = {
             status: diplomacy.status === '臣服' ? '皇族' : diplomacy.status, // 接收臣服的一方
             conflictLevel: diplomacy.conflictLevel,
@@ -1688,7 +1687,6 @@ export const useGameStore = create<GameState>((set, get) => ({
             allianceDate: diplomacy.allianceDate,
             vassalTribute: diplomacy.status === '臣服' ? diplomacy.vassalTribute : undefined,
           };
-          if (diplomacy.status === '停战') reverse.status = '停战';
           return { ...c, diplomacy: { ...(c.diplomacy || {}), [clanId]: reverse } };
         }
         return c;
@@ -2436,27 +2434,30 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // Diplomacy tick: truce expiry
-    updatedClans = updatedClans.map(c => {
-      if (!c.diplomacy) return c;
-      let updated = { ...c };
+    const expiredTruces: Array<{ clanId: string; targetId: string; targetName: string; isPlayer: boolean }> = [];
+    for (const c of updatedClans) {
+      if (!c.diplomacy) continue;
       for (const [targetId, entry] of Object.entries(c.diplomacy)) {
         if (entry.status === '停战' && entry.truceUntil && Date.now() > entry.truceUntil) {
-          const d = { ...updated.diplomacy! };
-          delete d[targetId];
-          updated = { ...updated, diplomacy: d };
-          // Also clear the reverse
-          updatedClans = updatedClans.map(rc =>
-            rc.id === targetId
-              ? { ...rc, diplomacy: (() => { const rd = { ...(rc.diplomacy || {}) }; delete rd[updated.id]; return rd; })() }
-              : rc
-          );
-          if (c.id === state.playerFactionId) {
-            state.addLog({ type: 'event', message: `【停战到期】与 ${targetId} 的停战协议已到期。` });
-          }
+          const targetClan = updatedClans.find(rc => rc.id === targetId);
+          expiredTruces.push({ clanId: c.id, targetId, targetName: targetClan?.name || targetId, isPlayer: c.id === state.playerFactionId });
         }
       }
-      return updated;
-    });
+    }
+    for (const et of expiredTruces) {
+      updatedClans = updatedClans.map(c => {
+        if (c.id === et.clanId || c.id === et.targetId) {
+          const otherId = c.id === et.clanId ? et.targetId : et.clanId;
+          const d = { ...(c.diplomacy || {}) };
+          delete d[otherId];
+          return { ...c, diplomacy: d };
+        }
+        return c;
+      });
+      if (et.isPlayer) {
+        state.addLog({ type: 'event', message: `【停战到期】与 ${et.targetName} 的停战协议已到期。` });
+      }
+    }
 
     set({
       nearbyNPCs: npcs,

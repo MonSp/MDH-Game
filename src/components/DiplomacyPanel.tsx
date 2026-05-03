@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGameStore, type DiplomaticStatus, type ConflictLevel, type Clan } from '../store/gameStore';
-import { X, Handshake, Swords, Heart, Flag, Search, Shield, AlertTriangle } from 'lucide-react';
+import { X, Handshake, Swords, Heart, Flag, Search, Shield } from 'lucide-react';
 
 const STATUS_LABELS: Record<DiplomaticStatus, string> = {
   '中立': '中立',
