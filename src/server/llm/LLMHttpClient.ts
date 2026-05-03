@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { readFileSync } from 'fs';
 import { parsePlanResponse, ParsedPlan } from './PlanParser';
 import { logLLMCall } from './LLMLogger';
 
@@ -43,19 +44,18 @@ export interface DialogueRequestContext {
   userPrompt: string;
 }
 
-interface PendingRequest {
-  context: LLMRequestContext;
-  resolve: (result: LLMResult) => void;
-}
-
 const FALLBACK_COOLDOWN_MS = 5 * 60 * 1000;
-const MAX_RETRIES = 2; // 3 attempts total (1 initial + 2 retries)
-const RETRY_BACKOFF_MS = [6000, 12000]; // wait ~6s/~12s (jitter added at use site) — avg response is 3-4s
+const MAX_RETRIES = 2;
+const RETRY_BACKOFF_MS = [6000, 12000];
 const FETCH_TIMEOUT_MS = 45000;
 const BODY_READ_TIMEOUT_MS = 15000;
 const MAX_RESPONSE_LENGTH = 1000;
 const DIALOGUE_TEMPERATURE = 0.9;
 const DIALOGUE_MAX_TOKENS = 400;
+const PLAN_TEMPERATURE = 0.8;
+const PLAN_MAX_TOKENS = 600;
+const GEMINI_DIALOGUE_MAX_TOKENS = 400;
+const GEMINI_PLAN_MAX_TOKENS = 800;
 
 async function readResponseText(res: Response, timeoutMs = BODY_READ_TIMEOUT_MS): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -81,9 +81,8 @@ function loadConfig(): LLMClientConfig {
 
   // 1. Load from config file
   try {
-    const fs = require('fs');
     const configPath = path.resolve(__dirname, '../config/llm_config.txt');
-    const txt = fs.readFileSync(configPath, 'utf8');
+    const txt = readFileSync(configPath, 'utf8');
     for (const line of txt.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
@@ -131,10 +130,7 @@ export class LLMHttpClient {
   }
 
   private config: LLMClientConfig;
-  private pending: Map<string, PendingRequest> = new Map();
   private fallbackUntil: Map<string, number> = new Map();
-  private activeRequests = 0;
-  private maxConcurrent = 5;
 
   constructor() {
     this.config = loadConfig();
@@ -148,120 +144,124 @@ export class LLMHttpClient {
     }
   }
 
-  async requestPlan(context: LLMRequestContext): Promise<LLMResult> {
-    const cooldownUntil = this.fallbackUntil.get(context.npcId);
-    if (cooldownUntil && Date.now() < cooldownUntil) {
-      return {
-        success: false,
-        plan: null,
-        error: 'NPC in fallback cooldown',
-        latencyMs: 0,
-        retries: 0,
-        fallback: true,
-      };
+  // ── Shared HTTP fetch with timeout ──────────────────────────
+
+  private async fetchWithTimeout(url: string, headers: Record<string, string>, body: object): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
     }
-
-    const startTime = Date.now();
-    let lastError: string | null = null;
-    let responseText: string | null = null;
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        responseText = this.config.provider === 'gemini'
-          ? await this.callGemini(context)
-          : await this.callOpenAICompatible(context);
-
-        const latencyMs = Date.now() - startTime;
-
-        const plan = parsePlanResponse(responseText);
-        if (!plan) {
-          logLLMCall({
-            npcId: context.npcId,
-            npcName: context.npcName,
-            attempt: attempt + 1,
-            systemPromptTokens: context.systemPrompt.length,
-            userPromptTokens: context.userPrompt.length,
-            response: responseText,
-            latencyMs,
-            success: true,
-            parseSuccess: false,
-          });
-          return {
-            success: false,
-            plan: null,
-            error: 'Failed to parse LLM response',
-            latencyMs,
-            retries: attempt,
-            fallback: true,
-          };
-        }
-
-        const actions = plan.actions.map(a => `${a.actionType}[${a.priority}]`).join(', ');
-        logLLMCall({
-          npcId: context.npcId,
-          npcName: context.npcName,
-          attempt: attempt + 1,
-          systemPromptTokens: context.systemPrompt.length,
-          userPromptTokens: context.userPrompt.length,
-          response: responseText,
-          latencyMs,
-          success: true,
-          parseSuccess: true,
-          planSummary: `${plan.goal} | ${actions} | ${plan.emotionalState}`,
-        });
-
-        return {
-          success: true,
-          plan,
-          error: null,
-          latencyMs,
-          retries: attempt,
-          fallback: false,
-        };
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
-        const latencyMs = Date.now() - startTime;
-
-        logLLMCall({
-          npcId: context.npcId,
-          npcName: context.npcName,
-          attempt: attempt + 1,
-          systemPromptTokens: context.systemPrompt.length,
-          userPromptTokens: context.userPrompt.length,
-          latencyMs,
-          success: false,
-          error: lastError,
-          response: responseText || undefined,
-        });
-
-        if (attempt < MAX_RETRIES) {
-          const delay = RETRY_BACKOFF_MS[attempt] + Math.random() * 2000;
-          await sleep(delay);
-        }
-      }
-    }
-
-    this.evictExpiredFallbacks();
-    this.fallbackUntil.set(context.npcId, Date.now() + FALLBACK_COOLDOWN_MS);
-
-    console.log(`[LLM] ${context.npcName} fallback (${lastError})`);
-
-    return {
-      success: false,
-      plan: null,
-      error: lastError,
-      latencyMs: Date.now() - startTime,
-      retries: MAX_RETRIES,
-      fallback: true,
-    };
   }
 
-  async requestDialogue(context: DialogueRequestContext): Promise<DialogueResult> {
+  // ── OpenAI-compatible provider ──────────────────────────────
+
+  private async callOpenAI(systemPrompt: string, userPrompt: string, temperature: number, maxTokens: number): Promise<string> {
+    const baseUrl = this.config.endpoint.replace(/\/+$/, '');
+    const url = `${baseUrl}/chat/completions`;
+
+    const body = {
+      model: this.config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+    };
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    }
+
+    const res = await this.fetchWithTimeout(url, headers, body);
+
+    if (!res.ok) {
+      const text = await readResponseText(res);
+      throw new Error(`API ${res.status}: ${text.slice(0, 500)}`);
+    }
+
+    const data = await res.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('Empty response from API');
+    }
+
+    return text;
+  }
+
+  // ── Gemini provider ─────────────────────────────────────────
+
+  private async callGemini(
+    systemPrompt: string,
+    userPrompt: string,
+    temperature: number,
+    maxTokens: number,
+    responseMimeType?: string,
+  ): Promise<string> {
+    const url = `${this.config.endpoint}/${this.config.model}:generateContent`;
+
+    const generationConfig: Record<string, unknown> = { temperature, maxOutputTokens: maxTokens };
+    if (responseMimeType) {
+      generationConfig.responseMimeType = responseMimeType;
+    }
+
+    const body = {
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      generationConfig,
+    };
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.config.apiKey) headers['X-Goog-Api-Key'] = this.config.apiKey;
+
+    const res = await this.fetchWithTimeout(url, headers, body);
+
+    if (!res.ok) {
+      const text = await readResponseText(res);
+      throw new Error(`Gemini API ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    const data = await res.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      throw new Error('Empty response from Gemini');
+    }
+
+    return text;
+  }
+
+  // ── Generic retry with fallback ─────────────────────────────
+
+  private async requestWithRetry<T>(
+    context: { npcId: string; npcName: string; systemPrompt: string; userPrompt: string },
+    temperature: number,
+    maxTokens: number,
+    geminiMimeType: string | undefined,
+    validate: (text: string) => { ok: boolean; result: T; error?: string } | { ok: false; result?: null; error: string },
+    buildLogSuccess: (responseText: string, latencyMs: number, attempt: number) => Record<string, unknown>,
+    buildLogError: (error: string, latencyMs: number, attempt: number) => Record<string, unknown>,
+  ): Promise<{ success: boolean; result: T | null; error: string | null; latencyMs: number; retries: number; fallback: boolean }> {
+    // Fallback cooldown guard
     const cooldownUntil = this.fallbackUntil.get(context.npcId);
     if (cooldownUntil && Date.now() < cooldownUntil) {
       return {
         success: false,
-        text: null,
+        result: null,
         error: 'NPC in fallback cooldown',
         latencyMs: 0,
         retries: 0,
@@ -275,13 +275,13 @@ export class LLMHttpClient {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const responseText = this.config.provider === 'gemini'
-          ? await this.callGeminiDialogue(context)
-          : await this.callOpenAIDialogue(context);
+          ? await this.callGemini(context.systemPrompt, context.userPrompt, temperature, maxTokens, geminiMimeType)
+          : await this.callOpenAI(context.systemPrompt, context.userPrompt, temperature, maxTokens);
 
         const latencyMs = Date.now() - startTime;
 
-        // Validate: must contain Chinese characters
-        if (!(/[一-鿿㐀-䶿]/.test(responseText))) {
+        const validation = validate(responseText);
+        if (!validation.ok) {
           logLLMCall({
             npcId: context.npcId,
             npcName: context.npcName,
@@ -290,19 +290,21 @@ export class LLMHttpClient {
             userPromptTokens: context.userPrompt.length,
             response: responseText,
             latencyMs,
-            success: false,
+            success: true,
             parseSuccess: false,
+            error: validation.error,
           });
           return {
             success: false,
-            text: null,
-            error: 'Response contains no Chinese characters',
+            result: null,
+            error: validation.error || 'Validation failed',
             latencyMs,
             retries: attempt,
             fallback: true,
           };
         }
 
+        const logFields = buildLogSuccess(responseText, latencyMs, attempt);
         logLLMCall({
           npcId: context.npcId,
           npcName: context.npcName,
@@ -313,11 +315,12 @@ export class LLMHttpClient {
           latencyMs,
           success: true,
           parseSuccess: true,
+          ...logFields,
         });
 
         return {
           success: true,
-          text: responseText.slice(0, MAX_RESPONSE_LENGTH),
+          result: validation.result,
           error: null,
           latencyMs,
           retries: attempt,
@@ -327,6 +330,7 @@ export class LLMHttpClient {
         lastError = err instanceof Error ? err.message : String(err);
         const latencyMs = Date.now() - startTime;
 
+        const logFields = buildLogError(lastError, latencyMs, attempt);
         logLLMCall({
           npcId: context.npcId,
           npcName: context.npcName,
@@ -335,7 +339,7 @@ export class LLMHttpClient {
           userPromptTokens: context.userPrompt.length,
           latencyMs,
           success: false,
-          error: lastError,
+          ...logFields,
         });
 
         if (attempt < MAX_RETRIES) {
@@ -347,15 +351,73 @@ export class LLMHttpClient {
 
     this.evictExpiredFallbacks();
     this.fallbackUntil.set(context.npcId, Date.now() + FALLBACK_COOLDOWN_MS);
-    console.log(`[LLM] Dialogue ${context.npcName} fallback (${lastError})`);
+    console.log(`[LLM] ${context.npcName} fallback (${lastError})`);
 
     return {
       success: false,
-      text: null,
+      result: null,
       error: lastError,
       latencyMs: Date.now() - startTime,
       retries: MAX_RETRIES,
       fallback: true,
+    };
+  }
+
+  // ── Public API ──────────────────────────────────────────────
+
+  async requestPlan(context: LLMRequestContext): Promise<LLMResult> {
+    const result = await this.requestWithRetry<ParsedPlan>(
+      context,
+      PLAN_TEMPERATURE,
+      PLAN_MAX_TOKENS,
+      'application/json',
+      (text) => {
+        const plan = parsePlanResponse(text);
+        if (!plan) return { ok: false as const, error: 'Failed to parse LLM response' };
+        return { ok: true as const, result: plan };
+      },
+      (responseText, latencyMs) => {
+        const plan = parsePlanResponse(responseText);
+        const actions = plan ? plan.actions.map(a => `${a.actionType}[${a.priority}]`).join(', ') : '';
+        const summary = plan ? `${plan.goal} | ${actions} | ${plan.emotionalState}` : '';
+        return { planSummary: summary };
+      },
+      (error) => ({ error, response: undefined }),
+    );
+
+    return {
+      success: result.success,
+      plan: result.result,
+      error: result.error,
+      latencyMs: result.latencyMs,
+      retries: result.retries,
+      fallback: result.fallback,
+    };
+  }
+
+  async requestDialogue(context: DialogueRequestContext): Promise<DialogueResult> {
+    const result = await this.requestWithRetry<string>(
+      context,
+      DIALOGUE_TEMPERATURE,
+      DIALOGUE_MAX_TOKENS,
+      undefined,
+      (text) => {
+        if (!/[一-鿿㐀-䶿]/.test(text)) {
+          return { ok: false as const, error: 'Response contains no Chinese characters' };
+        }
+        return { ok: true as const, result: text.slice(0, MAX_RESPONSE_LENGTH) };
+      },
+      () => ({}),
+      () => ({}),
+    );
+
+    return {
+      success: result.success,
+      text: result.result,
+      error: result.error,
+      latencyMs: result.latencyMs,
+      retries: result.retries,
+      fallback: result.fallback,
     };
   }
 
@@ -366,231 +428,6 @@ export class LLMHttpClient {
   isInFallback(npcId: string): boolean {
     const cooldown = this.fallbackUntil.get(npcId);
     return cooldown != null && Date.now() < cooldown;
-  }
-
-  private async callOpenAIDialogue(context: DialogueRequestContext): Promise<string> {
-    const baseUrl = this.config.endpoint.replace(/\/+$/, '');
-    const url = `${baseUrl}/chat/completions`;
-
-    const body = {
-      model: this.config.model,
-      messages: [
-        { role: 'system', content: context.systemPrompt },
-        { role: 'user', content: context.userPrompt },
-      ],
-      temperature: DIALOGUE_TEMPERATURE,
-      max_tokens: DIALOGUE_MAX_TOKENS,
-    };
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-
-    if (!res.ok) {
-      const text = await readResponseText(res);
-      throw new Error(`API ${res.status}: ${text.slice(0, 500)}`);
-    }
-
-    const data = await res.json() as {
-      choices?: Array<{
-        message?: { content?: string };
-      }>;
-    };
-
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) {
-      throw new Error('Empty response from API');
-    }
-
-    return text;
-  }
-
-  private async callGeminiDialogue(context: DialogueRequestContext): Promise<string> {
-    const url = `${this.config.endpoint}/${this.config.model}:generateContent`;
-
-    const body = {
-      system_instruction: {
-        parts: [{ text: context.systemPrompt }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: context.userPrompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: DIALOGUE_TEMPERATURE,
-        maxOutputTokens: DIALOGUE_MAX_TOKENS,
-      },
-    };
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.config.apiKey) headers['X-Goog-Api-Key'] = this.config.apiKey;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-
-    if (!res.ok) {
-      const text = await readResponseText(res);
-      throw new Error(`Gemini API ${res.status}: ${text.slice(0, 200)}`);
-    }
-
-    const data = await res.json() as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error('Empty response from Gemini');
-    }
-
-    return text;
-  }
-
-  private async callOpenAICompatible(context: LLMRequestContext): Promise<string> {
-    const baseUrl = this.config.endpoint.replace(/\/+$/, '');
-    const url = `${baseUrl}/chat/completions`;
-
-    const body = {
-      model: this.config.model,
-      messages: [
-        { role: 'system', content: context.systemPrompt },
-        { role: 'user', content: context.userPrompt },
-      ],
-      temperature: 0.8,
-      max_tokens: 600,
-    };
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-
-    if (!res.ok) {
-      const text = await readResponseText(res);
-      throw new Error(`API ${res.status}: ${text.slice(0, 500)}`);
-    }
-
-    const data = await res.json() as {
-      choices?: Array<{
-        message?: { content?: string };
-      }>;
-    };
-
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) {
-      throw new Error('Empty response from API');
-    }
-
-    return text;
-  }
-
-  private async callGemini(context: LLMRequestContext): Promise<string> {
-    const url = `${this.config.endpoint}/${this.config.model}:generateContent`;
-
-    const body = {
-      system_instruction: {
-        parts: [{ text: context.systemPrompt }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: context.userPrompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.8,
-        maxOutputTokens: 800,
-        responseMimeType: 'application/json',
-      },
-    };
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (this.config.apiKey) headers['X-Goog-Api-Key'] = this.config.apiKey;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res;
-    try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-
-    if (!res.ok) {
-      const text = await readResponseText(res);
-      throw new Error(`Gemini API ${res.status}: ${text.slice(0, 200)}`);
-    }
-
-    const data = await res.json() as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      throw new Error('Empty response from Gemini');
-    }
-
-    return text;
   }
 }
 
