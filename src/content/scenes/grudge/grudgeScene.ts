@@ -1,31 +1,31 @@
-import type { SceneEntry, Choice } from '../../../shared/types/scene';
+import type { SceneEntry } from '../../../shared/types/scene';
 
-// 宿怨 prototype NPC IDs
+// 宿怨 NPC IDs
 export const LI_SI_ID = 'grudge_lisi';
-export const WANG_WU_ID = 'grudge_wangwu';
 
-// Memory states for Li Si
+// Memory states
 export const LI_SI_UNMET = 'UNMET';
 export const LI_SI_ROBBED = 'ROBBED';
 export const LI_SI_HELPED = 'HELPED';
+export const LI_SI_IGNORED = 'IGNORED';
 
 /**
- * 宿怨 — NPC Memory Validation Prototype
+ * 宿怨 — NPC Memory Consequence Event Chain
  *
- * A self-contained 5-10 minute narrative that tests whether NPC memory
- * creates genuine emotional engagement. The player meets Li Si at the
- * village gate, makes a moral choice, then encounters him again after
- * a time skip — his behavior shaped by what the player did.
+ * A two-phase event chain demonstrating NPC memory persistence:
  *
- * Act 1: Village gate — meet Li Si, binary choice (rob / help)
- * Act 2 (free roam): Village interior, Wang Wu dialogue
- * Time skip: Presentational fade + "三天后..."
- * Act 3: Tavern exit — Li Si returns, consequence
+ * Phase 1 (trigger: 55,45): Player meets Li Si at a village gate and makes
+ *   a moral choice (help / rob / ignore). Sets NPC memory accordingly.
+ *   Ends cleanly with switchToMap — player continues normal gameplay.
+ *
+ * Phase 2 (trigger: 60,50): After ~30+ minutes of real gameplay, the player
+ *   walks east from the family compound. Li Si returns with real mechanical
+ *   consequences based on the player's earlier choice.
  */
 
 export const GRUDGE_SCENE_ENTRIES: SceneEntry[] = [
   // ═══════════════════════════════════════
-  // ACT 1: Village Gate — First Encounter
+  // PHASE 1: Village Gate — First Encounter
   // ═══════════════════════════════════════
   {
     id: 'grudge_village_gate',
@@ -40,6 +40,7 @@ export const GRUDGE_SCENE_ENTRIES: SceneEntry[] = [
     choices: [
       {
         text: '侧身避开，不予理会',
+        effect: { setMemory: { npcId: LI_SI_ID, value: LI_SI_IGNORED } },
         nextEntry: 'grudge_village_gate_ignore',
       },
       {
@@ -49,6 +50,13 @@ export const GRUDGE_SCENE_ENTRIES: SceneEntry[] = [
       {
         text: '打量他——这人身上似乎藏着什么',
         nextEntry: 'grudge_lisi_rob',
+      },
+      {
+        // Appears after player clicks "帮助" and hears Li Si's story
+        text: '"这些灵石你拿去应急吧"（资助李四）',
+        condition: { npcMemory: { npcId: LI_SI_ID, equals: LI_SI_HELPED } },
+        effect: { spiritStone: -200 },
+        nextEntry: 'grudge_leave_village',
       },
     ],
   },
@@ -73,6 +81,10 @@ export const GRUDGE_SCENE_ENTRIES: SceneEntry[] = [
         text: '心中不忍，将东西还给他',
         npcDialogue: 'grudge_lisi_give_back',
       },
+      {
+        text: '转身离开',
+        nextEntry: 'grudge_leave_village',
+      },
     ],
   },
   {
@@ -82,44 +94,115 @@ export const GRUDGE_SCENE_ENTRIES: SceneEntry[] = [
 
 他愣在原地，嘴唇动了动，最终什么也没说，默默退回了树荫下。
 
-你头也不回地走进了村子。`,
+你头也不回地走进了村子。
+
+身后传来他嘶哑的声音："道友……求你了……我妹妹她……"
+
+你没有回头。风声把他的后半句话吞没了。`,
     choices: [
       {
-        text: '前往村中酒馆',
-        nextEntry: 'grudge_tavern',
+        text: '在村中信步走走',
+        nextEntry: 'grudge_leave_village',
       },
     ],
   },
 
   // ═══════════════════════════════════════
-  // ACT 2: Village Interior — Free Roam / Color
+  // PHASE 1 EXIT — Return to map
   // ═══════════════════════════════════════
-  {
-    id: 'grudge_tavern',
-    title: '青石村·酒馆',
-    description: `推开酒馆的木门，一股麦酒和草药的气味扑面而来。
-
-角落的桌边坐着一个青年，独自喝着闷酒。他衣着虽然朴素，但质料考究，
-与这村中粗布麻衣的乡民格格不入。
-
-他见你进来，抬了抬眼皮，目光有些涣散。`,
-    choices: [
-      {
-        text: '在他对面坐下，闲聊几句',
-        npcDialogue: 'grudge_wangwu_talk',
-      },
-      {
-        text: '要一碗麦酒，独自喝完离开',
-        nextEntry: 'grudge_time_skip',
-      },
-    ],
-  },
   {
     id: 'grudge_leave_village',
-    title: '村口·离开',
-    description: `你向村口走去。村庄的生活在你身后渐渐远去。
+    title: '离开青石村',
+    description: `你在村子里转了一圈，发现这里只是普通的凡人村落。
 
-就在这时——`,
+几户人家、一片菜畦、一棵老槐树。
+除了那个散修，这里没有什么值得停留的。
+
+该上路了。前方还有更广阔的世界等着你。`,
+    choices: [
+      {
+        text: '踏上旅途',
+        switchToMap: true,
+      },
+    ],
+  },
+
+  // ═══════════════════════════════════════
+  // PHASE 2: Reunion — Memory-Dependent Encounter
+  // Triggered at (60,50) when player has NPC memory set
+  // ═══════════════════════════════════════
+
+  // ── Branch: Player HELPED Li Si ──
+  {
+    id: 'grudge_reunion_helped',
+    title: '路上·故人重逢',
+    description: `你正在林间小道上走着，忽然听到身后传来急促的脚步声。
+
+"恩人！请留步！"
+
+回头一看，竟是李四！他气色好了许多，背上背着一个行囊，
+身边还跟着一位温和的中年修士。
+
+"我在这里等了您三天了——向人打听，说您会往这个方向走。"
+
+他深深鞠了一躬："当日若非恩人出手相助，我妹妹恐怕已经……
+这份恩情，李四一直记在心里。"
+
+旁边的中年修士微笑点头："我是他族叔。这孩子执意要来找你，
+说救命之恩当以身相报。他虽修为不高，但通晓药草医术，
+若你不嫌弃，就让他跟着你吧。"`,
+    choices: [
+      {
+        text: '【邀请入队】"好，我正缺一个懂医术的同伴"',
+        effect: { spiritStone: -200 },
+        nextEntry: 'grudge_joined_squad',
+      },
+      {
+        text: '【收下谢礼】"我独来独往惯了，你回去吧"',
+        effect: { addItem: { '中级法器': 1 } },
+        nextEntry: 'grudge_got_reward',
+      },
+    ],
+  },
+
+  // ── Branch: Player ROBBED Li Si ──
+  {
+    id: 'grudge_reunion_robbed',
+    title: '路上·冤家路窄',
+    description: `你正走在一条僻静的山路上，忽然前方闪出两个人影。
+
+当先一人正是李四——但他不再是你上次见到的那个怯懦散修。
+他身旁站着一个身材魁梧的修士，气息沉稳，修为至少在筑基中期。
+
+李四的声音比上次冷了许多："三天前，你抢走我给我妹妹救命的灵石。
+我找了你整整三天。"
+
+他师兄缓缓开口："阁下身为修士，欺凌一个炼气初期的散修，
+今日我替他讨回这个公道。"`,
+    choices: [
+      {
+        text: '【应战】冷哼一声，握紧武器',
+        effect: { hp: -50, removeItem: { count: 1 }, debuff: { name: '颜面扫地', durationMs: 1800000, statPenalty: 0.05 } },
+        nextEntry: 'grudge_fought_consequence',
+      },
+      {
+        text: '【求饶】"且慢……有话好说"',
+        effect: { loseStonesFraction: 0.5, debuff: { name: '颜面扫地', durationMs: 1800000, statPenalty: 0.05 } },
+        nextEntry: 'grudge_humiliation_consequence',
+      },
+    ],
+  },
+
+  // ── Branch: Player ignored Li Si (no memory) ──
+  {
+    id: 'grudge_reunion_neutral',
+    title: '路上·偶遇',
+    description: `你走在山路上，前方有一个瘦弱的身影也在赶路。
+
+那人回头看见你，礼貌地点了点头，让到路边。
+是个年轻的散修，面色有些苍白，但眼神清澈。
+
+你们擦肩而过，各自赶路。`,
     choices: [
       {
         text: '继续前行',
@@ -129,136 +212,134 @@ export const GRUDGE_SCENE_ENTRIES: SceneEntry[] = [
   },
 
   // ═══════════════════════════════════════
-  // TIME SKIP: "三天后..."
+  // PHASE 2 — Consequence follow-ups
   // ═══════════════════════════════════════
   {
-    id: 'grudge_time_skip',
-    title: '……三天后',
-    description: `三日时光，转瞬即逝。
+    id: 'grudge_joined_squad',
+    title: '新同伴',
+    description: `李四欣喜地背起行囊，站到了你身后。
 
-这三天里，你在青石村中修养调整，偶尔与村人闲聊。
-秋日的阳光依然温暖，村庄的日子平静如水。
+"多谢恩人！我一定不会拖后腿的。"
 
-但有些账……注定不会这么轻易过去。
+他的族叔拍了拍他的肩膀，又对你拱手道：
+"这孩子就托付给道友了。他虽资质平平，但胜在勤奋踏实。"
 
-你推开酒馆的门，准备离开这个村子。`,
+李四加入了你的队伍。`,
     choices: [
       {
-        text: '踏上村口的小路',
-        nextEntry: 'grudge_act3_reunion',
+        text: '继续上路（李四加入队伍）',
+        switchToMap: true,
+      },
+    ],
+  },
+  {
+    id: 'grudge_got_reward',
+    title: '谢礼',
+    description: `李四虽然有些失望，但还是从怀中取出一件物品，双手奉上。
+
+"这是我族叔年轻时用过的一件中级法器，虽不算什么宝物，
+但比寻常法器强上几分。恩人务必收下。"
+
+他族叔点头道："你收着吧，比放在我这里积灰强。"`,
+    choices: [
+      {
+        text: '接过法器，点头道别',
+        effect: { addItem: { '中级法器': 1 } },
+        switchToMap: true,
+      },
+    ],
+  },
+  {
+    id: 'grudge_paid_compensation',
+    title: '了结',
+    description: `李四接过灵石，数了数，神色稍霁。
+
+他师兄看了你一眼："此事到此为止。"
+
+两人转身离去。李四走了几步，回头看了你一眼，
+那眼神里有怨恨，也有一丝释然。
+
+你摸了摸空了不少的储物袋，继续上路。`,
+    choices: [
+      {
+        text: '继续赶路',
+        switchToMap: true,
+      },
+    ],
+  },
+  {
+    id: 'grudge_fought_consequence',
+    title: '代价',
+    description: `你摆开架势，但那师兄的身法比你预想的快得多。
+
+三招之内，你胸口便中了一掌，气血翻涌。
+李四趁你身形不稳，从你腰间扯下了储物袋。
+
+"够了。"他师兄收手而立，"给他留条命。"
+
+李四从袋中取走了部分灵石和一件物品，将袋子扔还给你。
+两人消失在林间小路的尽头。
+
+你擦去嘴角的血迹，忍着伤痛继续前行。`,
+    choices: [
+      {
+        text: '……（继续赶路）',
+        switchToMap: true,
       },
     ],
   },
 
   // ═══════════════════════════════════════
-  // ACT 3: Reunion — Memory-Dependent Consequences
+  // CONSEQUENCE: Submit path (robbed branch)
   // ═══════════════════════════════════════
   {
-    id: 'grudge_act3_reunion',
-    title: '村口·狭路相逢',
-    description: `你刚走到村口，就看见一个熟悉的身影。
+    id: 'grudge_humiliation_consequence',
+    title: '屈辱',
+    description: `你收起架势，拱了拱手。
 
-是那个散修——但他不再是三天前那副虚弱的样子。
+李四的师兄冷笑一声："算你识相。"
 
-他身边还站着一个身材魁梧的修士，气息沉稳，修为不低。`,
+李四大步上前，一把扯下你腰间的储物袋，
+将里面的灵石倒出了大半。
+
+"这是你欠我的。"
+
+他师兄按住他的肩膀，摇了摇头："够了，走吧。"
+
+两人转身消失在林间小路的尽头。
+
+你独自留在原地，感到周围路过的行人投来异样的目光。
+这件事很快就会传开——你被一个散修当面羞辱了。`,
     choices: [
       {
-        // Only show if player robbed Li Si
-        text: '（紧张）握紧武器，准备应对',
-        condition: { npcMemory: { npcId: LI_SI_ID, equals: LI_SI_ROBBED } },
-        npcDialogue: 'grudge_lisi_ambush',
-      },
-      {
-        // Only show if player helped Li Si
-        text: '（认出是他）拱手打招呼',
-        condition: { npcMemory: { npcId: LI_SI_ID, equals: LI_SI_HELPED } },
-        npcDialogue: 'grudge_lisi_reward',
-      },
-      {
-        // Fallback: if player ignored Li Si, different dialogue
-        text: '（警惕地看着两人）',
-        npcDialogue: 'grudge_lisi_stranger',
-      },
-    ],
-  },
-  {
-    id: 'grudge_ambush_consequence',
-    title: '宿怨·代价',
-    description: `"三天前，你抢走我救命的东西时，没想到会有今天吧。"
-
-李四的声音很平静，却让人脊背发凉。
-
-他身旁的师兄向前踏了一步。你根本不是对手。
-
-你眼前一黑——
-
-……
-
-当你醒来时，你躺在村外的草地上，身上的灵石和丹药已经不翼而飞。
-只有怀中那片枯叶，似乎在提醒你：这个世界，会记住你的选择。`,
-    choices: [
-      {
-        text: '……（沉默地站起身）',
-        nextEntry: 'grudge_epilogue',
-        effect: { spiritStone: -30 },
-      },
-    ],
-  },
-  {
-    id: 'grudge_reward_consequence',
-    title: '善缘·回报',
-    description: `"恩人！"
-
-李四大步走上前来，脸上带着感激的笑容。他身边的师兄也对你拱手致意。
-
-"那天多谢您出手相助。"李四从怀中取出一张兽皮地图，
-"我这几天四处打听，从一个落魄修士那里得了这张地图——
-据说上面标注了一处上古秘境的位置。我用不上，但您或许用得上。"
-
-他真诚地将地图塞到你手里。`,
-    choices: [
-      {
-        text: '接过地图，拍了拍他的肩膀',
-        effect: { spiritStone: 50 },
-        nextEntry: 'grudge_epilogue',
-      },
-    ],
-  },
-  {
-    id: 'grudge_stranger_consequence',
-    title: '擦肩',
-    description: `那散修看了你一眼，似乎想说什么，但最终只是别过头去。
-
-他身旁的师兄打量了你一番，目光在你腰间的储物袋上停留了一瞬，
-最终也移开了视线。
-
-你们在村口擦肩而过，各自走向不同的方向。`,
-    choices: [
-      {
-        text: '继续上路',
-        nextEntry: 'grudge_epilogue',
+        text: '……（继续赶路）',
+        switchToMap: true,
       },
     ],
   },
 
   // ═══════════════════════════════════════
-  // EPILOGUE
+  // DELAYED CONSEQUENCE: Ignore path → death rumor
+  // Triggered at (52,42) when LI_SI_IGNORED
   // ═══════════════════════════════════════
   {
-    id: 'grudge_epilogue',
-    title: '青石村·远行',
-    description: `你回头看了一眼青石村。
+    id: 'grudge_lisi_death_rumor',
+    title: '酒肆·闲谈',
+    description: `你在路边一家简陋的茶肆歇脚，要了一碗粗茶。
 
-村口的槐树在秋风中沙沙作响，那条石板路依然静静地躺在那里。
+邻桌两个行商正在闲聊——
 
-你想起这三天发生的事——那个散修，那个选择，那些后果。
-这个世界里，NPC会记住你对他们做的事。
-好的，坏的，都不会被忘记。
+"听说了吗？前几日有人在青石村外的山道上发现了一具散修的尸体。"
+"哦？又是不长眼地撞上妖兽了？"
+"不是。那人身上没什么外伤，倒像是饿死的……身边还有一封没送出去的信，
+信封上写着'吾妹亲启'。听说那散修一直在等什么人，等了三天三夜。"
+"啧，这年头散修的日子不好过啊。别管闲事了，喝酒喝酒。"
 
-前方是更广阔的世界。`,
+他们的对话渐渐转到了货价上。你端着茶碗，一时无言。`,
     choices: [
       {
-        text: '踏上旅途（结束此章）',
+        text: '……（喝完茶，默默上路）',
+        effect: { reputation: { family: -2 } },
         switchToMap: true,
       },
     ],

@@ -42,6 +42,24 @@ const buildRegistry = (): Record<string, SceneRegistryEntry> => {
     registry[scene.id] = entry;
   }
 
+  // Grudge Phase 2 reunion trigger — separate coordinate, memory-aware
+  // Handled in Game.tsx handleSceneTrigger with memory-based routing
+  registry['grudge_reunion_router'] = {
+    id: 'grudge_reunion_router',
+    area: 'grudge',
+    scene: GRUDGE_SCENE_ENTRIES.find(s => s.id === 'grudge_reunion_neutral')!,
+    triggerAt: { x: 60, y: 50, radius: 2 },
+  };
+
+  // Grudge ignore→death rumor — triggered at a tavern-like coordinate
+  // Only fires when LI_SI_IGNORED memory is set
+  registry['grudge_ignore_death_router'] = {
+    id: 'grudge_ignore_death_router',
+    area: 'grudge',
+    scene: GRUDGE_SCENE_ENTRIES.find(s => s.id === 'grudge_lisi_death_rumor')!,
+    triggerAt: { x: 52, y: 42, radius: 3 },
+  };
+
   return registry;
 };
 

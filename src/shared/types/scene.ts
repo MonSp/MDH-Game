@@ -10,6 +10,18 @@ export interface SceneEffect {
   cultivation?: number;
   spiritStone?: number;
   reputation?: Record<string, number>;
+  /** HP change (negative = damage) */
+  hp?: number;
+  /** Add items to inventory */
+  addItem?: Record<string, number>;
+  /** Remove random items from inventory */
+  removeItem?: { count: number };
+  /** Set NPC memory key-value */
+  setMemory?: { npcId: string; value: string };
+  /** Apply a temporary stat debuff */
+  debuff?: { name: string; durationMs: number; statPenalty: number };
+  /** Lose a fraction (0-1) of current spirit stones */
+  loseStonesFraction?: number;
 }
 
 export interface Choice {

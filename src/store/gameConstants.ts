@@ -226,6 +226,14 @@ export const FACTION_CREATE_REQUIREMENTS = {
   minSquadMembers: 3,
 };
 
+export interface ActiveDebuff {
+  id: string;
+  name: string;
+  expiresAt: number;
+  attackPenalty: number;
+  defensePenalty: number;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -251,6 +259,7 @@ export interface Player {
   isAscending: boolean;
   ascensionTarget?: HeavenLevel;
   talent: TalentAttributes;
+  activeDebuffs: ActiveDebuff[];
 }
 
 export interface SquadMember {
@@ -279,7 +288,7 @@ export interface SquadMember {
 }
 
 // 外交/战争类型
-export type DiplomaticStatus = '中立' | '同盟' | '战争' | '停战' | '臣服';
+export type DiplomaticStatus = '中立' | '同盟' | '战争' | '停战' | '臣服' | '皇族';
 export type ConflictLevel = '和平' | '摩擦' | '局部冲突' | '全面战争';
 
 export interface ClanDiplomacy {
@@ -507,6 +516,7 @@ export interface GameState {
   equipMember: (squadMemberId: string, itemName: string) => void;
   unequipMember: (squadMemberId: string, itemName: string) => void;
   getMaxSquadSize: () => number;
+  getRecruitCost: (npc: NPC) => { reputationRequired: number; spiritStoneCost: number; canRecruit: boolean; reason: string };
 
   // 势力系统
   createFaction: (name: string) => boolean;

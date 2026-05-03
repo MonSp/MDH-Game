@@ -69,7 +69,8 @@ describe('formatTime (family.ts internal helper)', () => {
 describe('SCENE_REGISTRY build integrity', () => {
   it('contains all intro, family, and grudge scenes', () => {
     const ids = Object.keys(SCENE_REGISTRY);
-    expect(ids.length).toBe(4 + 4 + GRUDGE_SCENE_ENTRIES.length);
+    // +1 for the grudge_reunion_router entry, +1 for grudge_ignore_death_router
+    expect(ids.length).toBe(4 + 4 + GRUDGE_SCENE_ENTRIES.length + 2);
     expect(ids).toContain('wake_up');
     expect(ids).toContain('look_around');
     expect(ids).toContain('check_body');
@@ -79,13 +80,15 @@ describe('SCENE_REGISTRY build integrity', () => {
     expect(ids).toContain('family_hall');
     expect(ids).toContain('patriarch_audience');
     expect(ids).toContain('grudge_village_gate');
-    expect(ids).toContain('grudge_epilogue');
+    expect(ids).toContain('grudge_reunion_router');
   });
 
-  it('family_corridor and grudge_village_gate have triggerAt coordinates', () => {
+  it('known trigger scenes have triggerAt coordinates', () => {
     const triggerScenes: Record<string, { x: number; y: number; radius: number }> = {
       'family_corridor': { x: 55, y: 48, radius: 3 },
       'grudge_village_gate': { x: 55, y: 45, radius: 3 },
+      'grudge_reunion_router': { x: 60, y: 50, radius: 2 },
+      'grudge_ignore_death_router': { x: 52, y: 42, radius: 3 },
     };
     for (const [id, entry] of Object.entries(SCENE_REGISTRY)) {
       if (triggerScenes[id]) {
@@ -172,9 +175,11 @@ describe('getScenesByArea', () => {
 
   it('returns grudge scenes for "grudge" area', () => {
     const scenes = getScenesByArea('grudge');
-    expect(scenes.length).toBe(GRUDGE_SCENE_ENTRIES.length);
+    // +1 for the router entry, +1 for the ignore→death router
+    expect(scenes.length).toBe(GRUDGE_SCENE_ENTRIES.length + 2);
     expect(scenes[0].id).toBe('grudge_village_gate');
-    expect(scenes[scenes.length - 1].id).toBe('grudge_epilogue');
+    // ignore→death router wraps the death rumor scene
+    expect(scenes[scenes.length - 1].id).toBe('grudge_lisi_death_rumor');
   });
 
   it('returns empty array for "sect" area (no scenes registered yet)', () => {

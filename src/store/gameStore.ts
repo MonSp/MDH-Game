@@ -82,6 +82,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       cycleInfo: { type: null },
       isAscending: false,
       talent: defaultTalent,
+      activeDebuffs: [],
     };
 
     set({

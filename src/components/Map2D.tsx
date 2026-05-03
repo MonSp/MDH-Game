@@ -444,7 +444,8 @@ const FactionBaseMesh = ({ faction, playerPos, isAtWar }: { faction: { name: str
   useFrame((state) => {
     if (warRingRef.current && isAtWar) {
       const pulse = Math.sin(state.clock.getElapsedTime() * 3) * 0.5 + 0.5;
-      warRingRef.current.material.opacity = 0.3 + pulse * 0.4;
+      const mat = warRingRef.current.material;
+      if (!Array.isArray(mat)) mat.opacity = 0.3 + pulse * 0.4;
     }
   });
 
@@ -665,7 +666,9 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
                 x: entry.triggerAt!.x,
                 y: entry.triggerAt!.y,
                 label: id === 'family_corridor' ? '🏯 家族大院' :
-                       id === 'grudge_village_gate' ? '🏘️ 荒村' : id,
+                       id === 'grudge_village_gate' ? '🏘️ 荒村' :
+                       id === 'grudge_reunion_router' ? '⛰️ 山道' :
+                       id === 'grudge_ignore_death_router' ? '🍵 茶肆' : id,
               }}
               playerPos={player.position}
             />
@@ -729,7 +732,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
             const dy = entry.triggerAt.y - player.position.y;
             if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) {
               pois.push({
-                label: id === 'family_corridor' ? '家族' : id === 'grudge_village_gate' ? '荒村' : id,
+                label: id === 'family_corridor' ? '家族' : id === 'grudge_village_gate' ? '荒村' : id === 'grudge_reunion_router' ? '山道' : id === 'grudge_ignore_death_router' ? '茶肆' : id,
                 x: entry.triggerAt.x,
                 y: entry.triggerAt.y,
               });

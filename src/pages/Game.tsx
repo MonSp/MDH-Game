@@ -9,9 +9,10 @@ import { ScenePanel } from '../components/ScenePanel';
 import { SurveyPopup } from '../components/SurveyPopup';
 import { getSceneEntry } from '../content/scenes/sceneRegistry';
 import { GRUDGE_NPC_DIALOGUE } from '../content/scenes/grudge/npcDialogue';
-import { LI_SI_ID, LI_SI_ROBBED, LI_SI_HELPED } from '../content/scenes/grudge/grudgeScene';
+import { LI_SI_ID, LI_SI_ROBBED, LI_SI_HELPED, LI_SI_IGNORED } from '../content/scenes/grudge/grudgeScene';
 import { getSocket } from '../shared/socket';
 import type { SceneEntry, ScenePanelState } from '../shared/types/scene';
+import type { SquadMember } from '../store/gameStore';
 
 // Scripted NPC dialogue responses for fallback when LLM is unavailable
 const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; metText?: string }> = {
@@ -67,6 +68,7 @@ export const Game = () => {
   const dialogueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNpcIdRef = useRef<string | null>(null);
   const processingRef = useRef(false);
+  const lastLiSiProtectionRef = useRef(0);
   const [triggerVersion, setTriggerVersion] = useState(0);
   const [showSurvey, setShowSurvey] = useState(false);
 
@@ -86,6 +88,34 @@ export const Game = () => {
   // Coordinate proximity → trigger scene (e.g., walk to family compound)
   const handleSceneTrigger = useCallback((sceneId: string) => {
     if (activeScene) return; // don't stack scenes
+
+    // 宿怨 Phase 2: memory-aware routing
+    if (sceneId === 'grudge_reunion_router') {
+      const memory = useGameStore.getState().npcMemory[LI_SI_ID];
+      if (!memory) return; // Never met Li Si — don't trigger
+      const targetId = memory === LI_SI_ROBBED ? 'grudge_reunion_robbed'
+                    : memory === LI_SI_HELPED ? 'grudge_reunion_helped'
+                    : 'grudge_reunion_neutral';
+      const entry = getSceneEntry(targetId);
+      if (!entry) return;
+      setActiveScene(entry);
+      setScenePath(['grudge_reunion']);
+      setSceneState('CHOOSING');
+      return;
+    }
+
+    // 宿怨: ignore → death rumor (only fires when LI_SI_IGNORED)
+    if (sceneId === 'grudge_ignore_death_router') {
+      const memory = useGameStore.getState().npcMemory[LI_SI_ID];
+      if (memory !== LI_SI_IGNORED) return;
+      const entry = getSceneEntry('grudge_lisi_death_rumor');
+      if (!entry) return;
+      setActiveScene(entry);
+      setScenePath(['grudge_lisi_death_rumor']);
+      setSceneState('CHOOSING');
+      return;
+    }
+
     const entry = getSceneEntry(sceneId);
     if (!entry) return;
     setActiveScene(entry);
@@ -101,6 +131,23 @@ export const Game = () => {
     }
     const npcInterval = setInterval(() => {
       updateNPCs();
+
+      // Li Si passive protection: when in squad and HP < 20%, auto-heal once per 30s
+      const s = useGameStore.getState();
+      if (s.player && s.squadMembers.some(m => m.npcId === LI_SI_ID)) {
+        const hpPct = s.player.stats.hp / s.player.stats.maxHp;
+        if (hpPct < 0.2 && hpPct > 0 && Date.now() - lastLiSiProtectionRef.current > 30000) {
+          lastLiSiProtectionRef.current = Date.now();
+          const heal = 10;
+          useGameStore.setState({
+            player: {
+              ...s.player,
+              stats: { ...s.player.stats, hp: Math.min(s.player.stats.maxHp, s.player.stats.hp + heal) }
+            }
+          });
+          s.addLog({ type: 'event', message: '李四奋力挡在你身前！你感到一股暖流涌入体内（+10 HP）' });
+        }
+      }
     }, 1000);
 
     // Auto-save every 60 seconds
@@ -189,6 +236,89 @@ export const Game = () => {
           }
         }
       }
+      if (choice.effect.hp) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const newHp = Math.max(1, Math.min(store.player.stats.maxHp,
+            store.player.stats.hp + choice.effect.hp));
+          useGameStore.setState({
+            player: { ...store.player, stats: { ...store.player.stats, hp: newHp } }
+          });
+          addLog({ type: 'event', message: `生命 ${choice.effect.hp >= 0 ? '+' : ''}${choice.effect.hp}` });
+        }
+      }
+      if (choice.effect.addItem) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const newInventory = { ...store.player.inventory };
+          for (const [item, count] of Object.entries(choice.effect.addItem)) {
+            newInventory[item] = (newInventory[item] || 0) + count;
+            addLog({ type: 'event', message: `获得 ${item} ×${count}` });
+          }
+          useGameStore.setState({ player: { ...store.player, inventory: newInventory } });
+        }
+      }
+      if (choice.effect.removeItem) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const newInventory = { ...store.player.inventory };
+          let removed = 0;
+          const removable = Object.entries(newInventory)
+            .filter(([name, qty]) => name !== '灵石' && qty > 0);
+          for (let i = 0; i < choice.effect.removeItem.count && removable.length > 0; i++) {
+            const idx = Math.floor(Math.random() * removable.length);
+            const [name] = removable[idx];
+            newInventory[name] = Math.max(0, (newInventory[name] || 0) - 1);
+            if (newInventory[name] === 0) delete newInventory[name];
+            addLog({ type: 'system', message: `你失去了 ${name} ×1` });
+            removable.splice(idx, 1);
+            removed++;
+          }
+          useGameStore.setState({ player: { ...store.player, inventory: newInventory } });
+          if (removed === 0) {
+            addLog({ type: 'system', message: '对方没找到值钱的东西，啐了一口' });
+          }
+        }
+      }
+      if (choice.effect.setMemory) {
+        setNpcMemory(choice.effect.setMemory.npcId, choice.effect.setMemory.value);
+      }
+      if (choice.effect.debuff) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const debuffs = [...(store.player.activeDebuffs || [])];
+          const debuffId = `debuff-${Date.now()}`;
+          debuffs.push({
+            id: debuffId,
+            name: choice.effect.debuff.name,
+            expiresAt: Date.now() + choice.effect.debuff.durationMs,
+            attackPenalty: choice.effect.debuff.statPenalty,
+            defensePenalty: choice.effect.debuff.statPenalty,
+          });
+          useGameStore.setState({
+            player: {
+              ...store.player,
+              activeDebuffs: debuffs,
+            },
+          });
+          addLog({ type: 'system', message: `【${choice.effect.debuff.name}】全属性-${Math.round(choice.effect.debuff.statPenalty * 100)}%，持续${Math.round(choice.effect.debuff.durationMs / 60000)}分钟` });
+        }
+      }
+      if (choice.effect.loseStonesFraction) {
+        const store = useGameStore.getState();
+        if (store.player) {
+          const currentStones = store.player.inventory['灵石'] || 0;
+          const toLose = Math.floor(currentStones * choice.effect.loseStonesFraction);
+          if (toLose > 0) {
+            const newInventory = { ...store.player.inventory };
+            newInventory['灵石'] = Math.max(0, currentStones - toLose);
+            useGameStore.setState({ player: { ...store.player, inventory: newInventory } });
+            addLog({ type: 'system', message: `你被迫交出了 ${toLose} 块灵石` });
+          } else {
+            addLog({ type: 'system', message: '对方翻了翻你的储物袋，嫌弃地啐了一口' });
+          }
+        }
+      }
     }
 
     // 2. Handle NPC dialogue
@@ -201,7 +331,7 @@ export const Game = () => {
       // 宿怨 prototype: set NPC memory based on dialogue outcome
       if (npcId === 'grudge_lisi_robbed') {
         setNpcMemory(LI_SI_ID, LI_SI_ROBBED);
-      } else if (npcId === 'grudge_lisi_give_back') {
+      } else if (npcId === 'grudge_lisi_give_back' || npcId === 'grudge_lisi_help_ask') {
         setNpcMemory(LI_SI_ID, LI_SI_HELPED);
       }
 
@@ -240,10 +370,6 @@ export const Game = () => {
 
     // 3. Switch to map
     if (choice.switchToMap) {
-      // Show survey after grudge prototype epilogue
-      if (activeScene.id === 'grudge_epilogue') {
-        setShowSurvey(true);
-      }
       setActiveScene(null);
       setScenePath([]);
       setSceneState('CHOOSING');
@@ -252,6 +378,37 @@ export const Game = () => {
 
     // 4. Navigate to next scene entry (via registry)
     if (choice.nextEntry) {
+      // 宿怨 Phase 2: Li Si joins squad when entering the consequence scene
+      if (choice.nextEntry === 'grudge_joined_squad') {
+        const store = useGameStore.getState();
+        if (store.player && !store.squadMembers.some(m => m.npcId === LI_SI_ID)) {
+          const newMember: SquadMember = {
+            id: `squad-${Date.now()}`,
+            npcId: LI_SI_ID,
+            name: '李四',
+            clanId: store.player.clanId,
+            role: '后勤型',
+            realm: store.player.realm,
+            power: Math.floor((store.player.stats.attack + store.player.stats.defense) * 0.6),
+            hp: 80,
+            maxHp: 100,
+            mp: 60,
+            maxMp: 80,
+            personality: { ambition: 30, caution: 60, loyalty: 80, greed: 20 },
+            joinDate: Date.now(),
+            kills: 0,
+            isAlive: true,
+            position: { ...store.player.position },
+            activity: '跟随中',
+            equipment: [],
+            level: 1,
+            exp: 0,
+            maxExp: 80,
+          };
+          useGameStore.setState({ squadMembers: [...store.squadMembers, newMember] });
+          store.addLog({ type: 'event', message: '【入队】李四加入了你的队伍！' });
+        }
+      }
       const next = getSceneEntry(choice.nextEntry);
       if (next) {
         setActiveScene(next);
@@ -269,6 +426,24 @@ export const Game = () => {
     // Log dialogue before closing
     if (dialogueText && npcName) {
       addLog({ type: 'system', message: `[${npcName}] ${dialogueText}` });
+    }
+
+    // 宿怨: auto-advance out of grudge_lisi_rob after memory is set
+    if (activeScene.id === 'grudge_lisi_rob') {
+      const memory = useGameStore.getState().npcMemory[LI_SI_ID];
+      if (memory) {
+        const next = getSceneEntry('grudge_leave_village');
+        if (next) {
+          setActiveScene(next);
+          setScenePath(prev => [...prev, next.id]);
+          setSceneState('CHOOSING');
+          setDialogueText(undefined);
+          setNpcName(undefined);
+          setNpcRole(undefined);
+          setLlmError(false);
+          return;
+        }
+      }
     }
 
     // After DIALOGUE, check if any choice in this scene has switchToMap
