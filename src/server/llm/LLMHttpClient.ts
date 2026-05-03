@@ -305,6 +305,7 @@ export class LLMHttpClient {
 
         const logFields = buildLogSuccess(responseText, latencyMs, attempt);
         logLLMCall({
+          ...logFields,
           npcId: context.npcId,
           npcName: context.npcName,
           attempt: attempt + 1,
@@ -314,7 +315,6 @@ export class LLMHttpClient {
           latencyMs,
           success: true,
           parseSuccess: true,
-          ...logFields,
         });
 
         return {
@@ -331,6 +331,7 @@ export class LLMHttpClient {
 
         const logFields = buildLogError(lastError, latencyMs, attempt);
         logLLMCall({
+          ...logFields,
           npcId: context.npcId,
           npcName: context.npcName,
           attempt: attempt + 1,
@@ -338,7 +339,6 @@ export class LLMHttpClient {
           userPromptTokens: context.userPrompt.length,
           latencyMs,
           success: false,
-          ...logFields,
         });
 
         if (attempt < MAX_RETRIES) {
