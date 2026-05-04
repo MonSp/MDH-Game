@@ -536,7 +536,11 @@ describe('Faction: cleared on ascension', () => {
       ],
     });
 
+    // Ensure ascension succeeds (Math.random > 0.1)
+    const origRandom = Math.random;
+    Math.random = () => 0.5;
     useGameStore.getState().attemptAscension();
+    Math.random = origRandom;
 
     const state = useGameStore.getState();
     // Squad and faction should be cleared
