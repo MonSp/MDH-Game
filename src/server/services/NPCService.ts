@@ -1,9 +1,9 @@
 import {
   NPCEntity, NPCRole, RealmLevel, NPCActivity, NPCPersonality, BirthType, NPCLifeState,
   LayerConfig, LAYER_CONFIGS, NATIONALITY_PERSONALITY_BONUS, BASE_WEIGHTS, BehaviorWeight,
-  NPCEvent, EventBus, Position
+  NPCEvent, EventBus, Position, ResourceNode, GAME_CONFIG
 } from '../../shared';
-import { ResourceManager } from './ResourceService';
+import { ResourceManager, NPCResourceCompetition } from './ResourceService';
 import { v4 as uuidv4 } from 'uuid';
 
 const NATIONS = ['秦国', '楚国', '齐国', '燕国', '赵国', '魏国', '韩国'];
@@ -345,7 +345,51 @@ export class BehaviorExecutor {
     }
   }
 
+  // ---- Movement constants ----
+  private static readonly PATROL_SPEED = 30;
+  private static readonly CHASE_SPEED = 60;
+  private static readonly LOGISTICS_SPEED = 25;
+  private static readonly ARRIVAL_DISTANCE = 3;
+  private static readonly PATROL_RADIUS = 80;
+  private static readonly DETECTION_RADIUS = 40;
+
+  /** Move NPC toward target at a given speed (units/sec). */
+  private moveToward(target: Position, speed: number, deltaTime: number): void {
+    const dx = target.x - this.npc.position.x;
+    const dy = target.y - this.npc.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < 0.5) return;
+    const step = speed * (deltaTime / 1000);
+    const ratio = Math.min(step / distance, 1);
+    this.npc.position.x += dx * ratio;
+    this.npc.position.y += dy * ratio;
+  }
+
+  /** Pick a random patrol target within patrol radius, clamped to map bounds. */
+  private pickPatrolTarget(): Position {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 20 + Math.random() * BehaviorExecutor.PATROL_RADIUS;
+    return {
+      x: Math.max(0, Math.min(GAME_CONFIG.MAP_WIDTH, this.npc.position.x + Math.cos(angle) * radius)),
+      y: Math.max(0, Math.min(GAME_CONFIG.MAP_HEIGHT, this.npc.position.y + Math.sin(angle) * radius)),
+    };
+  }
+
   private executePatrol(deltaTime: number): void {
+    let target = this.activityData.get('patrolTarget') as Position | undefined;
+    if (!target) {
+      target = this.pickPatrolTarget();
+      this.activityData.set('patrolTarget', target);
+    }
+
+    const dist = Math.hypot(target.x - this.npc.position.x, target.y - this.npc.position.y);
+    if (dist < BehaviorExecutor.ARRIVAL_DISTANCE) {
+      EventBus.emit(NPCEvent.PATROL_COMPLETE, { npcId: this.npc.id, position: { ...this.npc.position } });
+      this.activityData.delete('patrolTarget');
+      return;
+    }
+
+    this.moveToward(target, BehaviorExecutor.PATROL_SPEED, deltaTime);
   }
 
   private executeRetreat(deltaTime: number): void {
@@ -356,12 +400,95 @@ export class BehaviorExecutor {
   }
 
   private executeLogistics(deltaTime: number): void {
+    const targetId = this.activityData.get('logisticsTarget') as string | undefined;
+
+    if (!targetId) {
+      const resources = ResourceManager.getInstance().getNearbyResources(
+        this.npc.position.x, this.npc.position.y, BehaviorExecutor.DETECTION_RADIUS
+      );
+      if (resources.length === 0) {
+        this.executePatrol(deltaTime);
+        return;
+      }
+      // Pick the nearest resource
+      const nearest = resources.reduce((a, b) =>
+        Math.hypot(a.x - this.npc.position.x, a.y - this.npc.position.y) <
+        Math.hypot(b.x - this.npc.position.x, b.y - this.npc.position.y) ? a : b
+      );
+      this.activityData.set('logisticsTarget', nearest.id);
+      this.activityData.set('logisticsTargetPos', { x: nearest.x, y: nearest.y });
+      return;
+    }
+
+    const targetPos = this.activityData.get('logisticsTargetPos') as Position | undefined;
+    if (!targetPos) { this.activityData.delete('logisticsTarget'); return; }
+
+    const dist = Math.hypot(targetPos.x - this.npc.position.x, targetPos.y - this.npc.position.y);
+    if (dist < BehaviorExecutor.ARRIVAL_DISTANCE) {
+      const resourceMgr = ResourceManager.getInstance();
+      const resource = resourceMgr.getResourceById(targetId);
+      if (resource) {
+        resourceMgr.collectResource(
+          this.npc.id, resource.id,
+          () => {},
+          (amount) => { this.npc.resources.spiritStones += Math.floor(amount); },
+          (item) => { if (!this.npc.resources.items.includes(item)) this.npc.resources.items.push(item); }
+        );
+      }
+      this.activityData.delete('logisticsTarget');
+      this.activityData.delete('logisticsTargetPos');
+      return;
+    }
+
+    this.moveToward(targetPos, BehaviorExecutor.LOGISTICS_SPEED, deltaTime);
   }
 
   private executeCompete(deltaTime: number): void {
-    const resourcePoints = ResourceManager.getInstance().getNearbyResources(this.npc.position.x, this.npc.position.y, 3);
-    if (resourcePoints.length > 0) {
+    const competition = NPCResourceCompetition.getInstance();
+    const resourceMgr = ResourceManager.getInstance();
+    const claimedId = this.activityData.get('competeTarget') as string | undefined;
+
+    if (claimedId) {
+      if (!competition.canNpcCollect(this.npc.id, claimedId)) {
+        this.activityData.delete('competeTarget');
+        return;
+      }
+      const resource = resourceMgr.getResourceById(claimedId);
+      if (!resource) {
+        competition.npcReleases(this.npc.id, claimedId);
+        this.activityData.delete('competeTarget');
+        return;
+      }
+      const dist = Math.hypot(resource.x - this.npc.position.x, resource.y - this.npc.position.y);
+      if (dist < BehaviorExecutor.ARRIVAL_DISTANCE) {
+        resourceMgr.collectResource(
+          this.npc.id, resource.id,
+          () => {},
+          (amount) => { this.npc.resources.spiritStones += Math.floor(amount); },
+          (item) => { if (!this.npc.resources.items.includes(item)) this.npc.resources.items.push(item); }
+        );
+        competition.npcReleases(this.npc.id, resource.id);
+        this.activityData.delete('competeTarget');
+      } else {
+        this.moveToward({ x: resource.x, y: resource.y }, BehaviorExecutor.LOGISTICS_SPEED, deltaTime);
+      }
+      return;
     }
+
+    // Find a new unclaimed resource
+    const resources = resourceMgr.getNearbyResources(
+      this.npc.position.x, this.npc.position.y, BehaviorExecutor.DETECTION_RADIUS
+    );
+    for (const res of resources) {
+      if (competition.canNpcCollect(this.npc.id, res.id)) {
+        competition.npcCollects(this.npc.id, res.id);
+        this.activityData.set('competeTarget', res.id);
+        return;
+      }
+    }
+
+    // Nothing to compete for — patrol instead
+    this.executePatrol(deltaTime);
   }
 
   private executeWork(deltaTime: number): void {
@@ -381,9 +508,78 @@ export class BehaviorExecutor {
     this.npc.hp = Math.min(this.npc.maxHp, this.npc.hp + this.npc.maxHp * recoveryRate);
   }
 
+  /** Chase a hostile target set via activityData('chaseTarget', npcId).
+   *  The target NPC position is resolved from NPCWorldService.
+   *  Falls back to patrol when no target is assigned. */
   private executeChase(deltaTime: number): void {
+    const targetNpcId = this.activityData.get('chaseTarget') as string | undefined;
+    if (!targetNpcId) {
+      this.executePatrol(deltaTime);
+      return;
+    }
+
+    // Lazy-require to avoid circular dependency at module level
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { NPCWorldService } = require('./NPCWorldService');
+    const worldService = NPCWorldService.getInstance();
+    const targetState = worldService.getNPC(targetNpcId);
+    if (!targetState || targetState.npc.hp <= 0) {
+      this.activityData.delete('chaseTarget');
+      this.executePatrol(deltaTime);
+      return;
+    }
+
+    const targetPos = targetState.npc.position;
+    const dist = Math.hypot(targetPos.x - this.npc.position.x, targetPos.y - this.npc.position.y);
+
+    if (dist < BehaviorExecutor.ARRIVAL_DISTANCE) {
+      // In range — deal damage proportional to power
+      const damage = Math.max(1, Math.floor(this.npc.power * 0.1));
+      targetState.npc.hp = Math.max(0, targetState.npc.hp - damage);
+      EventBus.emit(NPCEvent.ATTACKED, { targetId: targetNpcId, attackerId: this.npc.id, damage });
+      if (targetState.npc.hp <= 0) {
+        targetState.activity = 'dead';
+        EventBus.emit(NPCEvent.DIED, { npcId: targetNpcId, killerId: this.npc.id });
+        this.activityData.delete('chaseTarget');
+      }
+    } else {
+      this.moveToward(targetPos, BehaviorExecutor.CHASE_SPEED, deltaTime);
+    }
   }
 
+  /** Trade with a partner NPC set via activityData('tradePartner', npcId).
+   *  Exchanges a fixed amount of spirit stones.
+   *  Falls back to patrol when no partner is assigned. */
   private executeTrade(deltaTime: number): void {
+    const partnerId = this.activityData.get('tradePartner') as string | undefined;
+    if (!partnerId) {
+      this.executePatrol(deltaTime);
+      return;
+    }
+
+    const targetPos = this.activityData.get('tradePartnerPos') as Position | undefined;
+    if (!targetPos) {
+      this.activityData.delete('tradePartner');
+      return;
+    }
+
+    const dist = Math.hypot(targetPos.x - this.npc.position.x, targetPos.y - this.npc.position.y);
+    if (dist < BehaviorExecutor.ARRIVAL_DISTANCE) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { NPCWorldService } = require('./NPCWorldService');
+      const partner = NPCWorldService.getInstance().getNPC(partnerId);
+      if (partner && this.npc.resources.spiritStones >= 30) {
+        const tradeAmount = Math.floor(Math.min(30, this.npc.resources.spiritStones));
+        this.npc.resources.spiritStones -= tradeAmount;
+        partner.npc.resources.spiritStones += tradeAmount;
+        EventBus.emit(NPCEvent.TRADE_COMPLETE, {
+          fromId: this.npc.id, toId: partnerId, amount: tradeAmount,
+        });
+      }
+      this.activityData.delete('tradePartner');
+      this.activityData.delete('tradePartnerPos');
+    } else {
+      this.moveToward(targetPos, BehaviorExecutor.LOGISTICS_SPEED, deltaTime);
+    }
   }
 }

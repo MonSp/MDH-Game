@@ -14,6 +14,7 @@ import {
   ItemService
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
+import { LLMIntegrationManager } from './game/services/LLMIntegrationManager';
 import { LLMHttpClient, DialogueRequestContext } from './llm/LLMHttpClient';
 import { buildDialogueSystemPrompt, buildDialogueUserPrompt } from './llm/DialoguePrompts';
 
@@ -579,6 +580,23 @@ function initializeGame(): void {
     });
   });
 
+  // Start LLM planning scheduler and register high-tier NPCs
+  const llmIntegration = LLMIntegrationManager.getInstance();
+  llmIntegration.initialize();
+  for (const [npcId, state] of npcWorld.getAllNPCs()) {
+    llmIntegration.registerHighTierNPC(npcId, {
+      id: npcId,
+      name: state.npc.name,
+      clan_id: state.npc.clanId,
+      nation: state.npc.nation,
+      role: state.npc.role,
+      realm: state.npc.realm,
+      power: state.npc.power,
+      personality: state.npc.personality,
+    });
+  }
+  console.log(`[LLM] Registered ${npcWorld.getAllNPCs().size} NPCs with planning scheduler`);
+
   console.log('Game systems initialized.');
 }
 
@@ -589,6 +607,35 @@ function startGameLoop(): void {
       player.update(1000 / 60);
     }
   }, 1000 / 60);
+
+  // NPC state sync to connected clients every 2 seconds
+  setInterval(() => {
+    const npcWorld = NPCWorldService.getInstance();
+    const npcStates: Array<{
+      id: string; name: string; activity: string; emotion: string;
+      x: number; y: number; hp: number; maxHp: number; power: number;
+    }> = [];
+    for (const [id, state] of npcWorld.getAllNPCs()) {
+      npcStates.push({
+        id,
+        name: state.npc.name,
+        activity: state.activity,
+        emotion: state.emotion,
+        x: state.npc.position.x,
+        y: state.npc.position.y,
+        hp: state.npc.hp,
+        maxHp: state.npc.maxHp,
+        power: state.npc.power,
+      });
+    }
+    io.emit('npc:state-sync', { npcStates, tick: Date.now() });
+
+    // Phase 1.3: NPC interaction event sync
+    const interactions = npcWorld.consumeRecentInteractions();
+    if (interactions.length > 0) {
+      io.emit('npc:interactions', { interactions, tick: Date.now() });
+    }
+  }, 2000);
 }
 
 httpServer.listen(PORT, () => {

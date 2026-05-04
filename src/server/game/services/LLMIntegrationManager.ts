@@ -5,7 +5,10 @@ import {
   LLMPlanningRequest,
   LLMEligibility,
   PlanStatus,
-  ActionType
+  ActionType,
+  NPCData,
+  WorldContext,
+  PlanningType
 } from '../../../shared/types/LLMPlanning';
 import { LLMPlanningService } from './LLMPlanningService';
 import { NPCBehaviorTreeManager } from './NPCBehaviorTree';
@@ -56,9 +59,12 @@ export class LLMEventDispatcher extends EventEmitter {
 export class LLMPlanningScheduler {
   private static instance: LLMPlanningScheduler;
   private scheduledNPCs: Map<string, number> = new Map();
+  /** NPC data store used to build planning requests. */
+  private npcDataStore: Map<string, { data: NPCData; lastPlanTime: number }> = new Map();
   private eventDispatcher: LLMEventDispatcher;
   private isRunning: boolean = false;
-  private checkInterval: number = 60 * 60 * 1000;
+  /** How often the scheduler loop runs (ms). Spawns planning requests for eligible NPCs. */
+  private checkInterval: number = 5000;
 
   private constructor() {
     this.eventDispatcher = LLMEventDispatcher.getInstance();
@@ -80,25 +86,7 @@ export class LLMPlanningScheduler {
   stop(): void {
     this.isRunning = false;
     this.scheduledNPCs.clear();
-  }
-
-  async schedulePlanningForNPC(
-    npcId: string,
-    tier: LLMTier,
-    lastPlanningTime: number,
-    horizon: '1天' | '1周' | '1月'
-  ): Promise<void> {
-    const eligibility: LLMEligibility = {
-      tier,
-      last_planning_time: lastPlanningTime,
-      planning_horizon: horizon
-    };
-
-    const tierConfig = LLM_SERVICE_CONFIG.tier_config[tier];
-
-    if (shouldRequestPlanning(eligibility, tierConfig)) {
-      await this.triggerPlanning(npcId);
-    }
+    this.npcDataStore.clear();
   }
 
   async triggerPlanning(npcId: string): Promise<void> {
@@ -118,14 +106,11 @@ export class LLMPlanningScheduler {
         });
       }
     } catch (error) {
-      console.error(`Failed to schedule planning for NPC ${npcId}:`, error);
+      console.error(`[LLMScheduler] Plan failed for NPC ${npcId}:`, error);
     }
   }
 
-  async triggerEmergencyPlanning(
-    npcId: string,
-    emergencyType: string
-  ): Promise<void> {
+  async triggerEmergencyPlanning(npcId: string, emergencyType: string): Promise<void> {
     const planningService = LLMPlanningService.getInstance();
 
     try {
@@ -140,7 +125,7 @@ export class LLMPlanningScheduler {
         });
       }
     } catch (error) {
-      console.error(`Failed to trigger emergency planning for NPC ${npcId}:`, error);
+      console.error(`[LLMScheduler] Emergency plan failed for NPC ${npcId}:`, error);
     }
   }
 
@@ -153,25 +138,94 @@ export class LLMPlanningScheduler {
     }, this.checkInterval);
   }
 
-  private async checkScheduledNPCs(): Promise<void> {
-    for (const [npcId, lastCheck] of this.scheduledNPCs.entries()) {
+  /** Process registered NPCs: request LLM plans for those eligible and not already planned. */
+  async checkScheduledNPCs(): Promise<void> {
+    const planningService = LLMPlanningService.getInstance();
+    const now = Date.now();
+
+    for (const [npcId, info] of this.npcDataStore.entries()) {
+      // Skip if NPC already has an active plan
+      const existingPlan = planningService.getPlan(npcId);
+      if (existingPlan && existingPlan.status === PlanStatus.ACTIVE) continue;
+
+      const tier = determineTier(info.data);
+      if (tier === LLMTier.T3) continue; // T3 uses deterministic fallback
+
+      // Per-tier cooldown: T0=30s, T1=60s, T2=120s
+      const cooldownMs =
+        tier === LLMTier.T0 ? 30_000 :
+        tier === LLMTier.T1 ? 60_000 :
+        120_000;
+      if (now - info.lastPlanTime < cooldownMs) continue;
+      info.lastPlanTime = now;
+
+      const request = this.createPlanningRequest(npcId);
+      if (!request) continue;
+
+      try {
+        const plan = await planningService.requestPlan(request);
+        if (plan) {
+          this.eventDispatcher.emitEvent({
+            type: LLMEventType.PLAN_GENERATED,
+            npcId,
+            planId: plan.plan_id,
+            timestamp: now,
+          });
+        }
+      } catch (error) {
+        console.error(`[LLMScheduler] Plan failed for NPC ${npcId}:`, error);
+      }
     }
   }
 
   private createPlanningRequest(npcId: string): LLMPlanningRequest | null {
-    return null;
+    const info = this.npcDataStore.get(npcId);
+    if (!info) return null;
+
+    const tier = determineTier(info.data);
+    const tierConfig = LLM_SERVICE_CONFIG.tier_config[tier];
+
+    return {
+      npc_id: npcId,
+      npc_data: info.data,
+      world_context: {
+        war_active: false,
+        resource_density: 0.5,
+        economy_status: 'normal',
+        major_events: [],
+      },
+      planning_horizon: tierConfig.horizon,
+      planning_type: PlanningType.NORMAL,
+    };
   }
 
-  registerNPC(npcId: string): void {
+  /** Register an NPC for periodic LLM planning. */
+  registerNPC(npcId: string, npcData?: NPCData): void {
+    if (npcData) {
+      this.npcDataStore.set(npcId, { data: npcData, lastPlanTime: 0 });
+    }
     this.scheduledNPCs.set(npcId, Date.now());
+  }
+
+  /** Update the NPC data stored for a registered NPC (e.g. after realm change). */
+  updateNPCData(npcId: string, npcData: NPCData): void {
+    const existing = this.npcDataStore.get(npcId);
+    if (existing) {
+      this.npcDataStore.set(npcId, { ...existing, data: npcData });
+    }
   }
 
   unregisterNPC(npcId: string): void {
     this.scheduledNPCs.delete(npcId);
+    this.npcDataStore.delete(npcId);
   }
 
   getScheduledCount(): number {
     return this.scheduledNPCs.size;
+  }
+
+  getActivePlanCount(): number {
+    return this.npcDataStore.size;
   }
 }
 
@@ -204,6 +258,12 @@ export class LLMIntegrationManager {
     this.eventDispatcher.removeAllListeners();
   }
 
+  /** Main tick — call from server game loop at regular interval. */
+  async tick(): Promise<void> {
+    await this.scheduler.checkScheduledNPCs();
+    LLMPlanningService.getInstance().cleanupExpiredPlans();
+  }
+
   getBehaviorForNPC(npcId: string, npcData: any): string {
     const tier = determineTier(npcData);
     if (tier === LLMTier.T3) {
@@ -214,17 +274,15 @@ export class LLMIntegrationManager {
     return this.translateActionToActivity(action);
   }
 
-  registerHighTierNPC(npcId: string, npcData: any): void {
+  registerHighTierNPC(npcId: string, npcData: NPCData): void {
     const tier = determineTier(npcData);
     if (tier !== LLMTier.T3) {
-      this.scheduler.registerNPC(npcId);
-      this.scheduler.schedulePlanningForNPC(
-        npcId,
-        tier,
-        0,
-        LLM_SERVICE_CONFIG.tier_config[tier].horizon
-      );
+      this.scheduler.registerNPC(npcId, npcData);
     }
+  }
+
+  updateNPCData(npcId: string, npcData: NPCData): void {
+    this.scheduler.updateNPCData(npcId, npcData);
   }
 
   unregisterNPC(npcId: string): void {

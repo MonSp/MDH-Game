@@ -63,6 +63,16 @@ export class LLMPlanNode implements BTNode {
 
 export class SurvivalNode implements BTNode {
   execute(npcId: string): ActionType {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { NPCWorldService } = require('../../services/NPCWorldService');
+    const state = NPCWorldService.getInstance().getNPC(npcId);
+    if (!state || state.npc.hp <= 0) return ActionType.IDLE;
+
+    // Low HP — prioritise recovery
+    if (state.npc.hp < state.npc.maxHp * 0.3) {
+      return ActionType.REST;
+    }
+
     return ActionType.IDLE;
   }
 }
@@ -72,6 +82,7 @@ export class NPCBehaviorTree {
   private rootNode: BTNode;
   private llmNode: LLMPlanNode;
   private survivalNode: SurvivalNode;
+  private currentPlan: LLMPlan | null = null;
 
   constructor(npcId: string) {
     this.npcId = npcId;
@@ -89,6 +100,7 @@ export class NPCBehaviorTree {
 
   setLLMPlan(plan: LLMPlan): void {
     LLMPlanningService.getInstance();
+    this.currentPlan = plan;
   }
 }
 
