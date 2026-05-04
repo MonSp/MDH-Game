@@ -182,6 +182,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
 };// 4. Resource Mesh
 const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => {
   const interactWithResource = useGameStore(state => state.interactWithResource);
+  const clans = useGameStore(state => state.clans);
   const [hovered, setHovered] = useState(false);
   useCursor(hovered);
 
@@ -189,24 +190,37 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
 
   const color = res.type === '灵田' ? '#16a34a' : res.type === '矿脉' ? '#78716c' : '#ca8a04';
+  const owner = res.ownerClanId ? clans.find(c => c.id === res.ownerClanId) : null;
+  const ownerColor = '#fbbf24'; // amber/gold for owned resources
 
   return (
     <group position={[dx, baseHeight + 0.5, dy]}>
-      <mesh 
-        rotation={[Math.PI / 4, Math.PI / 4, 0]} 
+      {/* Owner indicator flag */}
+      {owner && (
+        <mesh position={[0, 0.8, 0]}>
+          <planeGeometry args={[0.2, 0.3]} />
+          <meshStandardMaterial color={ownerColor} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      <mesh
+        rotation={[Math.PI / 4, Math.PI / 4, 0]}
         onClick={(e) => { e.stopPropagation(); interactWithResource(res.id); }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
         castShadow
       >
         <boxGeometry args={[0.6, 0.6, 0.6]} />
-        <meshStandardMaterial color={color} />
+        <meshStandardMaterial color={owner ? ownerColor : color} />
       </mesh>
       {hovered && (
         <Html position={[0, 1, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="bg-zinc-900/90 border border-zinc-700 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
             <div className="text-emerald-400 font-bold">{res.type}</div>
-            <div className="text-zinc-400">点击采集</div>
+            {owner ? (
+              <div className="text-amber-400">{owner.name} 占领</div>
+            ) : (
+              <div className="text-zinc-400">点击采集</div>
+            )}
           </div>
         </Html>
       )}
@@ -302,6 +316,108 @@ const SquadMemberMesh = ({ member, dx, dy }: { member: SquadMember; dx: number; 
           </div>
         </div>
       </Html>
+    </group>
+  );
+};
+
+// 3b. NPC Interaction Effect
+interface ActiveEffect {
+  id: string;
+  type: 'trade' | 'duel' | 'alliance' | 'conflict' | 'greet';
+  position: [number, number, number];
+  startTime: number;
+  duration: number;
+  npcNameA: string;
+  npcNameB: string;
+}
+
+const INTERACTION_EFFECT_COLORS: Record<string, string> = {
+  trade: '#fbbf24',
+  duel: '#ef4444',
+  conflict: '#f97316',
+  alliance: '#22c55e',
+  greet: '#a1a1aa',
+};
+
+const InteractionEffectParticles = ({ effect }: { effect: ActiveEffect }) => {
+  const particleCount = effect.type === 'duel' || effect.type === 'conflict' ? 12 : 8;
+  const color = INTERACTION_EFFECT_COLORS[effect.type];
+  const [particles] = useState(() =>
+    Array.from({ length: particleCount }, (_, i) => ({
+      id: i,
+      offsetX: (Math.random() - 0.5) * 0.6,
+      offsetZ: (Math.random() - 0.5) * 0.6,
+      offsetY: Math.random() * 0.8 + 0.3,
+      delay: Math.random() * 0.3,
+      spread: effect.type === 'duel' || effect.type === 'conflict' ? 1.0 : 0.5,
+    }))
+  );
+
+  const groupRef = useRef<THREE.Group>(null);
+  const elapsed = useRef(0);
+
+  useFrame((state, delta) => {
+    elapsed.current += delta;
+    if (!groupRef.current) return;
+    const t = elapsed.current;
+    const life = 1 - t / (effect.duration / 1000);
+    groupRef.current.children.forEach((child, i) => {
+      const p = particles[i];
+      if (!p) return;
+      const dt = Math.max(0, t - p.delay);
+      const fadeOut = Math.max(0, 1 - dt * 1.5);
+      child.position.x = p.offsetX + Math.sin(dt * 4 + p.id) * p.spread * dt;
+      child.position.z = p.offsetZ + Math.cos(dt * 3 + p.id) * p.spread * dt;
+      child.position.y = p.offsetY + dt * 0.5;
+      const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+      if (mat) mat.opacity = fadeOut * life;
+      child.scale.setScalar(fadeOut);
+    });
+  });
+
+  // Expand ring for alliance
+  const ringRef = useRef<THREE.Mesh>(null);
+  useFrame((state, delta) => {
+    if (!ringRef.current) return;
+    elapsed.current += delta;
+    const t = elapsed.current;
+    const life = 1 - t / (effect.duration / 1000);
+    if (effect.type === 'alliance') {
+      ringRef.current.scale.setScalar(1 + t * 2);
+      const mat = ringRef.current.material as THREE.MeshBasicMaterial;
+      if (mat) mat.opacity = Math.max(0, life * 0.6);
+    }
+  });
+
+  return (
+    <group position={effect.position} ref={groupRef}>
+      {particles.map((p) => (
+        <mesh key={p.id} position={[p.offsetX, p.offsetY, p.offsetZ]}>
+          <boxGeometry args={[0.08, 0.08, 0.08]} />
+          <meshBasicMaterial color={color} transparent opacity={0.9} />
+        </mesh>
+      ))}
+      {/* Ground ring for alliance */}
+      {effect.type === 'alliance' && (
+        <mesh ref={ringRef} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.5, 0.8, 24]} />
+          <meshBasicMaterial color="#22c55e" transparent opacity={0.6} side={THREE.DoubleSide} />
+        </mesh>
+      )}
+      {/* Flash circle for duel/conflict */}
+      {(effect.type === 'duel' || effect.type === 'conflict') && (
+        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.8, 24]} />
+          <meshBasicMaterial color={color} transparent opacity={0.2} />
+        </mesh>
+      )}
+      {/* Sparkle ring for trade */}
+      {effect.type === 'trade' && (
+        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.4, 0.6, 16]} />
+          <meshBasicMaterial color={color} transparent opacity={0.4} side={THREE.DoubleSide} />
+        </mesh>
+      )}
     </group>
   );
 };
@@ -533,8 +649,86 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
+
+  // Phase 1.3: NPC interaction visual effects
+  const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);
+  const effectIdCounter = useRef(0);
+  const lastNpcProximityCheck = useRef<Record<string, number>>({});
+
+  // Detect NPC-to-NPC proximity and trigger visual effects
+  useEffect(() => {
+    const now = Date.now();
+    const newEffects: ActiveEffect[] = [];
+
+    for (let i = 0; i < nearbyNPCs.length; i++) {
+      for (let j = i + 1; j < nearbyNPCs.length; j++) {
+        const a = nearbyNPCs[i];
+        const b = nearbyNPCs[j];
+        const dist = Math.abs(a.position.x - b.position.x) + Math.abs(a.position.y - b.position.y);
+        if (dist > 1) continue;
+
+        const pairKey = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
+        if (now - (lastNpcProximityCheck.current[pairKey] ?? 0) < 15000) continue;
+        lastNpcProximityCheck.current[pairKey] = now;
+
+        // Determine effect type based on personality compatibility
+        const affinity = (100 - Math.abs(a.personality.ambition - b.personality.ambition) * 0.3
+          + (100 - Math.abs(a.personality.loyalty - b.personality.loyalty)) * 0.4
+          - Math.abs(a.personality.greed - b.personality.greed) * 0.3);
+        const roll = Math.random();
+
+        let type: ActiveEffect['type'];
+        if (affinity > 60 && roll < 0.35) type = 'alliance';
+        else if (affinity > 40 && roll < 0.2) type = 'trade';
+        else if (affinity < 20 && roll < 0.25) type = 'conflict';
+        else if (affinity < 0 && roll < 0.12) type = 'duel';
+        else type = 'greet';
+
+        const midX = (a.position.x + b.position.x) / 2 - player.position.x;
+        const midZ = (a.position.y + b.position.y) / 2 - player.position.y;
+        const tile = getTerrainTile(Math.round((a.position.x + b.position.x) / 2), Math.round((a.position.y + b.position.y) / 2));
+        const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+
+        newEffects.push({
+          id: `fx-${effectIdCounter.current++}`,
+          type,
+          position: [midX, baseHeight + 0.1, midZ],
+          startTime: now,
+          duration: 2500,
+          npcNameA: a.name,
+          npcNameB: b.name,
+        });
+
+        // Add significant interactions to world event log
+        if (type !== 'greet') {
+          const desc: Record<string, string> = {
+            trade: `${a.name} 与 ${b.name} 交换了修炼资源`,
+            duel: `${a.name} 与 ${b.name} 一言不合，拔剑相向！`,
+            alliance: `${a.name} 与 ${b.name} 相谈甚欢，结为道友`,
+            conflict: `${a.name} 与 ${b.name} 发生了争执`,
+            greet: '',
+          };
+          addWorldEvent({ type, npcNameA: a.name, npcNameB: b.name, description: desc[type] || '', timestamp: now });
+        }
+      }
+    }
+
+    if (newEffects.length > 0) {
+      setActiveEffects(prev => [...prev, ...newEffects]);
+    }
+  }, [nearbyNPCs, player.position]);
+
+  // Clean up expired effects
+  useEffect(() => {
+    if (activeEffects.length === 0) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setActiveEffects(prev => prev.filter(e => now - e.startTime < e.duration));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [activeEffects.length > 0]);
 
   // 哨塔 vision bonus for fog and zoom
   const watchtowerLevel = playerFactionId
@@ -687,6 +881,11 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
           return <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} onClick={() => setSelectedNPC(npc)} />;
         })}
+
+        {/* Phase 1.3: NPC interaction visual effects */}
+        {activeEffects.map(effect => (
+          <InteractionEffectParticles key={effect.id} effect={effect} />
+        ))}
 
         {squadMembers.filter(m => m.isAlive).map(member => {
           const dx = member.position.x - player.position.x;

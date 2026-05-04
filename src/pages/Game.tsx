@@ -6,6 +6,7 @@ import { Map2D } from '../components/Map2D';
 import { LogBox } from '../components/LogBox';
 import { ChroniclePanel } from '../components/ChroniclePanel';
 import { ScenePanel } from '../components/ScenePanel';
+import { EventLog } from '../components/EventLog';
 import { SurveyPopup } from '../components/SurveyPopup';
 import { getSceneEntry } from '../content/scenes/sceneRegistry';
 import { GRUDGE_NPC_DIALOGUE } from '../content/scenes/grudge/npcDialogue';
@@ -24,6 +25,7 @@ import {
 } from '../content/scenes/effectUtils';
 import { getSocket } from '../shared/socket';
 import { type SceneEntry, type ScenePanelState } from '../shared/types/scene';
+import { InitiativeService, InitiativeType, type InitiativeEvent } from '../store/gameService';
 
 // Scripted NPC dialogue responses for fallback when LLM is unavailable
 const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; metText?: string }> = {
@@ -68,6 +70,7 @@ export const Game = () => {
   const location = useLocation();
   const { player, updateNPCs, modifyTalent, markNpcMet, setNpcMemory, addLog, saveToSlot, npcMemory } = useGameStore();
   const [showChronicle, setShowChronicle] = useState(false);
+  const [showEventLog, setShowEventLog] = useState(false);
 
   // Scene state
   const [activeScene, setActiveScene] = useState<SceneEntry | null>(null);
@@ -85,6 +88,11 @@ export const Game = () => {
   const lastLiSiProtectionRef = useRef(0);
   const [triggerVersion, setTriggerVersion] = useState(0);
   const [showSurvey, setShowSurvey] = useState(false);
+
+  // Phase 1.2: NPC proactive interaction state
+  const [initiativeEvents, setInitiativeEvents] = useState<InitiativeEvent[]>([]);
+  const [encounterEvent, setEncounterEvent] = useState<InitiativeEvent | null>(null);
+  const dismissedEncountersRef = useRef<Set<string>>(new Set());
 
   // Start scene on mount (one-shot — skip if loading from save)
   useEffect(() => {
@@ -189,6 +197,29 @@ export const Game = () => {
 
     return () => {
       socket.off('scene:npc-response', handler);
+    };
+  }, []);
+
+  // Socket.IO listener for NPC interaction events (Phase 1.3)
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handler = (data: { interactions: Array<{ type: string; npcNameA: string; npcNameB: string; description: string; timestamp: number }> }) => {
+      const { addWorldEvent } = useGameStore.getState();
+      for (const ev of data.interactions) {
+        addWorldEvent({
+          type: ev.type as any,
+          npcNameA: ev.npcNameA,
+          npcNameB: ev.npcNameB,
+          description: ev.description,
+          timestamp: ev.timestamp,
+        });
+      }
+    };
+    socket.on('npc:interactions', handler);
+
+    return () => {
+      socket.off('npc:interactions', handler);
     };
   }, []);
 
@@ -457,8 +488,65 @@ export const Game = () => {
         dialogueTimeoutRef.current = null;
       }
       dialogueResolveRef.current = null;
-      sceneStartedRef.current = false; // reset so re-mount can start intro
+      sceneStartedRef.current = false;
     };
+  }, []);
+
+  // Phase 1.2: Poll NPC initiative service every 2s
+  useEffect(() => {
+    if (!player) return;
+    const interval = setInterval(() => {
+      const s = useGameStore.getState();
+      if (!s.player) return;
+
+      const service = InitiativeService.getInstance();
+      service.tick(s.player.position, s.nearbyNPCs);
+      const pending = service.getPendingEvents();
+      setInitiativeEvents(pending);
+
+      // Auto-open new encounter events
+      for (const e of pending) {
+        if (e.type === InitiativeType.ENCOUNTER && !dismissedEncountersRef.current.has(e.id)) {
+          setEncounterEvent(e);
+          break;
+        }
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [player]);
+
+  // Phase 1.2: Handle encounter event choice
+  const handleEncounterChoice = useCallback((event: InitiativeEvent, choiceIndex: number) => {
+    const service = InitiativeService.getInstance();
+    const result = service.resolveEncounter(event.id, choiceIndex);
+    if (!result) return;
+
+    const store = useGameStore.getState();
+    if (store.player) {
+      if (result.stonesDelta !== 0) {
+        const inventory = { ...store.player.inventory };
+        inventory['灵石'] = (inventory['灵石'] || 0) + result.stonesDelta;
+        useGameStore.setState({ player: { ...store.player, inventory } });
+      }
+      if (result.expDelta !== 0) {
+        const newExp = Math.max(0, store.player.stats.exp + result.expDelta);
+        useGameStore.setState({
+          player: { ...store.player, stats: { ...store.player.stats, exp: Math.min(newExp, store.player.stats.maxExp) } }
+        });
+      }
+      store.addLog({ type: 'event', message: result.log });
+    }
+
+    dismissedEncountersRef.current.add(event.id);
+    setEncounterEvent(null);
+    setInitiativeEvents(service.getPendingEvents());
+  }, []);
+
+  // Dismiss a single initiative event
+  const dismissInitiativeEvent = useCallback((eventId: string) => {
+    const service = InitiativeService.getInstance();
+    service.dismissEvent(eventId);
+    setInitiativeEvents(service.getPendingEvents());
   }, []);
 
   if (!player) return null;
@@ -475,6 +563,48 @@ export const Game = () => {
         <HUD onOpenChronicle={() => setShowChronicle(true)} />
         <LogBox />
         {showChronicle && <ChroniclePanel onClose={() => setShowChronicle(false)} />}
+        <EventLog isOpen={showEventLog} onToggle={() => setShowEventLog(v => !v)} />
+
+        {/* Phase 1.2: NPC initiative notification banners */}
+        {!activeScene && initiativeEvents.filter(e => e.type !== InitiativeType.ENCOUNTER).length > 0 && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex flex-col space-y-2 w-full max-w-md pointer-events-auto">
+            {initiativeEvents
+              .filter(e => e.type !== InitiativeType.ENCOUNTER)
+              .slice(-2)
+              .map(event => (
+                <div
+                  key={event.id}
+                  className="bg-zinc-900/95 border border-zinc-700/80 rounded-lg px-4 py-3 shadow-2xl animate-fadeIn"
+                  style={{ animation: 'fadeIn 0.3s ease-out' }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-medium text-emerald-400">
+                          {event.type === InitiativeType.GREETING ? '搭话' :
+                           event.type === InitiativeType.TRADE_OFFER ? '交易' :
+                           event.type === InitiativeType.CHALLENGE ? '挑衅' : '求助'}
+                        </span>
+                        {event.npcName && (
+                          <span className="text-xs text-zinc-400">
+                            {event.npcName}{event.npcRole ? `(${event.npcRole})` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-zinc-200 leading-relaxed">{event.message}</p>
+                    </div>
+                    <button
+                      onClick={() => dismissInitiativeEvent(event.id)}
+                      className="text-zinc-600 hover:text-zinc-400 transition-colors shrink-0 text-lg leading-none"
+                      aria-label="关闭"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       {/* 宿怨原型调查 */}
@@ -496,6 +626,51 @@ export const Game = () => {
           onFallback={handleFallback}
           npcMemory={npcMemory}
         />
+      )}
+
+      {/* Phase 1.2: Encounter event popup */}
+      {encounterEvent && !activeScene && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="路遇事件"
+        >
+          <div
+            className="w-full max-w-md mx-4 bg-zinc-900/95 border border-zinc-700 rounded-lg p-6 shadow-2xl"
+            style={{ animation: 'fadeIn 0.3s ease-out' }}
+          >
+            <h2 className="text-xl font-serif text-emerald-400 tracking-wide text-center mb-4">
+              路遇事件
+            </h2>
+            <p className="text-zinc-200 leading-relaxed mb-6 whitespace-pre-line">
+              {encounterEvent.message}
+            </p>
+            <div className="space-y-2">
+              {encounterEvent.encounterChoices?.map((choice, i) => (
+                <button
+                  key={i}
+                  className="w-full text-left px-4 py-3 rounded-md border transition-all duration-200
+                    bg-emerald-900/80 border-amber-700/60 text-amber-200
+                    hover:bg-emerald-800 hover:border-amber-500 hover:text-amber-100
+                    active:bg-emerald-700 text-sm font-medium min-h-[44px]"
+                  onClick={() => handleEncounterChoice(encounterEvent, i)}
+                >
+                  {choice.text}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => { dismissedEncountersRef.current.add(encounterEvent.id); setEncounterEvent(null); }}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded transition-colors text-sm"
+              >
+                忽略
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

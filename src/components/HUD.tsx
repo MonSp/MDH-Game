@@ -1,6 +1,7 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
+import { InitiativeService, InitiativeType } from '../store/gameService';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 import { SquadPanel } from './SquadPanel';
@@ -354,6 +355,27 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           <Save size={14} />
           <span>保存游戏</span>
         </button>
+
+        {/* Phase 1.2: NPC initiative notification indicator */}
+        {(() => {
+          const pending = InitiativeService.getInstance().getPendingEvents();
+          const count = pending.filter(e => e.type !== InitiativeType.ENCOUNTER).length;
+          if (count === 0) return null;
+          const latest = pending[pending.length - 1];
+          return (
+            <div className="mt-2 p-2 bg-amber-900/20 border border-amber-700/40 rounded text-xs">
+              <div className="flex items-center gap-1.5 text-amber-400 font-medium mb-1">
+                <MessageCircle size={12} />
+                <span>{count} 位修士的动静</span>
+              </div>
+              {latest && (
+                <p className="text-zinc-400 truncate">
+                  {latest.npcName ? `${latest.npcName}：` : ''}{latest.message.slice(0, 24)}…
+                </p>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {showBreakthrough && (
