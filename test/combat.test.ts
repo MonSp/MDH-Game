@@ -44,11 +44,19 @@ function initPlayer(overrides: Record<string, any> = {}) {
       cycleInfo: { type: null },
       ...overrides,
     },
+    playerFactionId: null,
     logs: [],
     resourcePoints: [],
     clans: [],
     wildMonsters: [],
     nearbyNPCs: [],
+    squadMembers: [],
+    worldEvents: [],
+    exploredTiles: [],
+    metNpcs: [],
+    npcMemory: {},
+    ascensionQuests: [],
+    _factionTickCount: 0,
   } as any);
 }
 

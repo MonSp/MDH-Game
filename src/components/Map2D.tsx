@@ -4,7 +4,8 @@ import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
-import { getTerrainTile } from '../utils/terrain';
+import { getTerrainTile, getVisionRadius } from '../utils/terrain';
+import { TerrainType, isWater } from '../shared/types/map';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
 
 // Constants
@@ -144,7 +145,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
       for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
         const x = playerPos.x + dx;
         const y = playerPos.y + dy;
-        
+
         const tile = getTerrainTile(x, y);
         t.push({ ...tile, dx, dy });
       }
@@ -155,26 +156,97 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
   return (
     <group>
       {tiles.map(tile => {
-        // 水面下降并稍微透明
-        const isWater = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER';
-        const height = isWater ? 0.3 : Math.max(0.1, tile.elevation + 0.5); 
-        const yPos = isWater ? -0.15 : (height / 2 - 0.5); // 基准面
+        const isWaterTile = isWater(tile.biome);
+        const isMountain = tile.biome === TerrainType.ROCK || tile.biome === TerrainType.MOUNTAIN;
+
+        // Dramatic height for mountains, flat for water, varied for others
+        let height: number;
+        if (isWaterTile) {
+          height = 0.2;
+        } else if (isMountain) {
+          height = Math.max(0.5, (tile.elevation + 0.5) * 2.5);
+        } else {
+          height = Math.max(0.1, tile.elevation + 0.5);
+        }
+
+        const yPos = isWaterTile ? -0.15 : (height / 2 - 0.5);
+
+        // Mountain peak cap for dramatic effect
+        const showPeak = isMountain && height > 1.5;
+
+        // Snow cap on high mountains
+        const showSnowCap = isMountain && height > 1.8;
 
         return (
           <group key={`${tile.x},${tile.y}`} position={[tile.dx, 0, tile.dy]}>
-            <mesh position={[0, yPos, 0]} castShadow={!isWater} receiveShadow>
+            {/* Main terrain block */}
+            <mesh position={[0, yPos, 0]} castShadow={!isWaterTile} receiveShadow>
               <boxGeometry args={[1, height, 1]} />
-              <meshStandardMaterial 
-                color={tile.color} 
-                transparent={isWater} 
-                opacity={isWater ? 0.8 : 1}
-                roughness={isWater ? 0.1 : 0.8}
-                metalness={isWater ? 0.8 : 0.1}
+              <meshStandardMaterial
+                color={tile.color}
+                transparent={isWaterTile}
+                opacity={isWaterTile ? 0.7 : 1}
+                roughness={isWaterTile ? 0.1 : 0.9}
+                metalness={isWaterTile ? 0.6 : 0.0}
               />
             </mesh>
-            {/* 渲染树木 */}
-            {tile.hasTree && <Tree position={[0, yPos + height / 2, 0]} />}
+            {/* Mountain peak extra block */}
+            {showPeak && (
+              <mesh position={[0, yPos + height / 2, 0]}>
+                <coneGeometry args={[0.3, 0.4, 4]} />
+                <meshStandardMaterial color={showSnowCap ? '#f8fafc' : '#57534e'} roughness={0.8} />
+              </mesh>
+            )}
+            {/* Trees */}
+            {tile.hasTree && (
+              isMountain ? null : <Tree position={[0, yPos + height / 2, 0]} />
+            )}
           </group>
+        );
+      })}
+    </group>
+  );
+};
+
+// 3b. Fog of War overlay
+const FogOfWar = ({ playerPos, exploredTiles, visionRadius }: { playerPos: { x: number, y: number }; exploredTiles: string[]; visionRadius: number }) => {
+  const tiles = useMemo(() => {
+    const t = [];
+    for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
+      for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
+        const x = playerPos.x + dx;
+        const y = playerPos.y + dy;
+        const explored = exploredTiles.includes(`${x},${y}`);
+        // Currently in sight (within realm-based vision radius)
+        const inSight = Math.abs(dx) <= visionRadius && Math.abs(dy) <= visionRadius;
+        t.push({ dx, dy, explored, inSight, x, y });
+      }
+    }
+    return t;
+  }, [playerPos.x, playerPos.y, exploredTiles]);
+
+  return (
+    <group>
+      {tiles.map(tile => {
+        // Unexplored: full dark fog | Explored but out of sight: light fog | In sight: clear
+        let opacity: number;
+        if (tile.inSight) {
+          opacity = 0;
+        } else if (tile.explored) {
+          opacity = 0.35;
+        } else {
+          opacity = 0.88;
+        }
+        return (
+          <mesh key={`fog-${tile.x},${tile.y}`} position={[tile.dx, 0.01, tile.dy]}>
+            <planeGeometry args={[1.02, 1.02]} />
+            <meshBasicMaterial
+              color="#0f0f11"
+              transparent
+              opacity={opacity}
+              depthWrite={false}
+            />
+          </mesh>
         );
       })}
     </group>
@@ -649,7 +721,7 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent, exploredTiles } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
   // Phase 1.3: NPC interaction visual effects
@@ -735,6 +807,8 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     ? (clans.find(c => c.id === playerFactionId)?.buildings?.find(b => b.type === '哨塔')?.level || 0)
     : 0;
   const visionBonus = watchtowerLevel > 0 ? BUILDING_VISION_BONUS[watchtowerLevel] || 0 : 0;
+  // Realm-based vision radius for fog of war
+  const visionRadius = player ? getVisionRadius(player.realm, visionBonus) : 12;
 
   // Keyboard Movement + proximity trigger
   useEffect(() => {
@@ -846,6 +920,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         />
 
         <Terrain playerPos={player.position} />
+        <FogOfWar playerPos={player.position} exploredTiles={exploredTiles} visionRadius={visionRadius} />
 
         {capitals}
 

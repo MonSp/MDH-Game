@@ -511,6 +511,8 @@ export interface GameState {
   playerFactionId: string | null;
   /** Phase 1.4: tick counter for faction AI decisions */
   _factionTickCount: number;
+  /** Phase 2.2: explored tiles for fog of war ("x,y" strings) */
+  exploredTiles: string[];
 
   joinServer: (serverId: string, playerName: string) => void;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;

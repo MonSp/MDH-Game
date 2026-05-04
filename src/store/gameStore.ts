@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from './saveManager';
+import { isPositionPassable, getMovementCost } from '../utils/terrain';
 
 // Import everything needed for the store body's local scope
 import {
@@ -39,6 +40,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   worldEvents: [] as WorldEvent[],
   /** Phase 1.4: faction AI tick counter */
   _factionTickCount: 0,
+  /** Phase 2.2: explored tiles for fog of war */
+  exploredTiles: [] as string[],
   market: {
     '洗髓丹': { name: '洗髓丹', basePrice: 500, currentPrice: 500, stock: 10 },
     '低级法器': { name: '低级法器', basePrice: 200, currentPrice: 200, stock: 50 },
@@ -118,18 +121,59 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   movePlayer: (dx, dy) => set(state => {
     if (!state.player) return state;
-    
-    // 赵国特质：移动速度/距离影响 (这里简单处理为偶尔能移动更远)
+
+    // Phase 2.1c+2.1d: Terrain collision + movement cost
+    const targetX = state.player.position.x + dx;
+    const targetY = state.player.position.y + dy;
+
+    // Map bounds check
+    if (targetX < 0 || targetX >= 1000 || targetY < 0 || targetY >= 1000) {
+      return state;
+    }
+
+    // Terrain passability check
+    if (!isPositionPassable(targetX, targetY)) {
+      get().addLog({ type: 'system', message: '前方地形无法通行。' });
+      return state;
+    }
+
+    // Movement cost (reduced effective speed on rough terrain)
+    const cost = getMovementCost(targetX, targetY);
+    const canMove = Math.random() < (1 / cost);
+
+    // 赵国特质：移动速度/距离影响
     let moveMultiplier = 1;
     if (state.player.country === '赵' && Math.random() < 0.2) {
-      moveMultiplier = 2; // 有20%几率触发“游侠身法”，移动2格
+      moveMultiplier = 2;
     }
-    
+
+    if (!canMove && cost > 1.0) {
+      // Rough terrain slows — still move but log it occasionally
+      get().addLog({ type: 'system', message: '地形崎岖，行进困难。' });
+    }
+
+    // Phase 2.2: Mark tiles within vision as explored
+    const visionRadius = 12;
+    const newExplored = [...state.exploredTiles];
+    for (let vx = -visionRadius; vx <= visionRadius; vx++) {
+      for (let vy = -visionRadius; vy <= visionRadius; vy++) {
+        const tileX = targetX + vx;
+        const tileY = targetY + vy;
+        if (tileX >= 0 && tileX < 1000 && tileY >= 0 && tileY < 1000) {
+          const key = `${tileX},${tileY}`;
+          if (!newExplored.includes(key)) {
+            newExplored.push(key);
+          }
+        }
+      }
+    }
+
     return {
       player: {
         ...state.player,
-        position: { x: state.player.position.x + dx * moveMultiplier, y: state.player.position.y + dy * moveMultiplier }
-      }
+        position: { x: targetX, y: targetY },
+      },
+      exploredTiles: newExplored,
     };
   }),
 
@@ -1239,6 +1283,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         nearbyNPCs: generateNearbyNPCs(newRandomClan.id, player.position.x, player.position.y, newRandomClan.country, nextHeavenLevel),
         squadMembers: [],
         playerFactionId: null,
+        exploredTiles: [],
         logs: [
           ...state.logs,
           { id: Date.now().toString() + 'a1', time: new Date().toLocaleTimeString(), type: 'ascension', message: `【飞升成功】你渡过九重天劫，肉身重塑，魂魄升华！` },
@@ -1326,6 +1371,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         nearbyNPCs: generateNearbyNPCs('9-秦-1级-1', 50, 50, '秦', 9),
         squadMembers: [],
         playerFactionId: null,
+        exploredTiles: [],
       });
       
       state.addLog({ type: 'cycle', message: `你以【转世灵童】之身重生于凡界，保留了前世的部分记忆与体质！` });

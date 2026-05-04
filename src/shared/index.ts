@@ -5,6 +5,7 @@ export * from './types/resource';
 export * from './types/economy';
 export * from './types/life-cycle';
 export * from './types/events';
+export * from './types/map';
 export * from './constants';
 
 export {
