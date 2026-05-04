@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.8.2.0] - 2026-05-04
+
+### Added
+- 56 new tests across 423 lines covering effect handlers (HP, items, debuffs, loseStonesFraction), scene memory routing, Li Si squad member creation, and passive heal decision matrix — all pure functions from effectUtils.ts
+- All 10 exported effect functions fully tested with deterministic RNG/now injection: applyHpEffect, applyAddItemEffect, applyRemoveItemEffect, applyDebuffEffect, applyLoseStonesFractionEffect, resolveReunionScene, shouldTriggerIgnoreDeathRouter, resolveRobAdvance, createLiSiSquadMember, evaluateLiSiPassiveHeal
+- 4 new data-integrity tests: removeItem count validation, loseStonesFraction range check, addItem name validation, debuff duration check
+
+### Changed
+- Grudge prototype (宿怨) Phase 2 scene flow extracted to effectUtils.ts: memory-dependent reunion routing (robbed/helped/ignored → 3 distinct scenes), rob → advance trigger, ignore → death rumor router
+- Li Si passive protection integrated into game loop: auto-heals player to 10 HP when HP < 20%, with 30s cooldown and squad membership guard
+- Debuff dedup: same-name debuffs now replace instead of stacking, preventing exploit via repeated application
+- Scene-registry test updated to include LI_SI_IGNORED in valid memory state validation
+
+### Fixed
+- Debuff penalty clamped to [0,1] for both attackPenalty and defensePenalty (previously accepted unbounded values)
+- loseStonesFraction: changed from falsy check to explicit undefined guard so 0 is treated as "lose nothing" instead of "no effect specified"
+- removeItem non-determinism: now accepts injected `rng` parameter (defaults to Math.random) for deterministic testing
+- Stale comment in npcDialogue.ts: "prototype" → "two-phase architecture" with expanded description
+- Hardcoded '灵石' string centralized to PROTECTED_ITEMS Set instance in Game.tsx
+
 ## [1.8.1.0] - 2026-05-03
 
 ### Changed
