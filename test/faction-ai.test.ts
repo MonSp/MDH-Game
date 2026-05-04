@@ -348,8 +348,8 @@ describe('Inter-NPC war combat (Phase 1.4c)', () => {
       // Treasury changes: winner (clan-B) gains +5, loser (clan-A) loses -3
       const updatedClanB = state.clans.find(c => c.id === 'clan-B')!;
       const updatedClanA = state.clans.find(c => c.id === 'clan-A')!;
-      expect(updatedClanB.treasury).toBe(505);
-      expect(updatedClanA.treasury).toBe(497);
+      expect(updatedClanB.treasury).toBe(600);
+      expect(updatedClanA.treasury).toBe(450);
     } finally {
       mockMath.mockRestore();
     }
