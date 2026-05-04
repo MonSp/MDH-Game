@@ -319,24 +319,25 @@ describe('Inter-NPC war combat (Phase 1.4c)', () => {
           id: 'npc-a1', name: '秦风', clanId: 'clan-A', role: '核心子弟', realm: '练气',
           power: 10, hp: 15, maxHp: 100, mp: 50, maxMp: 50,
           personality: { ambition: 10, caution: 80, loyalty: 30, greed: 30 },
-          resources: { spiritStone: 50 }, activity: '巡逻',
+          resources: { spiritStone: 50 }, activity: '空闲',
           position: { x: 50, y: 50 },
         },
         {
           id: 'npc-b1', name: '楚雨', clanId: 'clan-B', role: '核心子弟', realm: '练气',
           power: 1000, hp: 200, maxHp: 200, mp: 50, maxMp: 50,
           personality: { ambition: 10, caution: 80, loyalty: 30, greed: 30 },
-          resources: { spiritStone: 50 }, activity: '巡逻',
+          resources: { spiritStone: 50 }, activity: '空闲',
           position: { x: 50, y: 50 },
         },
       ],
     });
 
     const store = useGameStore.getState();
-    // Run many ticks to ensure war combat fires at least once
-    // (behavior tree may move NPCs, but over time they'll be adjacent)
+    // Run ticks until war combat fires (use '空闲' activity to prevent behavior tree movement)
     for (let i = 0; i < 30; i++) {
       store.updateNPCs();
+      const s = useGameStore.getState();
+      if (s.clans.find(c => c.id === 'clan-B')!.treasury !== 500) break;
     }
 
     const state = useGameStore.getState();
