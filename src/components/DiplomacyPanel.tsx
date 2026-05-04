@@ -8,6 +8,7 @@ const STATUS_LABELS: Record<DiplomaticStatus, string> = {
   '战争': '战争',
   '停战': '停战',
   '臣服': '臣服',
+  '皇族': '皇族',
 };
 
 const STATUS_COLORS: Record<DiplomaticStatus, string> = {
@@ -16,6 +17,7 @@ const STATUS_COLORS: Record<DiplomaticStatus, string> = {
   '战争': 'text-red-400',
   '停战': 'text-yellow-400',
   '臣服': 'text-purple-400',
+  '皇族': 'text-amber-400',
 };
 
 const STATUS_BG_COLORS: Record<DiplomaticStatus, string> = {
@@ -24,6 +26,7 @@ const STATUS_BG_COLORS: Record<DiplomaticStatus, string> = {
   '战争': 'bg-red-900/30 border-red-700/50',
   '停战': 'bg-yellow-900/30 border-yellow-700/50',
   '臣服': 'bg-purple-900/30 border-purple-700/50',
+  '皇族': 'bg-amber-900/30 border-amber-700/50',
 };
 
 export const DiplomacyPanel = ({ onClose }: { onClose: () => void }) => {
