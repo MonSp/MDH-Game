@@ -448,3 +448,122 @@ describe('LLMHttpClient.requestDialogue', () => {
     }
   });
 });
+
+// ─── requestStructured ─────────────────────────────────────────
+
+describe('LLMHttpClient.requestStructured', () => {
+  type TestResult = { value: number; label: string };
+
+  const structuredContext = {
+    npcId: 'faction_test_001',
+    npcName: '青云宗',
+    systemPrompt: '你是一个决策系统。输出JSON格式。',
+    userPrompt: '请决定行动。',
+  };
+
+  beforeEach(() => {
+    resetLLMClientInstance();
+    vi.clearAllMocks();
+    process.env.LLM_BASE_URL = 'http://test-llm.local/v1';
+    process.env.LLM_API_KEY = 'test-key';
+    process.env.LLM_MODEL = 'test-model';
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.LLM_BASE_URL;
+    delete process.env.LLM_API_KEY;
+    delete process.env.LLM_MODEL;
+  });
+
+  it('returns structured result on valid response', async () => {
+    mockOpenAISuccess('{"value":42,"label":"测试结果"}');
+
+    const client = LLMHttpClient.getInstance();
+    const result = await client.requestStructured<TestResult>(
+      structuredContext,
+      0.7,
+      400,
+      'TestStructured',
+      (text) => {
+        try {
+          const obj = JSON.parse(text);
+          if (typeof obj.value === 'number' && typeof obj.label === 'string') {
+            return { ok: true, result: obj as TestResult };
+          }
+          return { ok: false, result: null as unknown as TestResult, error: 'Invalid shape' };
+        } catch {
+          return { ok: false, result: null as unknown as TestResult, error: 'Parse error' };
+        }
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.result).not.toBeNull();
+    expect(result.result!.value).toBe(42);
+    expect(result.result!.label).toBe('测试结果');
+    expect(result.error).toBeNull();
+    expect(result.fallback).toBe(false);
+  });
+
+  it('returns failure when validation fails', async () => {
+    mockOpenAISuccess('{"value":"not-a-number","label":"test"}');
+
+    const client = LLMHttpClient.getInstance();
+    const result = await client.requestStructured<TestResult>(
+      structuredContext,
+      0.7,
+      400,
+      'TestStructured',
+      (text) => {
+        try {
+          const obj = JSON.parse(text);
+          if (typeof obj.value === 'number' && typeof obj.label === 'string') {
+            return { ok: true, result: obj as TestResult };
+          }
+          return { ok: false, result: null as unknown as TestResult, error: 'Invalid shape' };
+        } catch {
+          return { ok: false, result: null as unknown as TestResult, error: 'Parse error' };
+        }
+      },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.result).toBeNull();
+    expect(result.error).toBe('Invalid shape');
+    expect(result.fallback).toBe(true);
+  });
+
+  it('returns fallback on API error', async () => {
+    vi.useFakeTimers();
+    try {
+      mockAPIError(500, 'Internal Server Error');
+
+      const client = LLMHttpClient.getInstance();
+      const resultPromise = client.requestStructured<TestResult>(
+        structuredContext,
+        0.7,
+        400,
+        'TestStructured',
+        (text) => {
+          try {
+            return { ok: true, result: JSON.parse(text) as TestResult };
+          } catch {
+            return { ok: false, result: null as unknown as TestResult, error: 'Parse error' };
+          }
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(30000);
+
+      const result = await resultPromise;
+
+      expect(result.success).toBe(false);
+      expect(result.result).toBeNull();
+      expect(result.fallback).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(3); // initial + 2 retries
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
