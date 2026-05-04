@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useGameStore, getClanTerritoryCenter, COUNTRIES_DATA } from '../src/store/gameStore';
 import type { Clan } from '../src/store/gameStore';
 
@@ -298,63 +298,60 @@ describe('Inter-NPC war combat (Phase 1.4c)', () => {
   });
 
   it('defeated NPC gets retreatTicksRemaining and treasury is updated', () => {
-    const clanA = {
-      id: 'clan-A', name: '秦家', country: '齐', type: '3级',
-      reputation: 100, treasury: 500, heavenLevel: 9, isAscendingFamily: false,
-      diplomacy: {
-        'clan-B': { status: '战争', conflictLevel: '局部冲突', declaredBy: 'clan-A' },
-      },
-    };
-    const clanB = {
-      id: 'clan-B', name: '楚家', country: '齐', type: '3级',
-      reputation: 100, treasury: 500, heavenLevel: 9, isAscendingFamily: false,
-      diplomacy: {
-        'clan-A': { status: '战争', conflictLevel: '局部冲突', declaredBy: 'clan-B' },
-      },
-    };
-    useGameStore.setState({
-      clans: [clanA, clanB],
-      nearbyNPCs: [
-        {
-          id: 'npc-a1', name: '秦风', clanId: 'clan-A', role: '核心子弟', realm: '练气',
-          power: 10, hp: 15, maxHp: 100, mp: 50, maxMp: 50,
-          personality: { ambition: 10, caution: 80, loyalty: 30, greed: 30 },
-          resources: { spiritStone: 50 }, activity: '空闲',
-          position: { x: 50, y: 50 },
+    // Mock Math.random so behavior tree selects 'rest' (does not move NPCs)
+    const mockMath = vi.spyOn(Math, 'random').mockReturnValue(0.95);
+    try {
+      const clanA = {
+        id: 'clan-A', name: '秦家', country: '齐', type: '3级',
+        reputation: 100, treasury: 500, heavenLevel: 9, isAscendingFamily: false,
+        diplomacy: {
+          'clan-B': { status: '战争', conflictLevel: '局部冲突', declaredBy: 'clan-A' },
         },
-        {
-          id: 'npc-b1', name: '楚雨', clanId: 'clan-B', role: '核心子弟', realm: '练气',
-          power: 1000, hp: 200, maxHp: 200, mp: 50, maxMp: 50,
-          personality: { ambition: 10, caution: 80, loyalty: 30, greed: 30 },
-          resources: { spiritStone: 50 }, activity: '空闲',
-          position: { x: 50, y: 50 },
+      };
+      const clanB = {
+        id: 'clan-B', name: '楚家', country: '齐', type: '3级',
+        reputation: 100, treasury: 500, heavenLevel: 9, isAscendingFamily: false,
+        diplomacy: {
+          'clan-A': { status: '战争', conflictLevel: '局部冲突', declaredBy: 'clan-B' },
         },
-      ],
-    });
+      };
+      useGameStore.setState({
+        clans: [clanA, clanB],
+        nearbyNPCs: [
+          {
+            id: 'npc-a1', name: '秦风', clanId: 'clan-A', role: '核心子弟', realm: '练气',
+            power: 10, hp: 35, maxHp: 100, mp: 50, maxMp: 50,
+            personality: { ambition: 10, caution: 80, loyalty: 30, greed: 30 },
+            resources: { spiritStone: 50 }, activity: '空闲',
+            position: { x: 50, y: 50 },
+          },
+          {
+            id: 'npc-b1', name: '楚雨', clanId: 'clan-B', role: '核心子弟', realm: '练气',
+            power: 1000, hp: 200, maxHp: 200, mp: 50, maxMp: 50,
+            personality: { ambition: 10, caution: 80, loyalty: 30, greed: 30 },
+            resources: { spiritStone: 50 }, activity: '空闲',
+            position: { x: 50, y: 50 },
+          },
+        ],
+      });
 
-    const store = useGameStore.getState();
-    // Run ticks until war combat fires (use '空闲' activity to prevent behavior tree movement)
-    for (let i = 0; i < 30; i++) {
+      const store = useGameStore.getState();
       store.updateNPCs();
-      const s = useGameStore.getState();
-      if (s.clans.find(c => c.id === 'clan-B')!.treasury !== 500) break;
-    }
+      const state = useGameStore.getState();
 
-    const state = useGameStore.getState();
-
-    // Clan treasury should show war effects if combat fired at least once.
-    // Winner's treasury gains +5, loser's loses -3.
-    const updatedClanB = state.clans.find(c => c.id === 'clan-B')!;
-    const updatedClanA = state.clans.find(c => c.id === 'clan-A')!;
-    // At least one clan had treasury changes (war combat occurred)
-    const hasWarEffect = updatedClanB.treasury !== 500 || updatedClanA.treasury !== 500;
-    expect(hasWarEffect).toBe(true);
-
-    // Also verify that the defeated NPC eventually got retreatTicksRemaining
-    const npcA = state.nearbyNPCs.find(n => n.id === 'npc-a1');
-    expect(npcA).toBeDefined();
-    if (npcA!.retreatTicksRemaining) {
+      // NPC-A (power=10) should be defeated by NPC-B (power=1000) in one hit
+      const npcA = state.nearbyNPCs.find(n => n.id === 'npc-a1');
+      expect(npcA).toBeDefined();
       expect(npcA!.hp).toBe(0);
+      expect(npcA!.retreatTicksRemaining).toBe(5);
+
+      // Treasury changes: winner (clan-B) gains +5, loser (clan-A) loses -3
+      const updatedClanB = state.clans.find(c => c.id === 'clan-B')!;
+      const updatedClanA = state.clans.find(c => c.id === 'clan-A')!;
+      expect(updatedClanB.treasury).toBe(505);
+      expect(updatedClanA.treasury).toBe(497);
+    } finally {
+      mockMath.mockRestore();
     }
   });
 });
