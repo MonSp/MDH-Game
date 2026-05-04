@@ -8,7 +8,7 @@ import {
 } from '../src/content/scenes/sceneRegistry';
 import { FAMILY_SCENES } from '../src/content/scenes/family';
 import { INTRO_SCENE } from '../src/content/scenes/intro';
-import { GRUDGE_SCENE_ENTRIES, LI_SI_ID, WANG_WU_ID, LI_SI_ROBBED, LI_SI_HELPED, LI_SI_UNMET } from '../src/content/scenes/grudge/grudgeScene';
+import { GRUDGE_SCENE_ENTRIES, LI_SI_ID, WANG_WU_ID, LI_SI_ROBBED, LI_SI_HELPED, LI_SI_UNMET, LI_SI_IGNORED } from '../src/content/scenes/grudge/grudgeScene';
 import { GRUDGE_NPC_DIALOGUE } from '../src/content/scenes/grudge/npcDialogue';
 import type { SceneEntry } from '../src/shared/types/scene';
 
@@ -379,12 +379,55 @@ describe('Scene data integrity', () => {
 
     it('all conditional choices reference valid NPC IDs and states', () => {
       const validNpcIds = [LI_SI_ID, WANG_WU_ID];
-      const validStates = [LI_SI_ROBBED, LI_SI_HELPED, LI_SI_UNMET];
+      const validStates = [LI_SI_ROBBED, LI_SI_HELPED, LI_SI_UNMET, LI_SI_IGNORED];
       for (const scene of GRUDGE_SCENE_ENTRIES) {
         for (const choice of scene.choices) {
           if (choice.condition?.npcMemory) {
             expect(validNpcIds).toContain(choice.condition.npcMemory.npcId);
             expect(validStates).toContain(choice.condition.npcMemory.equals);
+          }
+        }
+      }
+    });
+
+    it('all removeItem effects have positive count', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.effect?.removeItem) {
+            expect(choice.effect.removeItem.count).toBeGreaterThan(0);
+          }
+        }
+      }
+    });
+
+    it('all loseStonesFraction effects are in [0,1]', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.effect?.loseStonesFraction !== undefined) {
+            expect(choice.effect.loseStonesFraction).toBeGreaterThanOrEqual(0);
+            expect(choice.effect.loseStonesFraction).toBeLessThanOrEqual(1);
+          }
+        }
+      }
+    });
+
+    it('all addItem effects reference non-empty item names', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.effect?.addItem) {
+            for (const itemName of Object.keys(choice.effect.addItem)) {
+              expect(itemName.length).toBeGreaterThan(0);
+            }
+          }
+        }
+      }
+    });
+
+    it('all debuff effects have positive durationMs', () => {
+      for (const scene of GRUDGE_SCENE_ENTRIES) {
+        for (const choice of scene.choices) {
+          if (choice.effect?.debuff) {
+            expect(choice.effect.debuff.durationMs).toBeGreaterThan(0);
           }
         }
       }

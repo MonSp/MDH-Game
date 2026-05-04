@@ -1,8 +1,8 @@
 /**
- * 宿怨 prototype — NPC dialogue entries
+ * 宿怨 — NPC dialogue entries
  *
- * Scripted NPC responses for the grudge validation prototype.
- * Phase 1: village gate encounter
+ * Scripted NPC responses for the grudge narrative.
+ * Phase 1: village gate encounter; Phase 2: memory-dependent reunion consequences.
  * Phase 2: memory-dependent reunion consequences
  */
 
