@@ -50,12 +50,14 @@ function createTestSquadMember(id: string, overrides: Record<string, any> = {}):
 beforeEach(() => {
   useGameStore.setState({
     player: null,
+    playerFactionId: null,
     squadMembers: [],
     nearbyNPCs: [],
     logs: [],
     wildMonsters: [],
     clans: [],
     resourcePoints: [],
+    worldEvents: [],
     market: {},
     metNpcs: [],
     npcMemory: {},

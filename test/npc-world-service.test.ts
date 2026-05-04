@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { NPCWorldService } from '../src/server/services/NPCWorldService';
+import { EventBus, NPCEvent, NPCInteractionEvent } from '../src/shared';
 
 /**
  * NPCWorldService is a singleton with async tick internals and an LLM
@@ -321,5 +322,87 @@ describe('NPCWorldService — benchmark mode (reset / llmMode)', () => {
     svc.reset(); // second call should not throw
     svc.initialize();
     expect(svc.getNPCList().length).toBeGreaterThan(0);
+  });
+});
+
+describe('NPCWorldService — interactions (Phase 1.3)', () => {
+  let svc: NPCWorldService;
+
+  beforeAll(() => {
+    svc = NPCWorldService.getInstance();
+    svc.stop();
+    svc.reset();
+    svc.initialize();
+    // connectBehaviorFeedback is called by start()
+    svc.start();
+    // Immediately stop the tick timer so it doesn't interfere
+    svc.stop();
+  });
+
+  afterAll(() => {
+    svc.stop();
+  });
+
+  it('consumeRecentInteractions returns empty array when no interactions', () => {
+    const events = svc.consumeRecentInteractions();
+    expect(events).toEqual([]);
+  });
+
+  it('connectBehaviorFeedback records TRADE_COMPLETE on EventBus', () => {
+    const list = svc.getNPCList();
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    const idA = list[0].id;
+    const idB = list[1].id;
+
+    EventBus.emit(NPCEvent.TRADE_COMPLETE, { fromId: idA, toId: idB, amount: 15 });
+
+    const store = svc.getMemoryStore();
+    const recentA = store.interactions.getRecent(idA, 1);
+    expect(recentA.length).toBeGreaterThan(0);
+    expect(recentA[0].type).toBe('trade');
+  });
+
+  it('connectBehaviorFeedback records ATTACKED on EventBus', () => {
+    const list = svc.getNPCList();
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    const attackerId = list[0].id;
+    const targetId = list[1].id;
+
+    const relBefore = svc.getRelationship(attackerId, targetId);
+    EventBus.emit(NPCEvent.ATTACKED, { targetId, attackerId, damage: 25 });
+    const relAfter = svc.getRelationship(attackerId, targetId);
+    // Relationship should worsen by -5
+    expect(relAfter.affinity).toBe(relBefore.affinity - 5);
+  });
+
+  it('connectBehaviorFeedback records DIED with killer', () => {
+    const list = svc.getNPCList();
+    expect(list.length).toBeGreaterThanOrEqual(2);
+    const killerId = list[0].id;
+    const victimId = list[1].id;
+
+    const relBefore = svc.getRelationship(killerId, victimId);
+    EventBus.emit(NPCEvent.DIED, { npcId: victimId, killerId });
+    const relAfter = svc.getRelationship(killerId, victimId);
+    // Relationship should worsen by -20
+    expect(relAfter.affinity).toBe(relBefore.affinity - 20);
+  });
+
+  it('connectBehaviorFeedback records PATROL_COMPLETE on EventBus', () => {
+    const list = svc.getNPCList();
+    expect(list.length).toBeGreaterThan(0);
+    const npcId = list[0].id;
+
+    const store = svc.getMemoryStore();
+    const before = store.interactions.getRecent(npcId, 10).filter(i => i.type === 'patrol');
+    EventBus.emit(NPCEvent.PATROL_COMPLETE, { npcId });
+    const after = store.interactions.getRecent(npcId, 10).filter(i => i.type === 'patrol');
+    expect(after.length).toBe(before.length + 1);
+  });
+
+  it('DIED without killerId does not crash', () => {
+    expect(() => {
+      EventBus.emit(NPCEvent.DIED, { npcId: 'npc_001' });
+    }).not.toThrow();
   });
 });
