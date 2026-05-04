@@ -1,4 +1,18 @@
 import type { SaveSlotInfo } from './saveManager';
+import {
+  TechniqueGrade, TechniqueType,
+  EquipmentSlot, EquipmentRarity,
+  CultivationRealm,
+} from '../shared/types/cultivation';
+import type {
+  Technique, LearnedTechnique,
+  Equipment, EquipmentAffix,
+  TechniqueEffect, TechniqueSkill,
+} from '../shared/types/cultivation';
+
+// Re-export cultivation enums so they're available through export * from gameStore
+export { TechniqueGrade, TechniqueType, EquipmentSlot, EquipmentRarity, CultivationRealm };
+export type { Technique, LearnedTechnique, Equipment, EquipmentAffix, TechniqueEffect, TechniqueSkill };
 
 export type HeavenLevel = 9 | 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1;
 
@@ -271,6 +285,9 @@ export interface Player {
   ascensionTarget?: HeavenLevel;
   talent: TalentAttributes;
   activeDebuffs: ActiveDebuff[];
+  // Phase 3: Techniques & Equipment
+  learnedTechniques: LearnedTechnique[];
+  equipmentSlots: Partial<Record<EquipmentSlot, Equipment>>;
 }
 
 export interface SquadMember {
@@ -296,6 +313,49 @@ export interface SquadMember {
   level: number;
   exp: number;
   maxExp: number;
+  // Phase 4
+  combatStance?: SquadCombatStance;
+}
+
+// 阵型类型
+export type FormationType = '散开' | '锋矢' | '方圆' | '雁行' | '鱼鳞';
+
+export interface FormationConfig {
+  name: string;
+  description: string;
+  statBonus: Partial<Record<string, number>>; // attack/defense/power multiplier
+  allowedRoles: SquadRole[];
+}
+
+export const FORMATION_DATA: Record<FormationType, FormationConfig> = {
+  '散开': { name: '散开', description: '无阵型，自由作战', statBonus: {}, allowedRoles: ['战斗型', '斥候型', '军师型', '后勤型'] },
+  '锋矢': { name: '锋矢阵', description: '攻击阵型，战斗型+40%攻击', statBonus: { attack: 0.4, power: 0.2 }, allowedRoles: ['战斗型'] },
+  '方圆': { name: '方圆阵', description: '防御阵型，全体+25%防御', statBonus: { defense: 0.25 }, allowedRoles: ['战斗型', '斥候型', '军师型', '后勤型'] },
+  '雁行': { name: '雁行阵', description: '远程阵型，斥候型+50%攻击', statBonus: { attack: 0.5 }, allowedRoles: ['斥候型'] },
+  '鱼鳞': { name: '鱼鳞阵', description: '均衡阵型，全体+15%全属性', statBonus: { attack: 0.15, defense: 0.15, power: 0.15 }, allowedRoles: ['战斗型', '斥候型', '军师型', '后勤型'] },
+};
+
+export type SquadCombatStance = '进攻' | '集中火力' | '撤退' | '防御阵型';
+
+export interface ClanArmy {
+  id: string;
+  clanId: string;
+  name: string;
+  size: number;
+  totalPower: number;
+  position: { x: number; y: number };
+  targetPosition?: { x: number; y: number };
+  activity: string;
+  siegeTarget?: string;
+}
+
+export interface WarStats {
+  battlesWon: number;
+  battlesLost: number;
+  npcsKilled: number;
+  alliesLost: number;
+  treasuryLooted: number;
+  citiesCaptured: number;
 }
 
 // 外交/战争类型
@@ -324,6 +384,9 @@ export interface Clan {
   territory?: number;
   morale?: number;
   diplomacy?: Record<string, ClanDiplomacy>;  // key = target clanId
+  // Phase 4: siege warfare
+  garrison?: number;      // defensive power (0 = no defense)
+  fortification?: number; // wall HP (0 = undefended)
 }
 
 export interface NPC {
@@ -457,6 +520,70 @@ export function createWildMonster(playerPos: { x: number; y: number }, playerRea
   };
 }
 
+// === Phase 3: Technique Catalog ===
+
+export const TECHNIQUES_DATA: Technique[] = [
+  // MORTAL grade — basic
+  { id: 'basic_stance', name: '基础吐纳', grade: TechniqueGrade.MORTAL, type: TechniqueType.PASSIVE, description: '最基本的灵气吐纳法门，缓慢改善体质。', effects: [{ stat: 'hp', value: 10, perLevel: 5 }], requiredRealm: 1, learnCost: 100, levelUpCost: 50, maxLevel: 5 },
+  { id: 'stone_skin', name: '石肤术', grade: TechniqueGrade.MORTAL, type: TechniqueType.PASSIVE, description: '将灵气遍布体表，硬化肌肤。', effects: [{ stat: 'defense', value: 3, perLevel: 2 }], requiredRealm: 1, learnCost: 150, levelUpCost: 80, maxLevel: 5 },
+  { id: 'qi_gathering', name: '聚气诀', grade: TechniqueGrade.MORTAL, type: TechniqueType.PASSIVE, description: '加快灵气吸收速度。', effects: [{ stat: 'cultivationRate', value: 5, perLevel: 3 }], requiredRealm: 1, learnCost: 120, levelUpCost: 60, maxLevel: 5 },
+  { id: 'vital_strike', name: '猛击', grade: TechniqueGrade.MORTAL, type: TechniqueType.ACTIVE, description: '凝聚灵气于拳掌，猛击对手要害。', effects: [{ stat: 'attack', value: 5, perLevel: 3 }], requiredRealm: 1, learnCost: 200, levelUpCost: 100, maxLevel: 3, skill: { name: '猛击', description: '对单体目标造成150%伤害', cooldown: 3, damageMultiplier: 1.5, cost: { mp: 5 }, range: 1 } },
+  // SPIRIT grade
+  { id: 'spirit_shield', name: '灵气护盾', grade: TechniqueGrade.SPIRIT, type: TechniqueType.ACTIVE, description: '凝聚灵气形成护盾，抵御伤害。', effects: [{ stat: 'defense', value: 10, perLevel: 5 }], requiredRealm: 2, learnCost: 500, levelUpCost: 200, maxLevel: 5, skill: { name: '灵气护盾', description: '生成护盾抵消200%防御值的伤害', cooldown: 5, damageMultiplier: 2.0, cost: { mp: 20 }, range: 0 } },
+  { id: 'swift_wind', name: '御风术', grade: TechniqueGrade.SPIRIT, type: TechniqueType.PASSIVE, description: '身轻如燕，提高闪避与移动。', effects: [{ stat: 'defense', value: 5, perLevel: 3 }], requiredRealm: 2, learnCost: 400, levelUpCost: 150, maxLevel: 5 },
+  { id: 'flame_slash', name: '炎斩', grade: TechniqueGrade.SPIRIT, type: TechniqueType.ACTIVE, description: '将火焰灵气附着兵器，发出灼热一击。', effects: [{ stat: 'attack', value: 15, perLevel: 8 }], requiredRealm: 2, learnCost: 600, levelUpCost: 250, maxLevel: 5, skill: { name: '炎斩', description: '对单体目标造成200%火属性伤害', cooldown: 4, damageMultiplier: 2.0, cost: { mp: 15 }, range: 1 } },
+  { id: 'meditation', name: '静心诀', grade: TechniqueGrade.SPIRIT, type: TechniqueType.PASSIVE, description: '静心凝神，加快经验获取。', effects: [{ stat: 'expRate', value: 5, perLevel: 3 }], requiredRealm: 2, learnCost: 350, levelUpCost: 150, maxLevel: 5 },
+  // EARTH grade
+  { id: 'earth_shaker', name: '地裂斩', grade: TechniqueGrade.EARTH, type: TechniqueType.ACTIVE, description: '引动地脉之力，震裂前方大地。', effects: [{ stat: 'attack', value: 30, perLevel: 15 }], requiredRealm: 3, learnCost: 1500, levelUpCost: 500, maxLevel: 5, skill: { name: '地裂斩', description: '对前方范围造成250%土属性伤害', cooldown: 6, damageMultiplier: 2.5, cost: { mp: 30 }, range: 2, aoe: 1 } },
+  { id: 'iron_body', name: '铁骨功', grade: TechniqueGrade.EARTH, type: TechniqueType.PASSIVE, description: '淬炼筋骨，大幅提升防御。', effects: [{ stat: 'defense', value: 20, perLevel: 10 }], requiredRealm: 3, learnCost: 1200, levelUpCost: 400, maxLevel: 5 },
+  { id: 'soul_fire', name: '魂火术', grade: TechniqueGrade.EARTH, type: TechniqueType.ACTIVE, description: '以灵魂之力引燃灵火，灼烧敌人。', effects: [{ stat: 'attack', value: 25, perLevel: 12 }], requiredRealm: 3, learnCost: 1800, levelUpCost: 600, maxLevel: 5, skill: { name: '魂火术', description: '对单体造成300%灵魂伤害，附带灼烧', cooldown: 5, damageMultiplier: 3.0, cost: { mp: 35 }, range: 2 } },
+  { id: 'flowing_water', name: '流水诀', grade: TechniqueGrade.EARTH, type: TechniqueType.PASSIVE, description: '如流水般连绵不绝，提高灵力回复。', effects: [{ stat: 'mp', value: 20, perLevel: 10 }], requiredRealm: 3, learnCost: 1000, levelUpCost: 350, maxLevel: 5 },
+  // HEAVEN grade
+  { id: 'heavenly_blade', name: '天刀', grade: TechniqueGrade.HEAVEN, type: TechniqueType.ACTIVE, description: '引九天之刀，斩灭一切。', effects: [{ stat: 'attack', value: 50, perLevel: 25 }], requiredRealm: 5, learnCost: 5000, levelUpCost: 1500, maxLevel: 5, skill: { name: '天刀', description: '对单体造成400%金属性伤害，无视30%防御', cooldown: 8, damageMultiplier: 4.0, cost: { mp: 60 }, range: 3 } },
+  { id: 'phoenix_rebirth', name: '凤涅诀', grade: TechniqueGrade.HEAVEN, type: TechniqueType.PASSIVE, description: '参悟凤凰涅槃之理，大幅提升生命力。', effects: [{ stat: 'hp', value: 100, perLevel: 50 }], requiredRealm: 5, learnCost: 4000, levelUpCost: 1200, maxLevel: 5 },
+  { id: 'void_step', name: '虚空步', grade: TechniqueGrade.HEAVEN, type: TechniqueType.ACTIVE, description: '踏破虚空，瞬息千里。', effects: [{ stat: 'defense', value: 40, perLevel: 20 }], requiredRealm: 5, learnCost: 4500, levelUpCost: 1300, maxLevel: 3, skill: { name: '虚空步', description: '瞬移至目标位置，闪避下回合攻击', cooldown: 10, damageMultiplier: 0, cost: { mp: 40 }, range: 5 } },
+  // IMMORTAL grade
+  { id: 'immortal_palm', name: '混元掌', grade: TechniqueGrade.IMMORTAL, type: TechniqueType.ACTIVE, description: '混元一体，掌破乾坤。', effects: [{ stat: 'attack', value: 100, perLevel: 50 }], requiredRealm: 7, learnCost: 20000, levelUpCost: 5000, maxLevel: 5, skill: { name: '混元掌', description: '对范围目标造成500%无属性伤害', cooldown: 12, damageMultiplier: 5.0, cost: { mp: 100 }, range: 3, aoe: 2 } },
+  { id: 'eternal_life', name: '长生诀', grade: TechniqueGrade.IMMORTAL, type: TechniqueType.PASSIVE, description: '参悟长生大道，生命与灵力无穷。', effects: [{ stat: 'hp', value: 500, perLevel: 250 }, { stat: 'mp', value: 200, perLevel: 100 }], requiredRealm: 7, learnCost: 30000, levelUpCost: 8000, maxLevel: 3 },
+  { id: 'chaos_orb', name: '混沌元珠', grade: TechniqueGrade.IMMORTAL, type: TechniqueType.ACTIVE, description: '凝聚混沌元珠，爆裂毁灭一切。', effects: [{ stat: 'attack', value: 150, perLevel: 75 }], requiredRealm: 8, learnCost: 50000, levelUpCost: 12000, maxLevel: 3, skill: { name: '混沌爆裂', description: '对大范围目标造成800%混沌伤害', cooldown: 15, damageMultiplier: 8.0, cost: { mp: 200 }, range: 4, aoe: 3 } },
+];
+
+// === Phase 3: Equipment helper ===
+
+export function generateEquipment(id: string, slot: EquipmentSlot, rarity: EquipmentRarity, realm: CultivationRealm): Equipment {
+  const mult = slot === EquipmentSlot.WEAPON ? 1.5 : slot === EquipmentSlot.ARMOR ? 1.2 : 1.0;
+  const rarityMult = rarity === EquipmentRarity.MORTAL ? 1 : rarity === EquipmentRarity.SPIRIT ? 1.5 : rarity === EquipmentRarity.IMMORTAL ? 2.5 : 4.0;
+  const baseValue = Math.floor(10 * realm * mult * rarityMult);
+
+  const slotNames: Record<EquipmentSlot, string> = {
+    [EquipmentSlot.WEAPON]: '武器',
+    [EquipmentSlot.ARMOR]: '护甲',
+    [EquipmentSlot.ARTIFACT]: '法宝',
+    [EquipmentSlot.ACCESSORY]: '饰品',
+    [EquipmentSlot.PILL]: '丹药',
+  };
+
+  const rarityNames: Record<EquipmentRarity, string> = {
+    [EquipmentRarity.MORTAL]: '凡品',
+    [EquipmentRarity.SPIRIT]: '灵品',
+    [EquipmentRarity.IMMORTAL]: '仙品',
+    [EquipmentRarity.DIVINE]: '神品',
+  };
+
+  const baseStats: Partial<Record<'attack' | 'defense' | 'hp' | 'mp', number>> = {};
+  if (slot === EquipmentSlot.WEAPON) baseStats.attack = baseValue;
+  else if (slot === EquipmentSlot.ARMOR) baseStats.defense = baseValue;
+  else if (slot === EquipmentSlot.ARTIFACT) { baseStats.attack = Math.floor(baseValue * 0.7); baseStats.defense = Math.floor(baseValue * 0.7); }
+  else if (slot === EquipmentSlot.ACCESSORY) { baseStats.hp = baseValue * 5; baseStats.mp = baseValue * 3; }
+
+  return {
+    id, slot, rarity, baseStats, affixes: [],
+    name: `${rarityNames[rarity]}${slotNames[slot]}`,
+    requiredRealm: realm,
+    price: Math.floor(baseValue * 3),
+  };
+}
+
 export interface LogEntry {
   id: string;
   time: string;
@@ -513,6 +640,12 @@ export interface GameState {
   _factionTickCount: number;
   /** Phase 2.2: explored tiles for fog of war ("x,y" strings) */
   exploredTiles: string[];
+  /** Phase 4: current squad formation */
+  currentFormation: FormationType;
+  /** Phase 4: clan armies for NPC group combat */
+  clanArmies: ClanArmy[];
+  /** Phase 4: war statistics */
+  warStats: WarStats;
 
   joinServer: (serverId: string, playerName: string) => void;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;
@@ -569,6 +702,17 @@ export interface GameState {
   loadFromSlot: (slot: number) => boolean;
   getSaveSlots: () => SaveSlotInfo[];
   deleteSaveSlot: (slot: number) => void;
+
+  // Phase 3: Techniques & Equipment
+  learnTechnique: (techniqueId: string) => void;
+  cultivateTechnique: (techniqueId: string) => void;
+  equipItem: (item: Equipment) => void;
+  unequipItem: (slot: EquipmentSlot) => void;
+  getTechniqueEffects: () => TechniqueEffect[];
+
+  // Phase 4: Formation & Combat
+  setFormation: (formation: FormationType) => void;
+  setSquadCombatStance: (stance: SquadCombatStance) => void;
 }
 
 export interface CountryInfo {
@@ -657,7 +801,11 @@ export function generateClans(heavenLevel: HeavenLevel): Clan[] {
       });
     }
   });
-  return clans;
+  return clans.map(c => ({
+    ...c,
+    garrison: Math.max(20, Math.floor(c.reputation * 0.5)),
+    fortification: Math.max(10, Math.floor(c.reputation * 0.3)),
+  }));
 }
 
 export function generateNearbyNPCs(clanId: string, px: number, py: number, country: string = '未知', heavenLevel: HeavenLevel = 9): NPC[] {

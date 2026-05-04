@@ -119,3 +119,102 @@ export interface BreakthroughResult {
   newRealm?: CultivationRealm;
   reason?: 'cultivation_insufficient' | 'spirit_stones_insufficient' | 'max_realm_reached';
 }
+
+// === Phase 3: Technique (功法) System ===
+
+export enum TechniqueGrade {
+  MORTAL = '凡品',
+  SPIRIT = '灵品',
+  EARTH = '地品',
+  HEAVEN = '天品',
+  IMMORTAL = '仙品',
+}
+
+export enum TechniqueType {
+  PASSIVE = 'passive',
+  ACTIVE = 'active',
+}
+
+export interface TechniqueEffect {
+  stat: 'attack' | 'defense' | 'hp' | 'mp' | 'expRate' | 'cultivationRate';
+  value: number; // flat bonus per level
+  perLevel: number; // additional per technique level
+}
+
+export interface TechniqueSkill {
+  name: string;
+  description: string;
+  cooldown: number; // ticks
+  damageMultiplier: number;
+  cost: { mp?: number; spiritStones?: number };
+  range: number;
+  aoe?: number;
+}
+
+export interface Technique {
+  id: string;
+  name: string;
+  grade: TechniqueGrade;
+  type: TechniqueType;
+  description: string;
+  effects: TechniqueEffect[];
+  /** Required cultivation realm index to learn */
+  requiredRealm: CultivationRealm;
+  /** Spirit stone cost to learn */
+  learnCost: number;
+  /** Spirit stone cost per level-up */
+  levelUpCost: number;
+  maxLevel: number;
+  /** Active skill granted (if type=ACTIVE) */
+  skill?: TechniqueSkill;
+}
+
+/** A technique the player has learned */
+export interface LearnedTechnique {
+  techniqueId: string;
+  level: number;
+  slotIndex: number; // -1 = passive (not in active slot)
+}
+
+// === Phase 3: Equipment Expansion ===
+
+export enum EquipmentSlot {
+  WEAPON = 'weapon',
+  ARMOR = 'armor',
+  ARTIFACT = 'artifact',
+  ACCESSORY = 'accessory',
+  PILL = 'pill',
+}
+
+export enum EquipmentRarity {
+  MORTAL = '凡品',
+  SPIRIT = '灵品',
+  IMMORTAL = '仙品',
+  DIVINE = '神品',
+}
+
+export const RARITY_MULTIPLIER: Record<EquipmentRarity, number> = {
+  [EquipmentRarity.MORTAL]: 1.0,
+  [EquipmentRarity.SPIRIT]: 1.5,
+  [EquipmentRarity.IMMORTAL]: 2.5,
+  [EquipmentRarity.DIVINE]: 4.0,
+};
+
+export interface EquipmentAffix {
+  stat: 'attack' | 'defense' | 'hp' | 'mp' | 'critRate' | 'critDamage' | 'expRate' | 'lifesteal';
+  value: number;
+  label: string;
+}
+
+export interface Equipment {
+  id: string;
+  name: string;
+  slot: EquipmentSlot;
+  rarity: EquipmentRarity;
+  baseStats: Partial<Record<'attack' | 'defense' | 'hp' | 'mp', number>>;
+  affixes: EquipmentAffix[];
+  requiredRealm: CultivationRealm;
+  price: number;
+  /** Whether this is a default/generated item vs player-crafted */
+  isCrafted?: boolean;
+}

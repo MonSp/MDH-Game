@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS } from '../store/gameStore';
+import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS, getClanTerritoryCenter } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile, getVisionRadius } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
@@ -624,7 +624,7 @@ const PlayerMesh = ({ player }: { player: any }) => {
 };
 
 // 6. Faction Base Mesh
-const FactionBaseMesh = ({ faction, playerPos, isAtWar }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; playerPos: { x: number; y: number }; isAtWar?: boolean }) => {
+const FactionBaseMesh = ({ faction, playerPos, isAtWar, garrison, fortification }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; playerPos: { x: number; y: number }; isAtWar?: boolean; garrison?: number; fortification?: number; }) => {
   const tile = getTerrainTile(playerPos.x, playerPos.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
   const warRingRef = useRef<THREE.Mesh>(null);
@@ -671,6 +671,28 @@ const FactionBaseMesh = ({ faction, playerPos, isAtWar }: { faction: { name: str
         );
       })}
 
+      {/* Garrison HP bar */}
+      {(garrison ?? 0) > 0 && (
+        <Html position={[0, 1.2, 0]} center style={{ pointerEvents: 'none' }}>
+          <div className="flex items-center gap-1">
+            <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-600">
+              <div className="h-full bg-cyan-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, garrison || 0)}%` }} />
+            </div>
+            <span className="text-[10px] text-cyan-400 font-mono">守{garrison}</span>
+          </div>
+        </Html>
+      )}
+      {/* Fortification HP bar */}
+      {(fortification ?? 0) > 0 && (
+        <Html position={[0, 1.0, 0]} center style={{ pointerEvents: 'none' }}>
+          <div className="flex items-center gap-1">
+            <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-600">
+              <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, fortification || 0)}%` }} />
+            </div>
+            <span className="text-[10px] text-amber-400 font-mono">墙{fortification}</span>
+          </div>
+        </Html>
+      )}
       {/* Faction flag label */}
       <Html position={[0, 1.5, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="bg-amber-900/80 border border-amber-500/60 px-2 py-0.5 rounded text-xs whitespace-nowrap shadow-lg text-amber-300 font-medium backdrop-blur-sm">
@@ -976,14 +998,22 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           return <MonsterMesh key={monster.id} monster={monster} dx={dx} dy={dy} />;
         })}
 
-        {playerFactionId && (() => {
-          const faction = clans.find(c => c.id === playerFactionId);
-          if (!faction) return null;
-          const isAtWar = faction.diplomacy
+        {clans.map(faction => {
+          const center = getClanTerritoryCenter(faction, clans);
+          const dx = center.x - player.position.x;
+          const dy = center.y - player.position.y;
+          if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
+          const tile = getTerrainTile(center.x, center.y);
+          const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+          const atWar = faction.diplomacy
             ? Object.values(faction.diplomacy).some(d => d.status === '战争')
             : false;
-          return <FactionBaseMesh faction={faction} playerPos={player.position} isAtWar={isAtWar} />;
-        })()}
+          return (
+            <group key={faction.id} position={[dx, baseHeight, dy]}>
+              <FactionBaseMesh faction={faction} playerPos={player.position} isAtWar={atWar} garrison={faction.garrison} fortification={faction.fortification} />
+            </group>
+          );
+        })}
         <PlayerMesh player={player} />
       </Canvas>
 

@@ -13,10 +13,14 @@ import {
   getDiplomaticStatusFrom, getDiplomaticStatusFromClans, getClanTerritoryCenter, BUILDING_SPEED_MULTIPLIERS,
   getFactionBuildingLevel, generateClans, generateNearbyNPCs, generateResourcePoints,
   evaluateNPCBehavior, SQUAD_ROLE_INFO, BODY_TYPES_DATA, TALENT_GRADE_TABLE, computeTalentGrade,
-  BUILDING_EFFECTS, BUILDING_VISION_BONUS, type GameState, type Player, type Clan, type NPC,
+  BUILDING_EFFECTS, BUILDING_VISION_BONUS, TECHNIQUES_DATA, generateEquipment,
+  FORMATION_DATA,
+  type FormationType, type SquadCombatStance, type ClanArmy, type WarStats,
+  type GameState, type Player, type Clan, type NPC,
   type WildMonster, type SquadMember, type Realm, type HeavenLevel, type BodyType,
   type BuildingType, type DiplomaticStatus, type ConflictLevel, type MonsterType,
   type FactionBuilding, type ClanDiplomacy, type CycleType, type SquadRole, type BuildingLevel, type TalentAttributes, type WorldEvent,
+  type EquipmentSlot, type Equipment, type TechniqueEffect, type LearnedTechnique,
 } from './gameConstants';
 
 // Re-export all public API from gameConstants
@@ -42,6 +46,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   _factionTickCount: 0,
   /** Phase 2.2: explored tiles for fog of war */
   exploredTiles: [] as string[],
+  /** Phase 4: current squad formation */
+  currentFormation: '散开' as FormationType,
+  /** Phase 4: clan armies for NPC group combat */
+  clanArmies: [],
+  /** Phase 4: war statistics */
+  warStats: { battlesWon: 0, battlesLost: 0, npcsKilled: 0, alliesLost: 0, treasuryLooted: 0, citiesCaptured: 0 },
   market: {
     '洗髓丹': { name: '洗髓丹', basePrice: 500, currentPrice: 500, stock: 10 },
     '低级法器': { name: '低级法器', basePrice: 200, currentPrice: 200, stock: 50 },
@@ -90,6 +100,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       isAscending: false,
       talent: defaultTalent,
       activeDebuffs: [],
+      learnedTechniques: [],
+      equipmentSlots: {},
     };
 
     set({
@@ -1364,7 +1376,9 @@ export const useGameStore = create<GameState>((set, get) => ({
             previousClanId: player.clanId,
             previousCountry: player.country,
           },
-          isAscending: false
+          isAscending: false,
+          learnedTechniques: [],
+          equipmentSlots: {},
         },
         clans: generateClans(9),
         resourcePoints: generateResourcePoints(50, 50, 9),
@@ -1418,6 +1432,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // --- Monster spawning ---
     let monsters = state.wildMonsters.filter(m => m.isAlive);
+    let siegeWarStats = { ...state.warStats };
     if (monsters.length < MAX_MONSTERS && Math.random() < SPAWN_CHANCE) {
       const newMonster = createWildMonster(state.player.position, state.player.realm);
       if (newMonster) monsters.push(newMonster);
@@ -1455,6 +1470,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     let playerHit = false;
     let clanTreasuryUpdates: Record<string, number> = {};
+    let clanMoraleUpdates: Record<string, number> = {};
     let playerMonsterHit = false; // player engaged with a monster this tick
 
     // Process NPCs: behavior + NPC vs Monster combat
@@ -1581,20 +1597,119 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         if (npcsAfterWar[i].hp <= 0) {
           npcsAfterWar[i] = { ...npcsAfterWar[i], hp: 0, retreatTicksRemaining: 5 };
-          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) + 5;
-          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) - 3;
+          const loot = Math.max(3, Math.floor((bPower || 50) * 0.1));
+          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) + loot;
+          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) - Math.max(1, Math.floor(loot * 0.5));
+          clanMoraleUpdates[a.clanId] = (clanMoraleUpdates[a.clanId] || 0) - 1;
+          if (a.clanId === state.playerFactionId) siegeWarStats.npcsKilled++;
         }
         if (npcsAfterWar[j].hp <= 0) {
           npcsAfterWar[j] = { ...npcsAfterWar[j], hp: 0, retreatTicksRemaining: 5 };
-          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) + 5;
-          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) - 3;
+          const loot = Math.max(3, Math.floor((aPower || 50) * 0.1));
+          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) + loot;
+          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) - Math.max(1, Math.floor(loot * 0.5));
+          clanMoraleUpdates[b.clanId] = (clanMoraleUpdates[b.clanId] || 0) - 1;
+          if (b.clanId === state.playerFactionId) siegeWarStats.npcsKilled++;
         }
         break; // one fight per NPC per tick
       }
     }
     npcs = npcsAfterWar;
 
-    // Phase 2: Player vs Monster
+    // === Phase 4: Clan army grouping and army-vs-army combat ===
+    // Group NPCs into armies per clan (clans at war form armies)
+    const npcPool = [...npcs];
+    const clanNpcMap = new Map<string, typeof npcPool>();
+    for (const n of npcPool) {
+      if (n.retreatTicksRemaining || n.hp <= 0) continue;
+      if (!clanNpcMap.has(n.clanId)) clanNpcMap.set(n.clanId, []);
+      clanNpcMap.get(n.clanId)!.push(n);
+    }
+    const newArmies: ClanArmy[] = [];
+    for (const [clanId, members] of clanNpcMap) {
+      const clan = state.clans.find(c => c.id === clanId);
+      if (!clan) continue;
+      // Only form armies for clans at war
+      const isAtWar = clan.diplomacy && Object.values(clan.diplomacy).some(d => d.status === '战争');
+      if (!isAtWar) continue;
+      // Find enemy clan with largest power
+      let targetEnemyClanId: string | undefined;
+      if (clan.diplomacy) {
+        for (const [targetId, d] of Object.entries(clan.diplomacy)) {
+          if (d.status === '战争') {
+            targetEnemyClanId = targetId;
+            break;
+          }
+        }
+      }
+      const avgX = Math.floor(members.reduce((s, m) => s + m.position.x, 0) / members.length);
+      const avgY = Math.floor(members.reduce((s, m) => s + m.position.y, 0) / members.length);
+      const totalPower = members.reduce((s, m) => s + (m.power || 50), 0);
+      const enemyCenter = targetEnemyClanId
+        ? getClanTerritoryCenter({ id: targetEnemyClanId } as Clan, state.clans)
+        : undefined;
+      newArmies.push({
+        id: `army-${clanId}`,
+        clanId,
+        name: `${clan.name}大军`,
+        size: members.length,
+        totalPower,
+        position: { x: avgX, y: avgY },
+        targetPosition: enemyCenter,
+        activity: enemyCenter ? '进军中' : '待命',
+        siegeTarget: targetEnemyClanId,
+      });
+    }
+
+    // Army movement: each army moves 1 tile/tick toward target
+    for (const army of newArmies) {
+      if (army.targetPosition) {
+        const fdx = army.targetPosition.x - army.position.x;
+        const fdy = army.targetPosition.y - army.position.y;
+        army.position = {
+          x: army.position.x + (fdx > 0 ? 1 : fdx < 0 ? -1 : 0),
+          y: army.position.y + (fdy > 0 ? 1 : fdy < 0 ? -1 : 0),
+        };
+      }
+    }
+
+    // Army-vs-army combat: opposing armies fight when within range
+    let updatedClanTreasury = { ...clanTreasuryUpdates };
+    for (let i = 0; i < newArmies.length; i++) {
+      const a = newArmies[i];
+      if (a.size <= 0) continue;
+      for (let j = i + 1; j < newArmies.length; j++) {
+        const b = newArmies[j];
+        if (b.size <= 0) continue;
+        const warStatus = getDiplomaticStatusFromClans(state.clans, a.clanId, b.clanId);
+        if (warStatus !== '战争') continue;
+        const dist = Math.abs(a.position.x - b.position.x) + Math.abs(a.position.y - b.position.y);
+        if (dist > 2) continue; // armies must be close
+
+        // Resolve army combat: compare totalPower
+        const aWins = a.totalPower > b.totalPower;
+        const winner = aWins ? a : b;
+        const loser = aWins ? b : a;
+        const casualties = Math.max(1, Math.floor(loser.size * 0.3));
+        loser.size -= casualties;
+        loser.totalPower = Math.max(0, loser.totalPower - casualties * 10);
+        updatedClanTreasury[winner.clanId] = (updatedClanTreasury[winner.clanId] || 0) + casualties * 2;
+        updatedClanTreasury[loser.clanId] = (updatedClanTreasury[loser.clanId] || 0) - casualties;
+        // Remove that many NPCs from the loser's clan
+        let removed = 0;
+        npcs = npcs.map(n => {
+          if (n.clanId === loser.clanId && !n.retreatTicksRemaining && n.hp > 0 && removed < casualties) {
+            removed++;
+            return { ...n, hp: 0, retreatTicksRemaining: 5 };
+          }
+          return n;
+        });
+        state.addLog({ type: 'combat', message: `【军团战】${winner.name}击败了${loser.name}，${loser.name}损失${casualties}人。` });
+        break;
+      }
+    }
+
+    // Player vs Monster
     let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory } } : null;
     for (const monster of monsters) {
       if (!monster.isAlive || foughtThisTick.has(monster.id) || playerMonsterHit) continue;
@@ -1646,22 +1761,43 @@ export const useGameStore = create<GameState>((set, get) => ({
     // Phase 3: Squad member combat with monsters
     const scriptureLevel = getFactionBuildingLevel(state.clans, state.playerFactionId, '藏经阁');
     const scriptureBonus = scriptureLevel > 0 ? BUILDING_SPEED_MULTIPLIERS['藏经阁'][scriptureLevel - 1] : 1;
+    // Phase 4: Formation bonus
+    const formation = FORMATION_DATA[state.currentFormation || '散开'];
     let updatedSquadMembers = state.squadMembers.map(m => ({ ...m, equipment: [...(m.equipment || [])], position: { ...m.position } }));
     for (const member of updatedSquadMembers) {
       if (!member.isAlive) continue;
       // Loyalty modifier: 0.7 at 0 -> 1.0 at 100
       const loyaltyMult = 0.7 + (member.personality?.loyalty ?? 50) * 0.003;
+      // Formation bonus: apply if member's role is allowed
+      const roleAllowed = formation.allowedRoles.includes(member.role);
+      const formationAtkMult = roleAllowed ? (1 + (formation.statBonus.attack || 0)) : 1;
+      const formationDefMult = roleAllowed ? (1 + (formation.statBonus.defense || 0)) : 1;
+      const formationPowerMult = roleAllowed ? (1 + (formation.statBonus.power || 0)) : 1;
+      // Combat stance effects
+      const stance = member.combatStance || '进攻';
+      const stanceDmgMult = stance === '集中火力' ? 1.2 : stance === '防御阵型' ? 0.7 : stance === '撤退' ? 0 : 1;
+      const stanceDefMult = stance === '防御阵型' ? 1.5 : 1;
+      const stanceDmgTakenMult = stance === '防御阵型' ? 0.5 : stance === '撤退' ? 0.3 : 1;
+      // 集中火力: target lowest HP monster among adjacent ones
+      const adjacentMonsters = stance === '集中火力'
+        ? monsters.filter(m => m.isAlive && !foughtThisTick.has(m.id) && Math.abs(m.position.x - member.position.x) <= 1 && Math.abs(m.position.y - member.position.y) <= 1)
+        : [];
+      const targetMonster = stance === '集中火力' && adjacentMonsters.length > 0
+        ? adjacentMonsters.reduce((a, b) => (a.hp < b.hp ? a : b))
+        : null;
       for (const monster of monsters) {
         if (!monster.isAlive || foughtThisTick.has(monster.id)) continue;
+        // 集中火力: skip if not the selected target
+        if (stance === '集中火力' && targetMonster && monster.id !== targetMonster.id) continue;
         const dx = Math.abs(monster.position.x - member.position.x);
         const dy = Math.abs(monster.position.y - member.position.y);
         if (dx <= 1 && dy <= 1) {
           foughtThisTick.add(monster.id);
 
-          const memberAtk = Math.floor(member.power / 10 * scriptureBonus * loyaltyMult);
-          const memberDef = Math.floor(member.power / 20 * scriptureBonus * loyaltyMult);
+          const memberAtk = Math.floor(member.power / 10 * scriptureBonus * loyaltyMult * formationAtkMult * stanceDmgMult * formationPowerMult);
+          const memberDef = Math.floor(member.power / 20 * scriptureBonus * loyaltyMult * formationDefMult * stanceDefMult);
           const dmgToMonster = calculateDamage(memberAtk, monster.defense);
-          const dmgToMember = calculateDamage(monster.attack, memberDef);
+          const dmgToMember = stance === '撤退' ? 0 : Math.floor(calculateDamage(monster.attack, memberDef) * stanceDmgTakenMult);
 
           monster.hp -= dmgToMonster;
           member.hp -= dmgToMember;
@@ -1776,12 +1912,16 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Update clans treasury
     let updatedClans = [...state.clans];
-    if (Object.keys(clanTreasuryUpdates).length > 0) {
+    if (Object.keys(clanTreasuryUpdates).length > 0 || Object.keys(clanMoraleUpdates).length > 0) {
       updatedClans = updatedClans.map(c => {
+        let updated = { ...c };
         if (clanTreasuryUpdates[c.id]) {
-          return { ...c, treasury: c.treasury + clanTreasuryUpdates[c.id] };
+          updated.treasury = c.treasury + clanTreasuryUpdates[c.id];
         }
-        return c;
+        if (clanMoraleUpdates[c.id]) {
+          updated.morale = Math.max(0, Math.min(100, (c.morale ?? 50) + clanMoraleUpdates[c.id]));
+        }
+        return updated;
       });
     }
 
@@ -1992,6 +2132,114 @@ export const useGameStore = create<GameState>((set, get) => ({
             timestamp: Date.now(),
           });
         }
+
+        // --- 5e: Vassal tribute collection ---
+        if (clan.diplomacy) {
+          for (const [vassalId, entry] of Object.entries(clan.diplomacy)) {
+            if (entry.status === '臣服' && entry.vassalTribute && entry.vassalTribute > 0) {
+              const vassalClan = updatedClans.find(c => c.id === vassalId);
+              if (vassalClan && (vassalClan.treasury || 0) >= entry.vassalTribute) {
+                const tribute = Math.min(entry.vassalTribute, vassalClan.treasury || 0);
+                updatedClans = updatedClans.map(c => {
+                  if (c.id === vassalId) return { ...c, treasury: (c.treasury || 0) - tribute };
+                  if (c.id === clan.id) return { ...c, treasury: (c.treasury || 0) + tribute };
+                  return c;
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // === Phase 4: Siege warfare ===
+    // Every 5 ticks, resolve siege combat for player-led and army-led sieges
+    if ((state._factionTickCount || 0) % 5 === 0) {
+      // Helper to compute siege damage from a set of attackers
+      const resolveSiege = (attackerClanId: string, basePos: { x: number; y: number }, attackPower: number) => {
+        let targetClan: Clan | undefined;
+        for (const c of updatedClans) {
+          if (c.id === attackerClanId) continue;
+          const center = getClanTerritoryCenter(c, updatedClans);
+          const dist = Math.abs(basePos.x - center.x) + Math.abs(basePos.y - center.y);
+          if (dist <= 1) { targetClan = c; break; }
+        }
+        if (!targetClan) return;
+        const warStatus = getDiplomaticStatusFromClans(updatedClans, attackerClanId, targetClan.id);
+        if (warStatus !== '战争') return;
+
+        if ((targetClan.fortification ?? 0) > 0) {
+          const dmg = Math.max(1, Math.floor(attackPower * 0.05));
+          updatedClans = updatedClans.map(c =>
+            c.id === targetClan!.id ? { ...c, fortification: Math.max(0, (c.fortification ?? 0) - dmg) } : c
+          );
+        } else if ((targetClan.garrison ?? 0) > 0) {
+          const dmg = Math.max(1, Math.floor(attackPower * 0.08));
+          const counterDmg = Math.max(1, Math.floor((targetClan.garrison ?? 0) * 0.03));
+          updatedClans = updatedClans.map(c =>
+            c.id === targetClan!.id ? { ...c, garrison: Math.max(0, (c.garrison ?? 0) - dmg) } : c
+          );
+          if (updatedSquadMembers) {
+            updatedSquadMembers = updatedSquadMembers.map(m =>
+              m.isAlive ? { ...m, hp: Math.max(0, m.hp - counterDmg) } : m
+            );
+          }
+          const clan = updatedClans.find(c => c.id === targetClan!.id);
+          if (clan && clan.treasury > 0 && (clan.garrison ?? 0) < 50) {
+            const replenish = Math.min(5, clan.treasury);
+            updatedClans = updatedClans.map(c =>
+              c.id === targetClan!.id ? { ...c, garrison: (c.garrison ?? 0) + replenish, treasury: c.treasury - replenish } : c
+            );
+          }
+        }
+        const postSiegeClan = updatedClans.find(c => c.id === targetClan!.id);
+        if (postSiegeClan && (postSiegeClan.fortification ?? 0) <= 0 && (postSiegeClan.garrison ?? 0) <= 0) {
+          updatedClans = updatedClans.map(c => {
+            if (c.id === targetClan!.id) {
+              const loot = Math.floor((c.treasury || 0) * 0.2);
+              return {
+                ...c, territory: Math.max(0, (c.territory || 1) - 1),
+                treasury: (c.treasury || 0) - loot,
+                morale: Math.max(0, (c.morale ?? 50) - 20),
+                garrison: 0, fortification: 0,
+              };
+            }
+            return c;
+          });
+          const loot = Math.floor((postSiegeClan.treasury || 0) * 0.2);
+          updatedClans = updatedClans.map(c =>
+            c.id === attackerClanId ? { ...c, treasury: (c.treasury || 0) + loot, morale: Math.min(100, (c.morale ?? 50) + 10) } : c
+          );
+          if (attackerClanId === state.playerFactionId) {
+            siegeWarStats.battlesWon++;
+            siegeWarStats.treasuryLooted += loot;
+            siegeWarStats.citiesCaptured++;
+          }
+          const attackerName = updatedClans.find(c => c.id === attackerClanId)?.name || attackerClanId;
+          const defenderName = postSiegeClan?.name || '未知';
+          state.addLog({ type: 'event', message: `【攻城】${attackerName}攻陷了${defenderName}的山门！掠夺灵石${loot}。` });
+        }
+      };
+
+      // Player-led siege
+      if (state.player && updatedSquadMembers) {
+        const squadPower = updatedSquadMembers.filter(m => m.isAlive).reduce((s, m) => s + m.power, 0);
+        if (squadPower > 0) {
+          const formationMult = 1 + (formation.statBonus.attack || 0) + (formation.statBonus.power || 0);
+          resolveSiege(state.playerFactionId || 'p1', state.player.position, Math.floor(squadPower * formationMult));
+        }
+      }
+
+      // AI army-led siege
+      for (const army of newArmies) {
+        if (army.size <= 0 || !army.siegeTarget) continue;
+        const targetClan = updatedClans.find(c => c.id === army.siegeTarget);
+        if (!targetClan) continue;
+        const targetCenter = getClanTerritoryCenter(targetClan, updatedClans);
+        const dist = Math.abs(army.position.x - targetCenter.x) + Math.abs(army.position.y - targetCenter.y);
+        if (dist <= 1) {
+          resolveSiege(army.clanId, army.position, Math.floor(army.totalPower * 0.5));
+        }
       }
     }
 
@@ -2003,6 +2251,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       squadMembers: updatedSquadMembers,
       resourcePoints: resourcePointsCopy,
       _factionTickCount: factionTickCount,
+      clanArmies: newArmies,
+      warStats: siegeWarStats,
     });
 
     // Handle enforcer combat (existing)
@@ -2023,6 +2273,163 @@ export const useGameStore = create<GameState>((set, get) => ({
     set(state => ({
       npcMemory: { ...state.npcMemory, [npcId]: memoryState }
     }));
+  },
+
+  // === Phase 3: Techniques & Equipment ===
+
+  learnTechnique: (techniqueId: string) => {
+    const state = get();
+    if (!state.player) return;
+    const technique = TECHNIQUES_DATA.find(t => t.id === techniqueId);
+    if (!technique) { state.addLog({ type: 'system', message: '功法不存在。' }); return; }
+
+    // Check if already learned
+    if (state.player.learnedTechniques.some(lt => lt.techniqueId === techniqueId)) {
+      state.addLog({ type: 'system', message: '你已经学会了此功法。' }); return;
+    }
+
+    // Check realm requirement
+    const realmIndex = REALM_LIST.indexOf(state.player.realm);
+    if (realmIndex + 1 < technique.requiredRealm) {
+      state.addLog({ type: 'system', message: `需要【${['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'][technique.requiredRealm - 1]}】境界才能学习 ${technique.name}。` });
+      return;
+    }
+
+    // Check cost
+    const stones = state.player.inventory['灵石'] || 0;
+    if (stones < technique.learnCost) {
+      state.addLog({ type: 'system', message: `灵石不足，需要 ${technique.learnCost} 灵石才能学习 ${technique.name}。` });
+      return;
+    }
+
+    const slotIndex = technique.type === 'active' ? state.player.learnedTechniques.filter(lt => {
+      const t = TECHNIQUES_DATA.find(tc => tc.id === lt.techniqueId);
+      return t && t.type === 'active';
+    }).length : -1;
+
+    const newLearned: LearnedTechnique = { techniqueId, level: 1, slotIndex };
+
+    set(s => ({
+      player: s.player ? {
+        ...s.player,
+        learnedTechniques: [...s.player.learnedTechniques, newLearned],
+        inventory: { ...s.player.inventory, '灵石': (s.player.inventory['灵石'] || 0) - technique.learnCost },
+      } : s.player,
+    }));
+    state.addLog({ type: 'event', message: `【习得功法】你学会了 ${technique.grade}功法「${technique.name}」！消耗了 ${technique.learnCost} 灵石。` });
+  },
+
+  cultivateTechnique: (techniqueId: string) => {
+    const state = get();
+    if (!state.player) return;
+    const idx = state.player.learnedTechniques.findIndex(lt => lt.techniqueId === techniqueId);
+    if (idx === -1) { state.addLog({ type: 'system', message: '你尚未学会此功法。' }); return; }
+
+    const lt = state.player.learnedTechniques[idx];
+    const technique = TECHNIQUES_DATA.find(t => t.id === techniqueId);
+    if (!technique) return;
+
+    if (lt.level >= technique.maxLevel) {
+      state.addLog({ type: 'system', message: `${technique.name} 已满级。` }); return;
+    }
+
+    const cost = technique.levelUpCost;
+    const stones = state.player.inventory['灵石'] || 0;
+    if (stones < cost) {
+      state.addLog({ type: 'system', message: `灵石不足，需要 ${cost} 灵石才能提升 ${technique.name}。` });
+      return;
+    }
+
+    const updatedLT = [...state.player.learnedTechniques];
+    updatedLT[idx] = { ...updatedLT[idx], level: lt.level + 1 };
+
+    set(s => ({
+      player: s.player ? {
+        ...s.player,
+        learnedTechniques: updatedLT,
+        inventory: { ...s.player.inventory, '灵石': (s.player.inventory['灵石'] || 0) - cost },
+      } : s.player,
+    }));
+    state.addLog({ type: 'event', message: `【功法提升】${technique.name} 提升至 ${lt.level + 1} 级！消耗了 ${cost} 灵石。` });
+  },
+
+  equipItem: (item: Equipment) => {
+    const state = get();
+    if (!state.player) return;
+
+    // Check realm requirement
+    const realmIndex = REALM_LIST.indexOf(state.player.realm);
+    if (realmIndex + 1 < item.requiredRealm) {
+      state.addLog({ type: 'system', message: '境界不足，无法装备此物品。' }); return;
+    }
+
+    // Unequip existing item in same slot
+    const currentSlots = { ...state.player.equipmentSlots };
+    const existing = currentSlots[item.slot];
+    currentSlots[item.slot] = item;
+
+    set(s => ({
+      player: s.player ? {
+        ...s.player,
+        equipmentSlots: currentSlots,
+      } : s.player,
+    }));
+
+    if (existing) {
+      state.addLog({ type: 'event', message: `【装备】你换下了 ${existing.name}，装备了 ${item.name}。` });
+    } else {
+      state.addLog({ type: 'event', message: `【装备】你装备了 ${item.name}。` });
+    }
+  },
+
+  unequipItem: (slot: EquipmentSlot) => {
+    const state = get();
+    if (!state.player) return;
+    const currentSlots = { ...state.player.equipmentSlots };
+    if (!currentSlots[slot]) {
+      state.addLog({ type: 'system', message: '该装备槽位是空的。' }); return;
+    }
+    delete currentSlots[slot];
+    set(s => ({
+      player: s.player ? { ...s.player, equipmentSlots: currentSlots } : s.player,
+    }));
+    state.addLog({ type: 'event', message: '你卸下了装备。' });
+  },
+
+  getTechniqueEffects: () => {
+    const state = get();
+    if (!state.player) return [];
+    const effects: TechniqueEffect[] = [];
+    for (const lt of state.player.learnedTechniques) {
+      const technique = TECHNIQUES_DATA.find(t => t.id === lt.techniqueId);
+      if (!technique) continue;
+      for (const eff of technique.effects) {
+        const existing = effects.find(e => e.stat === eff.stat);
+        const total = eff.value + eff.perLevel * (lt.level - 1);
+        if (existing) {
+          existing.value += total;
+        } else {
+          effects.push({ ...eff, value: total, perLevel: 0 });
+        }
+      }
+    }
+    return effects;
+  },
+
+  // === Phase 4: Formation & Combat ===
+
+  setFormation: (formation: FormationType) => {
+    const state = get();
+    set({ currentFormation: formation });
+    state.addLog({ type: 'event', message: `【阵型】切换至「${FORMATION_DATA[formation].name}」` });
+  },
+
+  setSquadCombatStance: (stance: SquadCombatStance) => {
+    set(s => ({
+      squadMembers: s.squadMembers.map(m => m.isAlive ? { ...m, combatStance: stance } : m),
+    }));
+    const labels: Record<SquadCombatStance, string> = { '进攻': '全体进攻', '集中火力': '集中火力', '撤退': '撤退', '防御阵型': '防御阵型' };
+    get().addLog({ type: 'event', message: `【指令】队伍切换至「${labels[stance]}」模式。` });
   },
 
   saveToSlot: (slot: number) => {
