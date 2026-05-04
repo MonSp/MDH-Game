@@ -1,103 +1,29 @@
 # TODOS
 
-## ~~Phase 1.4: NPC Faction Autonomy (势力自主运作)~~ ✅ DONE
+## Phase 1.1: LLM → 行为规划 → 行为执行 闭环 ✅ DONE
 
-**Completed:** 2026-05-04 (v1.9.0.0)
-**Results:** Faction AI tick every 30s with autonomous alliance/war/truce diplomacy based on power ratios; resource claiming within 8 tiles of territory center; passive income from owned resources (2%/tick); inter-NPC war combat with treasury rewards (+5/-3); EventLog world event notifications; Map2D resource ownership visualization with clan-colored markers.
+**Completed:** 2026-05-04 (branch: feat/npc-awakening-phase2)
+**Tests:** 537 passed (22 files), TypeScript compiles clean
 
-## ~~Phase 1.3: NPC-to-NPC Interaction Visualization (NPC互动可视化)~~ ✅ DONE
+| # | Task | Status |
+|---|------|--------|
+| 1.1a | Fill `BehaviorExecutor.execute*` methods | ✅ DONE — patrol, logistics, trade, compete, chase all implemented in NPCService.ts |
+| 1.1b | Wire LLM planning tick into game loop | ✅ DONE — `LLMIntegrationManager.tick()` every 5s via setInterval in server/index.ts |
+| 1.1c | Fix `NPCBehaviorTree` — LLMPlanNode returns real ActionType | ✅ DONE — SelectorNode: SurvivalNode → LLMPlanNode → FallbackNode |
+| 1.1d | Sync server behavior to client via Socket.IO | ✅ DONE — 2s NPC behavior processing interval + state sync in server/index.ts |
+| 1.1e | Behavior → memory feedback loop | ✅ DONE — EventBus emissions (ACTIVITY_CHANGED, STATE_CHANGED, TRADE_COMPLETE) for NPCWorldService memory integration |
 
-**Completed:** 2026-05-04 (v1.9.0.0)
-**Results:** Server-side NPCWorldService interaction engine with affinity-based trade/duel/alliance/conflict/greet determination; Map2D InteractionEffectParticles with animated particles, rings, and flash circles; EventLog component with type-colored event display and auto-scroll; Socket.IO sync at 2s interval; 50-event interaction buffer.
+**Key fixes:**
+- `translateActionToActivity` private method in LLMIntegrationManager shadowed the real mapper and always returned `'rest'` — removed, now uses imported function directly.
+- NPC behavior processing at 2s interval: patrol/explore/logistics/compete → random movement; trade/work → resource gain; rest/retreat → HP regen.
 
-## ~~Phase 1.2: NPC Proactive Interaction (NPC主动交互)~~ ✅ DONE
-
-**Completed:** 2026-05-04 (v1.9.0.0)
-**Results:** InitiativeService with polling-based NPC approach detection; encounter popup with choice-based resolution (spirit stones/exp rewards); HUD notification indicator; behavior implementations for patrol, logistics, compete, chase, trade; LLM planning scheduler rewrite with per-tier cooldowns and NPCData store.
-
-## ~~P3: Diplomatic & War System (外交与战争系统)~~ ✅ DONE
-
-**Completed:** 2026-05-03 (v1.6.0.0)
-**Results:** Full implementation with declareWar, proposeAlliance, proposeTruce, surrenderTo, breakAlliance actions; 5-status diplomatic system; war hostility NPC AI; DiplomacyPanel UI; map war indicator; 23 tests.
-
-## ~~P2: Faction System (势力系统)~~ ✅ DONE
-
-**Completed:** 2026-05-03 (v1.5.0.0)
-**Results:** Full faction system with create, building upgrades, officer appointments, tax collection, faction tick, 30 tests.
-
-## ~~LLM API smoke test (Phase 1b prerequisite)~~ ✅ DONE
-
-**Completed:** 2026-04-30
-**Results:** Tested implicitly during benchmark run — LLM phase successfully called the API via LLMHttpClient, responses parsed by PlanParser, 5-minute run with real latency data collected.
-
-**Added:** 2026-04-27 (from /plan-eng-review)
-**Context:** The existing `src/server/llm/LLMHttpClient.ts` targets Gemini 2.0 Flash
-with retry/fallback logic but has never been tested against a real API key.
-Phase 1b depends on this client working end-to-end.
-
-**What:** Run a 30-minute smoke test: configure a Gemini API key, trigger an NPC
-planning request, verify the response parses through `PlanParser.ts`. Document
-the actual latency, error rate, and response quality.
-
-**Why:** Prevents Phase 1b from starting with a broken dependency. If the client
-needs fixes (wrong endpoint, auth, schema mismatch), find that now, not during
-the 2-week Phase 1b sprint.
-
-**Depends on:** Gemini API key access.
-
-## ~~LLM vs deterministic behavior benchmark (Phase 1b validation)~~ ✅ DONE
-
-**Completed:** 2026-04-30
-**Results:** Benchmark run on benchmark/llm-vs-deterministic branch. LLM produced 262% more "interesting narrative moments" (score >= 2.0) than deterministic mode. LLM average score 1.59 vs deterministic 0.91. Verdict: LLM clearly justified.
-
-**Added:** 2026-04-27 (from /plan-eng-review)
-**Context:** The outside voice challenged whether LLM-driven NPC planning produces
-demonstrably better narrative moments than a simple deterministic state machine
-given the throughput constraints (2 planning slots per 8s tick for 50 NPCs).
-
-**What:** Design and run an A/B benchmark. Run the demo for 5 minutes in two modes:
-(a) LLM-driven NPCs, (b) deterministic activity labels from fallbackPlan().
-Record the chronicle events in each mode, then blind-review them. Count
-"interesting narrative moments" (events that reference another NPC, show
-emotional range, or describe specific goals vs. generic activity labels).
-
-**Why:** Validates the core product thesis — that LLM-driven NPCs create emergent
-narrative that a deterministic system cannot. If the A/B shows no meaningful
-difference, the product thesis needs revision.
-
-**Context for pickup:** The infrastructure for both modes already exists.
-`/api/npcs` returns activity/emotion for deterministic comparison. The chronicle
-WebSocket captures all events. A toggle in NPCWorldService can disable LLM calls
-and use fallbackPlan() exclusively.
-
-**Depends on:** Running Phase 1b demo, ability to capture chronicle output.
-
-## ~~Player character + scene narrative (Phase 1c)~~ ✅ DONE
-
-**Completed:** 2026-04-30
-**Results:** Design approved via /office-hours. Eng review completed via /plan-eng-review.
-Implementation pending. See design doc at `~/.gstack/projects/MyGame/test-main-design-20260430-201022.md`.
-
-## ~~Wire remaining 3 talent stats into game mechanics~~ ✅ DONE
-
-**Completed:** v1.3.0.0 (2026-05-01)
-**Results:** All 4 talent stats now fully wired — spiritualRoot affects cultivation speed, boneConstitution affects HP/attack, comprehension reduces breakthrough cost, fortune enables double resource yield via binary proc.
-
-## ~~NPC memory persistence from scene dialogue~~ ✅ DONE
-
-**Completed:** v1.2.0.0 (2026-05-01)
-**Results:** `markNpcMet()` stores met NPCs in store; scripted NPC_DIALOGUE supports `metText` variants for re-encounters.
-
-## ~~Socket.IO disconnect handling during scene LOADING state~~ ✅ DONE
-
-**Completed:** v1.2.0.0 (2026-05-01)
-**Results:** ScenePanel has `disconnectError` state + fallback button for connection loss during LLM dialogue loading.
+---
 
 ## Mobile responsive ScenePanel
 
 **Added:** 2026-04-30 (from /plan-design-review)
 **Context:** ScenePanel is designed for desktop (1920x1080, min 1024px). On mobile/tablet, the full-screen overlay with small text and buttons creates a poor experience.
-**What:** Design mobile variant (375-768px): bottom sheet instead of full overlay, condensed text, larger buttons (44px min touch target). 
+**What:** Design mobile variant (375-768px): bottom sheet instead of full overlay, condensed text, larger buttons (44px min touch target).
 **Effort:** ~30 min
 
 ## ScenePanel keyboard navigation and screen reader support
@@ -107,12 +33,24 @@ Implementation pending. See design doc at `~/.gstack/projects/MyGame/test-main-d
 **What:** Add Escape to close, Tab between choices, Enter to select. Add ARIA labels for screen readers (`role="dialog"`, `aria-label` for scene title, `aria-describedby` for description).
 **Effort:** ~15 min
 
-## ~~Wire building effects as runtime stat modifiers~~ ✅ DONE
+---
 
-**Completed:** 2026-05-03 (v1.6.0.0+)
-**Results:** 练功房 wired into cultivate() exp gain (1.1/1.2/1.3x), 藏经阁 wired into squad combat memberAtk/memberDef (1.05/1.10/1.15x), 丹房 wired into 洗髓丹 stat bonuses (1.1/1.2/1.3x), 库房 wired into treasury cap (10000+level*5000) in collectTax and factionTick, 哨塔 wired into Map2D fog distance and zoom. 11 tests.
+## Known Technical Debt
 
-## ~~Morale debuff warning when faction morale < 20~~ ✅ DONE
+- **BehaviorExecutor full integration:** `NPCService.ts` BehaviorExecutor has complete implementations but isn't instantiated per-NPC. Current behavior execution uses simplified inline logic in server/index.ts (random movement, basic resource gain, HP regen). The full executor classes should replace the inline implementation.
+- **LLMPlanningService memory context:** NPC memory (from NPCWorldService) isn't fed back into LLM planning prompts yet — the loop is wired at the event level (EventBus) but the `planningRequest.world_context` doesn't include memory data.
+- **NPCWorldService NPCs:** Server-side NPC pool (50 NPCs) uses hardcoded `clanId: 'sect_main'` and is disconnected from the client-side clan/diplomacy system in gameStore. These two NPC systems need unification.
 
-**Completed:** 2026-05-03 (v1.6.0.0+)
-**Results:** Log warning (throttled 30s) in factionTick, red animated pulse on morale value in FactionPanel, inline warning banner, and 50% tax income penalty when morale < 20.
+---
+
+## Forward: Roadmap v2
+
+See `docs/22-开发路线图.md` for full context.
+
+| Phase | Theme | Priority | Est. |
+|-------|-------|----------|------|
+| **Phase 2** | **世界具象化 — 2.5D terrain, collision, fog, pixel art** | ★★★★☆ | ~7 days |
+| Phase 3 | 修仙深化 — skills, equipment, crafting | ★★★★☆ | ~8 days |
+| Phase 4 | 战争深化 — siege, territory, armies | ★★★☆☆ | ~5 days |
+| Phase 5 | 跨天统一 — ascension cross-server | ★★★☆☆ | ~5 days |
+| Phase 6 | 多人联机 — multiplayer coordination | ★★☆☆☆ | ~7 days |

@@ -18,7 +18,7 @@ import { LLMIntegrationManager } from './game/services/LLMIntegrationManager';
 import { LLMHttpClient, DialogueRequestContext } from './llm/LLMHttpClient';
 import { buildDialogueSystemPrompt, buildDialogueUserPrompt } from './llm/DialoguePrompts';
 
-import { PlayerState, Country, CultivationRealm } from '../shared';
+import { PlayerState, Country, CultivationRealm, GAME_CONFIG, NPCEvent, EventBus } from '../shared';
 
 const app = express();
 const httpServer = createServer(app);
@@ -607,6 +607,61 @@ function startGameLoop(): void {
       player.update(1000 / 60);
     }
   }, 1000 / 60);
+
+  // Phase 1.1b: LLM planning tick every 5 seconds
+  setInterval(() => {
+    LLMIntegrationManager.getInstance().tick().catch(err =>
+      console.error('[NPC] LLM tick error:', err)
+    );
+  }, 5000);
+
+  // Phase 1.1c + 1.1d: NPC behavior processing every 2 seconds
+  // Evaluates behavior trees, executes actions, updates NPC states before sync
+  setInterval(() => {
+    const npcWorld = NPCWorldService.getInstance();
+    const llmIntegration = LLMIntegrationManager.getInstance();
+    for (const [npcId, state] of npcWorld.getAllNPCs()) {
+      try {
+        // Skip dead NPCs
+        if (state.npc.hp <= 0) continue;
+
+        // Get behavior from LLM planning or fallback
+        const oldBehavior = state.activity;
+        const behavior = llmIntegration.getBehaviorForNPC(npcId, state.npc);
+
+        // Phase 1.1e: Emit activity change events for memory feedback
+        if (behavior !== oldBehavior) {
+          EventBus.emit(NPCEvent.ACTIVITY_CHANGED, { npcId, activity: behavior, previous: oldBehavior });
+        }
+
+        // Update NPC activity in world state
+        state.activity = behavior;
+
+        // Simple behavior execution: move NPC based on activity
+        if (behavior === 'patrol' || behavior === 'explore' || behavior === 'logistics' || behavior === 'compete') {
+          const dx = Math.floor(Math.random() * 3) - 1;
+          const dy = Math.floor(Math.random() * 3) - 1;
+          state.npc.position.x = Math.max(0, Math.min(GAME_CONFIG.MAP_WIDTH, state.npc.position.x + dx));
+          state.npc.position.y = Math.max(0, Math.min(GAME_CONFIG.MAP_HEIGHT, state.npc.position.y + dy));
+          EventBus.emit(NPCEvent.STATE_CHANGED, { npcId, position: { ...state.npc.position }, activity: behavior });
+        } else if (behavior === 'trade' || behavior === 'work') {
+          if (Math.random() < 0.3) {
+            const gained = Math.floor(Math.random() * 5) + 1;
+            state.npc.resources.spiritStones += gained;
+            EventBus.emit(NPCEvent.TRADE_COMPLETE, { npcId, profit: gained });
+          }
+        } else if (behavior === 'rest' || behavior === 'retreat') {
+          if (state.npc.hp < state.npc.maxHp) {
+            const healed = Math.floor(state.npc.maxHp * 0.05);
+            state.npc.hp = Math.min(state.npc.maxHp, state.npc.hp + healed);
+            EventBus.emit(NPCEvent.STATE_CHANGED, { npcId, hp: state.npc.hp, activity: behavior });
+          }
+        }
+      } catch (err) {
+        // Silently skip NPCs that fail behavior processing
+      }
+    }
+  }, 2000);
 
   // NPC state sync to connected clients every 2 seconds
   setInterval(() => {

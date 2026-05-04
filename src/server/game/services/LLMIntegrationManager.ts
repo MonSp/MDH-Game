@@ -11,7 +11,7 @@ import {
   PlanningType
 } from '../../../shared/types/LLMPlanning';
 import { LLMPlanningService } from './LLMPlanningService';
-import { NPCBehaviorTreeManager } from './NPCBehaviorTree';
+import { NPCBehaviorTreeManager, translateActionToActivity } from './NPCBehaviorTree';
 import { determineTier, shouldRequestPlanning, getFallbackBehavior, LLM_SERVICE_CONFIG } from '../../config/LLMConfig';
 
 export enum LLMEventType {
@@ -271,7 +271,7 @@ export class LLMIntegrationManager {
     }
 
     const action = this.behaviorTreeManager.evaluateNPC(npcId);
-    return this.translateActionToActivity(action);
+    return translateActionToActivity(action);
   }
 
   registerHighTierNPC(npcId: string, npcData: NPCData): void {
@@ -304,10 +304,6 @@ export class LLMIntegrationManager {
     if (fallbackActions.length === 0) {
       return 'rest';
     }
-    return this.translateActionToActivity(fallbackActions[0]);
-  }
-
-  private translateActionToActivity(actionType: any): string {
-    return 'rest';
+    return translateActionToActivity(fallbackActions[0]);
   }
 }
