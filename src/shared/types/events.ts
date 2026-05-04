@@ -126,3 +126,16 @@ export enum ClanEvent {
   POSITION_CHANGED = 'clan:position_changed',
   BOUNTY_ISSUED = 'clan:bounty_issued'
 }
+
+/** NPC-to-NPC interaction event for Phase 1.3 — emitted by NPCWorldService and consumed by Map2D/EventLog. */
+export interface NPCInteractionEvent {
+  id: string;
+  type: 'trade' | 'duel' | 'alliance' | 'conflict' | 'greet';
+  npcIdA: string;
+  npcNameA: string;
+  npcIdB: string;
+  npcNameB: string;
+  description: string;
+  position: { x: number; y: number };
+  timestamp: number;
+}

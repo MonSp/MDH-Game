@@ -1,5 +1,20 @@
 # TODOS
 
+## ~~Phase 1.4: NPC Faction Autonomy (势力自主运作)~~ ✅ DONE
+
+**Completed:** 2026-05-04 (v1.9.0.0)
+**Results:** Faction AI tick every 30s with autonomous alliance/war/truce diplomacy based on power ratios; resource claiming within 8 tiles of territory center; passive income from owned resources (2%/tick); inter-NPC war combat with treasury rewards (+5/-3); EventLog world event notifications; Map2D resource ownership visualization with clan-colored markers.
+
+## ~~Phase 1.3: NPC-to-NPC Interaction Visualization (NPC互动可视化)~~ ✅ DONE
+
+**Completed:** 2026-05-04 (v1.9.0.0)
+**Results:** Server-side NPCWorldService interaction engine with affinity-based trade/duel/alliance/conflict/greet determination; Map2D InteractionEffectParticles with animated particles, rings, and flash circles; EventLog component with type-colored event display and auto-scroll; Socket.IO sync at 2s interval; 50-event interaction buffer.
+
+## ~~Phase 1.2: NPC Proactive Interaction (NPC主动交互)~~ ✅ DONE
+
+**Completed:** 2026-05-04 (v1.9.0.0)
+**Results:** InitiativeService with polling-based NPC approach detection; encounter popup with choice-based resolution (spirit stones/exp rewards); HUD notification indicator; behavior implementations for patrol, logistics, compete, chase, trade; LLM planning scheduler rewrite with per-tier cooldowns and NPCData store.
+
 ## ~~P3: Diplomatic & War System (外交与战争系统)~~ ✅ DONE
 
 **Completed:** 2026-05-03 (v1.6.0.0)

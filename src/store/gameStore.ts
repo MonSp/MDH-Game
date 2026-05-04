@@ -9,13 +9,13 @@ import {
   BUILDING_TREASURY_CAP_PER_LEVEL, EQUIPPABLE_ITEMS, MAX_MONSTERS, SPAWN_CHANCE, DESPAWN_DIST,
   MONSTER_TYPES_DATA, MONSTER_REALM_ORDER, COUNTRIES_DATA, COUNTRIES, IMMORTAL_DOMAINS_DATA,
   SURNAMES, calculateDamage, createWildMonster, getMonstersForPlayerRealm,
-  getDiplomaticStatusFrom, getDiplomaticStatusFromClans, BUILDING_SPEED_MULTIPLIERS,
+  getDiplomaticStatusFrom, getDiplomaticStatusFromClans, getClanTerritoryCenter, BUILDING_SPEED_MULTIPLIERS,
   getFactionBuildingLevel, generateClans, generateNearbyNPCs, generateResourcePoints,
   evaluateNPCBehavior, SQUAD_ROLE_INFO, BODY_TYPES_DATA, TALENT_GRADE_TABLE, computeTalentGrade,
   BUILDING_EFFECTS, BUILDING_VISION_BONUS, type GameState, type Player, type Clan, type NPC,
   type WildMonster, type SquadMember, type Realm, type HeavenLevel, type BodyType,
   type BuildingType, type DiplomaticStatus, type ConflictLevel, type MonsterType,
-  type FactionBuilding, type ClanDiplomacy, type CycleType, type SquadRole, type BuildingLevel, type TalentAttributes,
+  type FactionBuilding, type ClanDiplomacy, type CycleType, type SquadRole, type BuildingLevel, type TalentAttributes, type WorldEvent,
 } from './gameConstants';
 
 // Re-export all public API from gameConstants
@@ -35,6 +35,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   wildMonsters: [],
   resourcePoints: [],
   logs: [],
+  /** Phase 1.3: structured world events for EventLog display */
+  worldEvents: [] as WorldEvent[],
+  /** Phase 1.4: faction AI tick counter */
+  _factionTickCount: 0,
   market: {
     '洗髓丹': { name: '洗髓丹', basePrice: 500, currentPrice: 500, stock: 10 },
     '低级法器': { name: '低级法器', basePrice: 200, currentPrice: 200, stock: 50 },
@@ -106,6 +110,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   addLog: (log) => set(state => ({
     logs: [...state.logs, { ...log, id: Date.now().toString() + Math.random(), time: new Date().toLocaleTimeString() }].slice(-50)
+  })),
+
+  addWorldEvent: (event) => set(state => ({
+    worldEvents: [...state.worldEvents, { ...event, id: `we-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }].slice(-100)
   })),
 
   movePlayer: (dx, dy) => set(state => {
@@ -1497,6 +1505,49 @@ export const useGameStore = create<GameState>((set, get) => ({
       return behaviorNpc;
     });
 
+    // === Phase 1.4c: Inter-NPC war combat ===
+    // NPCs from warring clans attack each other when adjacent
+    // Uses state.clans for status (clan treasury updates handled via clanTreasuryUpdates map)
+    const npcsAfterWar = [...npcs];
+    for (let i = 0; i < npcsAfterWar.length; i++) {
+      const a = npcsAfterWar[i];
+      if (a.retreatTicksRemaining || a.hp <= 0) continue;
+      for (let j = i + 1; j < npcsAfterWar.length; j++) {
+        const b = npcsAfterWar[j];
+        if (b.retreatTicksRemaining || b.hp <= 0) continue;
+        if (a.clanId === b.clanId) continue;
+
+        const warStatus = getDiplomaticStatusFromClans(state.clans, a.clanId, b.clanId);
+        if (warStatus !== '战争') continue;
+
+        const dx = Math.abs(a.position.x - b.position.x);
+        const dy = Math.abs(a.position.y - b.position.y);
+        if (dx > 1 || dy > 1) continue;
+
+        // Resolve combat
+        const aPower = a.power || 50;
+        const bPower = b.power || 50;
+        const aDmg = Math.max(1, Math.floor(aPower * 0.3));
+        const bDmg = Math.max(1, Math.floor(bPower * 0.3));
+
+        npcsAfterWar[i] = { ...a, hp: a.hp - bDmg };
+        npcsAfterWar[j] = { ...b, hp: b.hp - aDmg };
+
+        if (npcsAfterWar[i].hp <= 0) {
+          npcsAfterWar[i] = { ...npcsAfterWar[i], hp: 0, retreatTicksRemaining: 5 };
+          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) + 5;
+          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) - 3;
+        }
+        if (npcsAfterWar[j].hp <= 0) {
+          npcsAfterWar[j] = { ...npcsAfterWar[j], hp: 0, retreatTicksRemaining: 5 };
+          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) + 5;
+          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) - 3;
+        }
+        break; // one fight per NPC per tick
+      }
+    }
+    npcs = npcsAfterWar;
+
     // Phase 2: Player vs Monster
     let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory } } : null;
     for (const monster of monsters) {
@@ -1755,12 +1806,157 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
+    // === Phase 1.4: Faction AI tick (every 30 ticks ≈ 30s) ===
+    const factionTickCount = (state._factionTickCount || 0) + 1;
+    const isFactionTick = factionTickCount % 30 === 0;
+    const resourcePointsCopy = state.resourcePoints.map(rp => ({ ...rp }));
+
+    if (isFactionTick) {
+      const aiClans = updatedClans.filter(c =>
+        c.id !== state.playerFactionId && (c.treasury || 0) >= 100
+      );
+
+      for (const clan of aiClans) {
+        // --- 1.4a: AI diplomatic decisions ---
+        for (const other of updatedClans) {
+          if (other.id === clan.id) continue;
+          if (other.isAscendingFamily) continue;
+
+          const currentStatus = getDiplomaticStatusFromClans(updatedClans, clan.id, other.id);
+          const powerRatio = (clan.reputation + 10) / (other.reputation + 10); // avoid div by 0
+
+          // Alliance: similar power, neutral
+          if (currentStatus === '中立' && powerRatio > 0.5 && powerRatio < 2.0 && Math.random() < 0.02) {
+            const alliance: ClanDiplomacy = {
+              status: '同盟',
+              conflictLevel: '和平',
+              declaredBy: clan.id,
+              allianceDate: Date.now(),
+            };
+            updatedClans = updatedClans.map(c => {
+              if (c.id === clan.id) {
+                return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: alliance } };
+              }
+              if (c.id === other.id) {
+                const reverse: ClanDiplomacy = {
+                  status: '同盟', conflictLevel: '和平', declaredBy: other.id, allianceDate: Date.now(),
+                };
+                return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+              }
+              return c;
+            });
+            const selfClan = updatedClans.find(c => c.id === clan.id);
+            state.addWorldEvent({
+              type: 'alliance',
+              npcNameA: selfClan?.name || clan.id,
+              npcNameB: other.name,
+              description: `【${selfClan?.name || clan.id}】与【${other.name}】缔结同盟！`,
+              timestamp: Date.now(),
+            });
+          }
+
+          // War: significantly stronger, neutral
+          if (currentStatus === '中立' && powerRatio > 1.8 && Math.random() < 0.015) {
+            const war: ClanDiplomacy = {
+              status: '战争',
+              conflictLevel: '局部冲突',
+              declaredBy: clan.id,
+            };
+            updatedClans = updatedClans.map(c => {
+              if (c.id === clan.id) {
+                return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: war } };
+              }
+              if (c.id === other.id) {
+                const reverse: ClanDiplomacy = {
+                  status: '战争', conflictLevel: '局部冲突', declaredBy: other.id,
+                };
+                return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+              }
+              return c;
+            });
+            const selfClan = updatedClans.find(c => c.id === clan.id);
+            state.addWorldEvent({
+              type: 'conflict',
+              npcNameA: selfClan?.name || clan.id,
+              npcNameB: other.name,
+              description: `【${selfClan?.name || clan.id}】向【${other.name}】宣战！`,
+              timestamp: Date.now(),
+            });
+          }
+
+          // Truce: war has been going on, random chance
+          if (currentStatus === '战争' && Math.random() < 0.03) {
+            const truce: ClanDiplomacy = {
+              status: '停战',
+              conflictLevel: '和平',
+              declaredBy: clan.id,
+              truceUntil: Date.now() + 120000,
+            };
+            updatedClans = updatedClans.map(c => {
+              if (c.id === clan.id) {
+                return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: truce } };
+              }
+              if (c.id === other.id) {
+                const reverse: ClanDiplomacy = {
+                  status: '停战', conflictLevel: '和平', declaredBy: other.id, truceUntil: Date.now() + 120000,
+                };
+                return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+              }
+              return c;
+            });
+            const selfClan = updatedClans.find(c => c.id === clan.id);
+            state.addWorldEvent({
+              type: 'system',
+              npcNameA: selfClan?.name || clan.id,
+              npcNameB: other.name,
+              description: `【${selfClan?.name || clan.id}】与【${other.name}】达成停战。`,
+              timestamp: Date.now(),
+            });
+          }
+        }
+
+        // --- 1.4b: Resource claim + passive income ---
+        const center = getClanTerritoryCenter(clan, updatedClans);
+        let claimedAny = false;
+        updatedClans = updatedClans.map(c => {
+          if (c.id !== clan.id) return c;
+          // Claim nearby unowned resources (limit 1 per tick per clan)
+          const unowned = resourcePointsCopy.findIndex(rp =>
+            !rp.ownerClanId &&
+            Math.abs(rp.position.x - center.x) < 8 &&
+            Math.abs(rp.position.y - center.y) < 8
+          );
+          if (unowned !== -1 && Math.random() < 0.15) {
+            resourcePointsCopy[unowned] = { ...resourcePointsCopy[unowned], ownerClanId: clan.id };
+            claimedAny = true;
+          }
+          // Passive income from owned resources
+          const owned = resourcePointsCopy.filter(rp => rp.ownerClanId === clan.id);
+          const income = owned.reduce((sum, rp) => sum + Math.max(1, Math.floor(rp.amount * 0.02)), 0);
+          return { ...c, treasury: (c.treasury || 0) + income };
+        });
+
+        if (claimedAny) {
+          const selfClan = updatedClans.find(c => c.id === clan.id);
+          state.addWorldEvent({
+            type: 'system',
+            npcNameA: selfClan?.name || clan.id,
+            npcNameB: '',
+            description: `【${selfClan?.name || clan.id}】占领了一处资源点。`,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+
     set({
       nearbyNPCs: npcs,
       clans: updatedClans,
       wildMonsters: aliveMonsters,
       player: updatedPlayer || state.player,
       squadMembers: updatedSquadMembers,
+      resourcePoints: resourcePointsCopy,
+      _factionTickCount: factionTickCount,
     });
 
     // Handle enforcer combat (existing)

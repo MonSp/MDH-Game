@@ -156,6 +156,17 @@ export function getDiplomaticStatusFromClans(clans: Clan[], fromClanId: string, 
   return entry.status;
 }
 
+/** Phase 1.4: compute a clan's territory center based on its country capital + index offset */
+export function getClanTerritoryCenter(clan: Clan, clans: Clan[]): { x: number; y: number } {
+  const capital = COUNTRIES_DATA[clan.country]?.capital || { x: 50, y: 50 };
+  const sameCountry = clans.filter(c => c.country === clan.country);
+  const index = sameCountry.findIndex(c => c.id === clan.id);
+  return {
+    x: capital.x + (index % 5) * 3,
+    y: capital.y + Math.floor(index / 5) * 3,
+  };
+}
+
 export const RECRUIT_REPUTATION_TIER: Record<SquadRole, number> = {
   '战斗型': 100,
   '斥候型': 500,
@@ -453,12 +464,23 @@ export interface LogEntry {
   message: string;
 }
 
+export interface WorldEvent {
+  id: string;
+  type: 'trade' | 'duel' | 'alliance' | 'conflict' | 'greet' | 'system';
+  npcNameA: string;
+  npcNameB: string;
+  description: string;
+  timestamp: number;
+}
+
 export interface ResourcePoint {
   id: string;
   type: '灵田' | '矿脉' | '遗迹';
   amount: number;
   position: { x: number; y: number };
   heavenLevel: HeavenLevel;
+  /** Phase 1.4: clan that currently controls this resource point */
+  ownerClanId?: string;
 }
 
 export interface MarketItem {
@@ -483,12 +505,16 @@ export interface GameState {
   wildMonsters: WildMonster[];
   resourcePoints: ResourcePoint[];
   logs: LogEntry[];
+  worldEvents: WorldEvent[];
   market: Record<string, MarketItem>;
   ascensionQuests: AscensionQuest[];
   playerFactionId: string | null;
+  /** Phase 1.4: tick counter for faction AI decisions */
+  _factionTickCount: number;
 
   joinServer: (serverId: string, playerName: string) => void;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;
+  addWorldEvent: (event: Omit<WorldEvent, 'id'>) => void;
   movePlayer: (dx: number, dy: number) => void;
   interactWithNPC: (npcId: string, action: '交谈' | '交易' | '攻击') => void;
   interactWithResource: (resourceId: string) => void;

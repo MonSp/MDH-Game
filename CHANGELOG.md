@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.9.0.0] - 2026-05-04
+
+### Added
+- Phase 1.4 — NPC faction autonomy: AI clans now independently form alliances, declare war, and propose truces based on power ratios (every 30 game ticks)
+- Faction resource claiming: AI clans autonomously claim nearby unowned resource points within 8 tiles of their territory center; owned resources produce passive income (2%/tick)
+- Inter-NPC war combat: NPCs from warring clans fight adjacent enemies; winners gain +5 treasury, losers lose -3 treasury and enter retreat
+- World event system (EventLog): structured event log with icons, colors, and auto-scroll — displays faction actions, NPC interactions, and system events
+- NPC-to-NPC interaction visualization: proximity-detected interactions with particle effects (trade, duel, alliance, conflict, greet) on the 2.5D map
+- NPC proactive interaction system (InitiativeService): NPCs autonomously approach the player with greetings, trade offers, challenges, and encounter events
+- BehaviorExecutor movement implementations: executePatrol, executeLogistics, executeCompete, executeChase, executeTrade with movement, combat, and resource collection
+- LLMPlanningScheduler rewrite: per-tier cooldowns (T0=30s, T1=60s, T2=120s), NPCData store, active plan tracking, 2s NPC state sync via Socket.IO
+- NPC-to-NPC interaction engine in NPCWorldService: affinity-based interactions with relationship memory, EventBus feedback loop for trade/combat/kill events
+
+### Changed
+- ResourcePoint interface: added optional `ownerClanId?: string` for resource ownership tracking
+- GameState: added `worldEvents: WorldEvent[]`, `_factionTickCount: number`, and `addWorldEvent()` action
+- getClanTerritoryCenter() helper added to gameConstants.ts — computes clan territory center from country capital + index offset
+- LLMIntegrationManager: registerHighTierNPC now stores NPCData; registerNPC accepts optional NPCData; removed schedulePlanningForNPC in favor of cooldown-based polling
+- Server tick loop: emits NPC state sync and interaction events to Socket.IO clients every 2s
+- Map2D resource rendering: owned resources show amber/gold color + flag marker with clan name tooltip
+- NPCBehaviorTree.SurvivalNode: returns REST when NPC HP < 30%
+
+### Fixed
+- Dead code removal: unused `clanReputationUpdates` variable in gameStore.ts
+
 ## [1.8.2.0] - 2026-05-04
 
 ### Added
