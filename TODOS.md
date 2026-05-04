@@ -19,6 +19,32 @@
 
 ---
 
+## Phase 2 deferred items
+
+### 2.1b: MapGenerator with kingdom-aware terrain
+
+**What:** Create `src/server/services/MapGenerator.ts` using Perlin noise + hand-crafted region features. 1000x1000 terrain with 7 kingdoms as regions, each with distinct biome profiles (齐 plains, 楚 forests/marshes, 秦 mountains, etc.).
+
+**Why it matters:** Current noise-based terrain is uniform. Kingdom-aware terrain gives each country a distinct visual identity and strategic feel.
+
+---
+
+### 2.2c: Scout role expands vision range
+
+**What:** Squad members with scout role increase fog-of-war vision radius. If the scout is between player and a direction, reveal additional tiles in that direction.
+
+**Why it matters:** Gives the scout squad role a concrete gameplay purpose beyond combat stats.
+
+---
+
+### 2.3: Pixel art style upgrade
+
+**What:** Replace colored box geometries with pixel-art sprites (16x16 or 32x32) for characters, terrain tiles, and resources. Add particle effects for cultivation, combat, and gathering.
+
+**Why it matters:** Visual polish — the current blocky 3D boxes are functional but not visually appealing.
+
+---
+
 ## Mobile responsive ScenePanel
 
 **Added:** 2026-04-30 (from /plan-design-review)
