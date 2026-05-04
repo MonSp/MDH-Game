@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.10.0.0] - 2026-05-05
+
+### Added
+- Phase 1.4a — LLM-driven faction AI diplomacy: AI clans now use LLM-powered decisions for alliances, war declarations, and truces instead of pure random probability
+- `requestStructured<T>()` public method on `LLMHttpClient` — validates LLM output with a type-safe callback
+- `FactionAIPrompts` system prompt + user prompt templates for LLM faction decisions (Chinese, 4 actions: war/alliance/truce/none)
+- `FactionDecisionParser` — strips markdown fences and validates LLM output before consumption
+- `faction:ai-decision` Socket.IO handler with rate limiting and auth guard
+- Store transient state (`_factionLLMCooldowns`, `_factionLLMQueue`, `_factionLLMResults`) + actions for LLM decision lifecycle
+- Game.tsx polling loop (15s interval) and Socket listener for faction AI decisions
+
+### Changed
+- `factionTick` now checks `_factionLLMResults` before falling back to random probability; 'none' decisions skip all random checks
+- `LLMHttpClient.requestWithRetry` made accessible via `requestStructured` wrapper
+
+### Fixed
+- Pre-existing flaky test in `faction.test.ts` — Math.random mock ensures deterministic ascension path
+- Math.random pollution across test files — `vi.restoreAllMocks()` in afterEach
+
 ## [1.9.0.0] - 2026-05-04
 
 ### Added
