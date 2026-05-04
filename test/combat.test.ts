@@ -13,6 +13,11 @@ import {
   MONSTER_REALM_ORDER,
   REALM_LIST,
   COUNTRIES_DATA,
+  generateEquipment,
+  EquipmentSlot,
+  EquipmentRarity,
+  CultivationRealm,
+  TECHNIQUES_DATA,
 } from '../src/store/gameStore';
 
 function initPlayer(overrides: Record<string, any> = {}) {
@@ -879,5 +884,263 @@ describe('updateNPCs() edge cases', () => {
     const state = useGameStore.getState();
     // Monster should be dead and player took damage using 0 defense
     expect(state.wildMonsters.find(m => m.id === 'monster-def-test')).toBeUndefined();
+  });
+});
+
+describe('Phase 3 P0: Technique + Equipment + Skills in combat', () => {
+  beforeEach(() => {
+    useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
+  });
+
+  it('passive technique adds attack and monster takes extra damage', () => {
+    // vital_strike gives attack+5 passive + has active skill (1.5x)
+    // effectiveAtk = 10+5 = 15, baseDmg=fl(15*15/(15+5))=11
+    // skill fires (cooldown=0, MP=100>=5): dmg=fl(11*1.5)=16, HP=500-16=484
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 10, exp: 0, maxExp: 10000 },
+      learnedTechniques: [{ techniqueId: 'vital_strike', level: 1 }],
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-tech-atk',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-tech-atk');
+    expect(monster).toBeDefined();
+    if (monster) {
+      expect(monster.hp).toBe(484); // 500 - 16 (passive +5 atk + active 1.5x)
+    }
+  });
+
+  it('passive technique adds defense and player takes reduced damage', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 5, exp: 0, maxExp: 10000 },
+      learnedTechniques: [{ techniqueId: 'stone_skin', level: 1 }], // +3 defense
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-tech-def',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 30, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    const hpBefore = useGameStore.getState().player!.stats.hp;
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const hpLost = hpBefore - state.player!.stats.hp;
+    // Effective def = 5 (base) + 3 (stone_skin) = 8
+    // Monster atk=30 => dmg = floor(30*30/(30+8)) = floor(900/38) = 23
+    expect(hpLost).toBeLessThanOrEqual(23);
+  });
+
+  it('equipment weapon attack adds to effective attack', () => {
+    const weapon = generateEquipment('weapon-test', EquipmentSlot.WEAPON, EquipmentRarity.MORTAL, 1);
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 10, exp: 0, maxExp: 10000 },
+      equipmentSlots: { [EquipmentSlot.WEAPON]: weapon },
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-equip-atk',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-equip-atk');
+    // weapon baseStats.attack = floor(10 * 1 * 1.5 * 1) = 15
+    // effective atk = 10 + 15 = 25 => dmg = floor(25*25/(25+5)) = floor(625/30) = 20
+    expect(monster).toBeDefined();
+    if (monster) {
+      expect(monster.hp).toBe(480); // 500 - 20
+    }
+  });
+
+  it('equipment affix contributes to defense', () => {
+    const armor = generateEquipment('armor-affix', EquipmentSlot.ARMOR, EquipmentRarity.MORTAL, 1);
+    armor.affixes = [{ stat: 'defense', value: 10 }];
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 5, exp: 0, maxExp: 10000 },
+      equipmentSlots: { [EquipmentSlot.ARMOR]: armor },
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-affix',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 30, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    const hpBefore = useGameStore.getState().player!.stats.hp;
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const hpLost = hpBefore - state.player!.stats.hp;
+    // Armor baseStats.defense = floor(10 * 1 * 1.2 * 1) = 12 + affix 10 = 22
+    // Effective def = 5 + 22 = 27
+    // Monster atk=30 => dmg = floor(30*30/(30+27)) = floor(900/57) = 15
+    expect(hpLost).toBeLessThanOrEqual(15);
+  });
+
+  it('active skill fires and damage multiplier applies with log message', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 10, exp: 0, maxExp: 10000 },
+      learnedTechniques: [{ techniqueId: 'vital_strike', level: 1 }],
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-skill',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-skill');
+    // vital_strike: passive +5 atk => effectiveAtk=15, baseDmg=fl(225/20)=11
+    // skill fires: dmg=fl(11*1.5)=16
+    expect(monster).toBeDefined();
+    if (monster) {
+      expect(monster.hp).toBe(484); // 500 - 16
+    }
+    const skillLog = state.logs.find(l => l.message.includes('【猛击】'));
+    expect(skillLog).toBeDefined();
+  });
+
+  it('cooldown prevents re-firing skill on consecutive ticks', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 10, exp: 0, maxExp: 10000 },
+      learnedTechniques: [{ techniqueId: 'vital_strike', level: 1 }],
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [
+        { id: 'monster-cd-1', name: '赤焰蛇', realm: '练气', hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30, position: { x: 400, y: 601 }, isAlive: true },
+        { id: 'monster-cd-2', name: '赤焰蛇', realm: '练气', hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30, position: { x: 401, y: 601 }, isAlive: true },
+      ],
+    });
+
+    // Tick 1: skill fires (cooldown=0), effectiveAtk=15, baseDmg=11, *1.5 = 16
+    store.updateNPCs();
+    let state = useGameStore.getState();
+    const monster1 = state.wildMonsters.find(m => m.id === 'monster-cd-1');
+    expect(monster1).toBeDefined();
+    if (monster1) {
+      expect(monster1.hp).toBe(484); // 500 - 16 (with skill)
+    }
+
+    // Tick 2: skill on cooldown, normal attack (passive +5 still applies)
+    state.wildMonsters.find(m => m.id === 'monster-cd-2')!.position = { x: 400, y: 601 };
+    state.wildMonsters.find(m => m.id === 'monster-cd-1')!.position = { x: 999, y: 999 };
+    useGameStore.setState({ wildMonsters: [...state.wildMonsters] });
+    store.updateNPCs();
+    state = useGameStore.getState();
+    const monster2 = state.wildMonsters.find(m => m.id === 'monster-cd-2');
+    // effectiveAtk=15, def=5, baseDmg=11 (passive still applies, but no active skill)
+    expect(monster2).toBeDefined();
+    if (monster2) {
+      expect(monster2.hp).toBe(489); // 500 - 11 (normal, passive still active)
+    }
+  });
+
+  it('skips skill when MP is insufficient', () => {
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 0, maxMp: 100, attack: 10, defense: 10, exp: 0, maxExp: 10000 },
+      learnedTechniques: [{ techniqueId: 'vital_strike', level: 1 }],
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-mp-gate',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-mp-gate');
+    // No skill (MP=0 < cost=5), but passive +5 atk still applies
+    // effectiveAtk=15, def=5 => dmg=11
+    expect(monster).toBeDefined();
+    if (monster) {
+      expect(monster.hp).toBe(489); // 500 - 11 (passive still works)
+    }
+    const skillLog = state.logs.filter(l => l.message.includes('【猛击】'));
+    expect(skillLog).toHaveLength(0);
+  });
+
+  it('selects highest damageMultiplier skill among multiple learned', () => {
+    // flame_slash (2.0x) should be chosen over vital_strike (1.5x)
+    initPlayer({
+      realm: '练气',
+      stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 10, exp: 0, maxExp: 10000 },
+      learnedTechniques: [
+        { techniqueId: 'vital_strike', level: 1 },
+        { techniqueId: 'flame_slash', level: 1 },
+      ],
+      skillCooldowns: {},
+    });
+    const store = useGameStore.getState();
+
+    useGameStore.setState({
+      wildMonsters: [{
+        id: 'monster-best-skill',
+        name: '赤焰蛇', realm: '练气',
+        hp: 500, maxHp: 500, attack: 0, defense: 5, expReward: 30,
+        position: { x: 400, y: 601 }, isAlive: true,
+      }],
+    });
+
+    store.updateNPCs();
+    const state = useGameStore.getState();
+    const monster = state.wildMonsters.find(m => m.id === 'monster-best-skill');
+    // flame_slash (2.0x > 1.5x) chosen. effectiveAtk=10+5+15=30, def=5 => baseDmg=25, *2.0=50
+    expect(monster).toBeDefined();
+    if (monster) {
+      expect(monster.hp).toBe(450); // 500 - 50
+    }
+    const skillLog = state.logs.find(l => l.message.includes('【炎斩】'));
+    expect(skillLog).toBeDefined();
   });
 });

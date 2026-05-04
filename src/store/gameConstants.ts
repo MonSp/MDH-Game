@@ -288,6 +288,7 @@ export interface Player {
   // Phase 3: Techniques & Equipment
   learnedTechniques: LearnedTechnique[];
   equipmentSlots: Partial<Record<EquipmentSlot, Equipment>>;
+  skillCooldowns: Record<string, number>;  // techniqueId → remaining cooldown ticks
 }
 
 export interface SquadMember {
@@ -550,6 +551,31 @@ export const TECHNIQUES_DATA: Technique[] = [
 
 // === Phase 3: Equipment helper ===
 
+/** Compute affix value based on stat type, base item value, and rarity */
+function computeAffixValue(stat: string, baseValue: number, rarity: EquipmentRarity): number {
+  const rarityScale = rarity === EquipmentRarity.MORTAL ? 1 : rarity === EquipmentRarity.SPIRIT ? 1.5 : rarity === EquipmentRarity.IMMORTAL ? 2.5 : 4.0;
+  switch (stat) {
+    case 'attack': return Math.max(1, Math.floor(baseValue * 0.3 * rarityScale));
+    case 'defense': return Math.max(1, Math.floor(baseValue * 0.3 * rarityScale));
+    case 'hp': return Math.max(5, Math.floor(baseValue * 1.5 * rarityScale));
+    case 'mp': return Math.max(3, Math.floor(baseValue * 0.8 * rarityScale));
+    case 'critRate': return Math.floor(5 * rarityScale); // 5-20%
+    case 'critDamage': return Math.floor(20 * rarityScale); // 20-80%
+    case 'expRate': return Math.floor(5 * rarityScale); // 5-20%
+    case 'lifesteal': return Math.floor(3 * rarityScale); // 3-12%
+    default: return 1;
+  }
+}
+
+function getAffixLabel(stat: string, value: number): string {
+  const labels: Record<string, string> = {
+    attack: '攻击', defense: '防御', hp: '生命', mp: '灵力',
+    critRate: '暴击率', critDamage: '暴击伤害', expRate: '经验加成', lifesteal: '吸血',
+  };
+  const suffix = stat === 'critRate' || stat === 'expRate' || stat === 'lifesteal' ? '%' : '';
+  return `${labels[stat] || stat}+${value}${suffix}`;
+}
+
 export function generateEquipment(id: string, slot: EquipmentSlot, rarity: EquipmentRarity, realm: CultivationRealm): Equipment {
   const mult = slot === EquipmentSlot.WEAPON ? 1.5 : slot === EquipmentSlot.ARMOR ? 1.2 : 1.0;
   const rarityMult = rarity === EquipmentRarity.MORTAL ? 1 : rarity === EquipmentRarity.SPIRIT ? 1.5 : rarity === EquipmentRarity.IMMORTAL ? 2.5 : 4.0;
@@ -576,8 +602,25 @@ export function generateEquipment(id: string, slot: EquipmentSlot, rarity: Equip
   else if (slot === EquipmentSlot.ARTIFACT) { baseStats.attack = Math.floor(baseValue * 0.7); baseStats.defense = Math.floor(baseValue * 0.7); }
   else if (slot === EquipmentSlot.ACCESSORY) { baseStats.hp = baseValue * 5; baseStats.mp = baseValue * 3; }
 
+  const affixCount = rarity === EquipmentRarity.MORTAL ? 0
+    : rarity === EquipmentRarity.SPIRIT ? (Math.random() < 0.5 ? 1 : 0)
+    : rarity === EquipmentRarity.IMMORTAL ? (1 + Math.floor(Math.random() * 2))
+    : (2 + Math.floor(Math.random() * 2));
+
+  const allAffixStats: EquipmentAffix['stat'][] = ['attack', 'defense', 'hp', 'mp', 'critRate', 'critDamage', 'expRate', 'lifesteal'];
+  const chosen = new Set<string>();
+  const affixes: EquipmentAffix[] = [];
+  for (let i = 0; i < affixCount; i++) {
+    const pool = allAffixStats.filter(a => !chosen.has(a));
+    if (pool.length === 0) break;
+    const stat = pool[Math.floor(Math.random() * pool.length)];
+    chosen.add(stat);
+    const value = computeAffixValue(stat, baseValue, rarity);
+    affixes.push({ stat, value, label: getAffixLabel(stat, value) });
+  }
+
   return {
-    id, slot, rarity, baseStats, affixes: [],
+    id, slot, rarity, baseStats, affixes,
     name: `${rarityNames[rarity]}${slotNames[slot]}`,
     requiredRealm: realm,
     price: Math.floor(baseValue * 3),
@@ -646,6 +689,12 @@ export interface GameState {
   clanArmies: ClanArmy[];
   /** Phase 4: war statistics */
   warStats: WarStats;
+  /** Phase 1.4a: per-faction LLM decision cooldown timestamps */
+  _factionLLMCooldowns: Record<string, number>;
+  /** Phase 1.4a: faction IDs currently awaiting LLM response */
+  _factionLLMQueue: string[];
+  /** Phase 1.4a: cached LLM decisions for factions */
+  _factionLLMResults: Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>;
 
   joinServer: (serverId: string, playerName: string) => void;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;
@@ -709,6 +758,14 @@ export interface GameState {
   equipItem: (item: Equipment) => void;
   unequipItem: (slot: EquipmentSlot) => void;
   getTechniqueEffects: () => TechniqueEffect[];
+
+  // Phase 1.1d: Server NPC state sync
+  mergeServerNPCs: (serverNpcs: NPC[]) => void;
+
+  // Phase 1.4a: Faction AI with LLM
+  enqueueFactionAI: (factionId: string) => void;
+  resolveFactionAI: (factionId: string, decision: { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null) => void;
+  clearFactionAIResult: (factionId: string) => void;
 
   // Phase 4: Formation & Combat
   setFormation: (formation: FormationType) => void;

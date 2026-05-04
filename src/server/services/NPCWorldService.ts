@@ -2,9 +2,9 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NPCEntity, NPCRole, RealmLevel, NPCActivity, NPCLifeState, BirthType, EventBus, NPCEvent, NPCInteractionEvent } from '../../shared';
-import { PlanAction, VALID_ACTION_TYPES } from '../llm/PlanParser';
-import { LLMHttpClient, LLMRequestContext } from '../llm/LLMHttpClient';
+import { PlanAction } from '../llm/PlanParser';
 import { NPCMemoryStore } from '../llm/NPCMemory';
+import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
 
 export interface RecruitCandidate {
   id: string;
@@ -38,17 +38,6 @@ interface NPCState {
   planQueue: PlanAction[];
   planningNext: boolean;
 }
-
-const NPC_SYSTEM_PROMPT = `你是一个修仙世界的NPC角色。输出JSON格式的行动计划，严格遵守以下schema，不要输出任何其他内容：
-
-{"npcId":"角色ID","goal":"半日内目标","actions":[{"targetId":"self或目标ID","actionType":"cultivate|request|scheme|patrol|train|rest|socialize","duration":30,"priority":5,"reason":"原因"}],"emotionalState":"情绪"}
-
-规则：
-- actionType必须是: cultivate,request,scheme,patrol,train,rest,socialize
-- priority: 1-10的数字
-- duration: 5-120的数字(秒)
-- actions数组长度1-5
-- 只输出JSON，不要markdown代码块，不要任何说明文字`;
 
 function mapRole(r: string): NPCRole {
   if (r === 'elder') return NPCRole.Elder;
@@ -105,7 +94,6 @@ export class NPCWorldService extends EventEmitter {
   private npcs: Map<string, NPCState> = new Map();
   private backgrounds: Map<string, string> = new Map();
   private memory: NPCMemoryStore;
-  private llmClient: LLMHttpClient;
   private tickInterval: NodeJS.Timeout | null = null;
   private ambientInterval: NodeJS.Timeout | null = null;
   private llmMode: boolean = true;
@@ -121,7 +109,6 @@ export class NPCWorldService extends EventEmitter {
   private constructor() {
     super();
     this.memory = new NPCMemoryStore();
-    this.llmClient = new LLMHttpClient();
     this.nextNPCId = 1;
   }
 
@@ -464,28 +451,6 @@ export class NPCWorldService extends EventEmitter {
   }
 
   private async planForNPC(id: string, state: NPCState): Promise<void> {
-    const memoryCtx = this.memory.buildMemoryContext(id, (otherId) => {
-      return this.npcs.get(otherId)?.npc.name || otherId;
-    });
-
-    const context: LLMRequestContext = {
-      npcId: id,
-      npcName: state.npc.name,
-      systemPrompt: NPC_SYSTEM_PROMPT,
-      userPrompt: [
-        '== 角色信息 ==',
-        `名字：${state.npc.name}`,
-        `身份：${state.npc.role}`,
-        `境界：${state.npc.realm}`,
-        `性格：野心${state.npc.personality.ambition} 谨慎${state.npc.personality.caution} 忠诚${state.npc.personality.loyalty} 贪婪${state.npc.personality.greed}`,
-        `背景：${this.backgrounds.get(id) || '无'}`,
-        '',
-        memoryCtx || '暂无重点关系。',
-        '',
-        `请以${state.npc.name}的身份，规划接下来连续3-5个行动，每个行动包含duration（秒数）。`,
-      ].join('\n'),
-    };
-
     // Benchmark mode: skip LLM call and use deterministic fallback
     if (!this.llmMode) {
       state.planQueue = this.fallbackPlan();
@@ -494,64 +459,21 @@ export class NPCWorldService extends EventEmitter {
       return;
     }
 
-    const result = await this.llmClient.requestPlan(context);
+    // Delegate planning to LLMIntegrationManager (single unified pipeline)
+    state.planningNext = true;
+    const actions = await LLMIntegrationManager.getInstance().triggerAndGetActions(id, state.npc);
     state.planningNext = false;
 
-    if (!result.success || !result.plan || result.plan.actions.length === 0) {
-      if (state.planQueue.length === 0) {
-        this.llmFallback = true;
-        state.planQueue = this.fallbackPlan();
-        state.planningNext = false;
-        this.advanceQueue(state);
-        this.llmFallback = false;
-      }
-      return;
-    }
-
-    const plan = result.plan;
-    state.goal = plan.goal;
-    state.emotion = plan.emotionalState;
-
-    const sorted = plan.actions
-      .filter(a => VALID_ACTION_TYPES.has(a.actionType))
-      .sort((a, b) => b.priority - a.priority);
-
-    if (sorted.length === 0) {
-      if (state.planQueue.length === 0) {
-        this.llmFallback = true;
-        state.planQueue = this.fallbackPlan();
-        this.advanceQueue(state);
-        this.llmFallback = false;
-      }
-      return;
-    }
-
-    // Socialize effect on the first new action
-    if (sorted[0].actionType === 'socialize') {
-      const targets = [...this.npcs.keys()].filter(k => k !== id);
-      const t = targets[Math.floor(Math.random() * targets.length)];
-      if (t) {
-        const delta = Math.floor(Math.random() * 6 + 2);
-        this.modifyRelationship(id, t, delta, `${state.npc.name}主动交往`);
-        this.memory.interactions.add(id, {
-          timestamp: Date.now(),
-          otherNpcId: t,
-          type: 'socialize',
-          summary: `主动与${this.npcs.get(t)?.npc.name || t}交往，关系改善`,
-          impactScore: delta,
-        });
-        const target = this.npcs.get(t);
-        if (target) this.emitEvent(t, `与${state.npc.name}的关系改善了`, 'relationship');
-      }
-    }
-
-    if (state.planQueue.length === 0) {
-      // Fresh plan — full queue, start first action immediately
-      state.planQueue = sorted;
+    if (actions.length > 0) {
+      state.planQueue = actions;
+      state.goal = '执行规划';
       this.advanceQueue(state);
     } else {
-      // Pre-planning: replace future queue, current action keeps running
-      state.planQueue = sorted;
+      // LLM plan unavailable — use deterministic fallback
+      if (state.planQueue.length === 0) {
+        state.planQueue = this.fallbackPlan();
+        this.advanceQueue(state);
+      }
     }
   }
 

@@ -13,6 +13,7 @@ import {
 import { LLMPlanningService } from './LLMPlanningService';
 import { NPCBehaviorTreeManager, translateActionToActivity } from './NPCBehaviorTree';
 import { determineTier, shouldRequestPlanning, getFallbackBehavior, LLM_SERVICE_CONFIG } from '../../config/LLMConfig';
+import { PlanAction, NarrativeActionType } from '../../llm/PlanParser';
 
 export enum LLMEventType {
   PLAN_GENERATED = 'llm:plan_generated',
@@ -305,5 +306,75 @@ export class LLMIntegrationManager {
       return 'rest';
     }
     return translateActionToActivity(fallbackActions[0]);
+  }
+
+  /** Convert an LLMPlan's tasks to PlanAction[] for NPCWorldService consumption. */
+  convertPlanToActions(npcId: string): PlanAction[] {
+    const plan = LLMPlanningService.getInstance().getPlan(npcId);
+    if (!plan || plan.status !== PlanStatus.ACTIVE) {
+      return [];
+    }
+
+    const actions: PlanAction[] = [];
+    for (const task of plan.tasks) {
+      const actionType = this.mapActionType(task.action_type);
+      if (!actionType) continue;
+      actions.push({
+        targetId: (task.action_params?.targetId as string) || 'self',
+        actionType,
+        priority: task.priority,
+        duration: 30,
+        reason: task.description,
+      });
+    }
+    return actions;
+  }
+
+  /** Map ActionType enum to NarrativeActionType string. */
+  private mapActionType(actionType: ActionType): NarrativeActionType | null {
+    if (actionType === ActionType.IDLE) return null;
+    const map: Record<string, NarrativeActionType> = {
+      [ActionType.REST]: 'rest',
+      [ActionType.PATROL]: 'patrol',
+      [ActionType.CULTIVATE]: 'cultivate',
+      [ActionType.TRADE]: 'socialize',
+      [ActionType.EXPLORE]: 'patrol',
+      [ActionType.LOGISTICS]: 'request',
+      [ActionType.RESOURCE_ALLOCATION]: 'request',
+      [ActionType.RESOURCE_PURCHASE]: 'socialize',
+      [ActionType.RESOURCE_RAID]: 'patrol',
+      [ActionType.CAPTURE_RESOURCE_POINT]: 'patrol',
+      [ActionType.DOMAIN_WAR]: 'patrol',
+      [ActionType.MILITARY_ORDER]: 'patrol',
+      [ActionType.DIPLOMACY]: 'socialize',
+      [ActionType.INTELLIGENCE]: 'patrol',
+      [ActionType.ALLIANCE_FORMATION]: 'socialize',
+      [ActionType.CULTIVATE_BREAKTHROUGH]: 'cultivate',
+    };
+    return map[actionType] || null;
+  }
+
+  /** Trigger planning for an NPC and return converted PlanAction[], or [] on failure. */
+  async triggerAndGetActions(npcId: string, npcData: any): Promise<PlanAction[]> {
+    // Register if not already registered
+    this.scheduler.registerNPC(npcId, {
+      id: npcId,
+      name: npcData.name || npcId,
+      clan_id: npcData.clanId || '',
+      nation: npcData.nation || '',
+      role: npcData.role || '',
+      realm: npcData.realm || '',
+      power: npcData.power || 0,
+      personality: npcData.personality || { ambition: 50, caution: 50, loyalty: 50, greed: 50 },
+    });
+
+    // Check if plan already exists
+    let actions = this.convertPlanToActions(npcId);
+    if (actions.length > 0) return actions;
+
+    // Force trigger planning and check again
+    await this.scheduler.triggerPlanning(npcId);
+    actions = this.convertPlanToActions(npcId);
+    return actions;
   }
 }

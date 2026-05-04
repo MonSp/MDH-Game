@@ -64,6 +64,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   squadMembers: [],
   playerFactionId: null,
   ascensionQuests: [],
+  /** Phase 1.4a: per-faction LLM decision cooldown timestamps */
+  _factionLLMCooldowns: {} as Record<string, number>,
+  /** Phase 1.4a: faction IDs currently awaiting LLM response */
+  _factionLLMQueue: [] as string[],
+  /** Phase 1.4a: cached LLM decisions for factions */
+  _factionLLMResults: {} as Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>,
 
   joinServer: (serverId, playerName) => {
     const heavenLevel: HeavenLevel = 9;
@@ -102,6 +108,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       activeDebuffs: [],
       learnedTechniques: [],
       equipmentSlots: {},
+      skillCooldowns: {},
     };
 
     set({
@@ -130,6 +137,21 @@ export const useGameStore = create<GameState>((set, get) => ({
   addWorldEvent: (event) => set(state => ({
     worldEvents: [...state.worldEvents, { ...event, id: `we-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }].slice(-100)
   })),
+
+  enqueueFactionAI: (factionId) => set(state => ({
+    _factionLLMQueue: state._factionLLMQueue.includes(factionId) ? state._factionLLMQueue : [...state._factionLLMQueue, factionId],
+  })),
+
+  resolveFactionAI: (factionId, decision) => set(state => ({
+    _factionLLMQueue: state._factionLLMQueue.filter(id => id !== factionId),
+    _factionLLMResults: { ...state._factionLLMResults, [factionId]: decision },
+    _factionLLMCooldowns: { ...state._factionLLMCooldowns, [factionId]: Date.now() + 150000 },
+  })),
+
+  clearFactionAIResult: (factionId) => set(state => {
+    const { [factionId]: _, ...rest } = state._factionLLMResults;
+    return { _factionLLMResults: rest };
+  }),
 
   movePlayer: (dx, dy) => set(state => {
     if (!state.player) return state;
@@ -1379,6 +1401,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           isAscending: false,
           learnedTechniques: [],
           equipmentSlots: {},
+          skillCooldowns: {},
         },
         clans: generateClans(9),
         resourcePoints: generateResourcePoints(50, 50, 9),
@@ -1475,6 +1498,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Process NPCs: behavior + NPC vs Monster combat
     let npcs = state.nearbyNPCs.map(npc => {
+      // Phase 1.1d: Skip server-managed NPCs (ID format npc_\d+)
+      if (/^npc_\d+$/.test(npc.id)) return npc;
+
       // Phase 3: NPC retreat handling
       if (npc.retreatTicksRemaining && npc.retreatTicksRemaining > 0) {
         const next = npc.retreatTicksRemaining - 1;
@@ -1710,51 +1736,128 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // Player vs Monster
-    let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory } } : null;
-    for (const monster of monsters) {
-      if (!monster.isAlive || foughtThisTick.has(monster.id) || playerMonsterHit) continue;
-      if (!updatedPlayer) continue;
+    let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory }, skillCooldowns: { ...(state.player.skillCooldowns || {}) } } : null;
+    if (updatedPlayer) {
+      // --- Phase 3: 有效攻击/防御（功法 + 装备）---
+      const techniqueEffects = get().getTechniqueEffects();
+      let effectiveAttack = updatedPlayer.stats.attack;
+      let effectiveDefense = updatedPlayer.stats.defense || 0;
 
-      const dx = Math.abs(monster.position.x - updatedPlayer.position.x);
-      const dy = Math.abs(monster.position.y - updatedPlayer.position.y);
-      if (dx > 1 || dy > 1) continue;
-
-      foughtThisTick.add(monster.id);
-      playerMonsterHit = true;
-
-      const playerDmg = calculateDamage(updatedPlayer.stats.attack, monster.defense);
-      const monsterDmg = calculateDamage(monster.attack, updatedPlayer.stats.defense || 0);
-
-      monster.hp -= playerDmg;
-      updatedPlayer.stats.hp -= monsterDmg;
-
-      state.addLog({ type: 'combat', message: `你向 ${monster.name} 发起攻击，造成 ${playerDmg} 点伤害！` });
-      state.addLog({ type: 'combat', message: `${monster.name} 向你反击，造成 ${monsterDmg} 点伤害！` });
-
-      if (monster.hp <= 0) {
-        monster.isAlive = false;
-        // Grant exp + loot to player
-        const expGain = monster.expReward;
-        const stonesGain = MONSTER_TYPES_DATA[monster.name].spiritStoneDrop;
-        updatedPlayer.stats.exp = Math.min(updatedPlayer.stats.exp + expGain, updatedPlayer.stats.maxExp);
-        const newInventory = { ...updatedPlayer.inventory };
-        newInventory['灵石'] = (newInventory['灵石'] || 0) + stonesGain;
-        updatedPlayer.inventory = newInventory;
-        updatedPlayer.hiddenStats = {
-          ...updatedPlayer.hiddenStats,
-          killCount: updatedPlayer.hiddenStats.killCount + 1,
-        };
-        state.addLog({ type: 'combat', message: `你击败了 ${monster.name}！获得 ${expGain} 点修为和 ${stonesGain} 灵石。` });
-        // 击杀怪物获得声望
-        get().addReputation(Math.max(2, Math.floor(monster.expReward / 6)), 'monster_kill');
+      // 叠加被动功法加成
+      for (const eff of techniqueEffects) {
+        if (eff.stat === 'attack') effectiveAttack += eff.value;
+        if (eff.stat === 'defense') effectiveDefense += eff.value;
       }
 
-      // Player death: flee to capital with HP=1
-      if (updatedPlayer.stats.hp <= 0) {
-        const capital = COUNTRIES_DATA[updatedPlayer.country]?.capital || { x: 50, y: 50 };
-        updatedPlayer.stats.hp = 1;
-        updatedPlayer.position = { ...capital };
-        state.addLog({ type: 'combat', message: `你不敌 ${monster.name}，重伤逃遁至${updatedPlayer.country}国都城！` });
+      // 叠加装备 baseStats + affixes
+      const equipSlots = updatedPlayer.equipmentSlots || {};
+      for (const eq of Object.values(equipSlots)) {
+        if (!eq) continue;
+        if (eq.baseStats.attack) effectiveAttack += eq.baseStats.attack;
+        if (eq.baseStats.defense) effectiveDefense += eq.baseStats.defense;
+        for (const affix of eq.affixes || []) {
+          if (affix.stat === 'attack') effectiveAttack += affix.value;
+          if (affix.stat === 'defense') effectiveDefense += affix.value;
+        }
+      }
+
+      // --- P0c: 自动释放最优主动技能 ---
+      // 每 tick 递减冷却
+      const newCooldowns = { ...(updatedPlayer.skillCooldowns || {}) };
+      for (const [techId, remaining] of Object.entries(newCooldowns)) {
+        if (remaining <= 1) delete newCooldowns[techId];
+        else newCooldowns[techId] = remaining - 1;
+      }
+      updatedPlayer.skillCooldowns = newCooldowns;
+
+      // 找最佳可用技能（伤害倍率最高、冷却=0、MP够）
+      let skillMultiplier = 1.0;
+      let usedSkillName: string | null = null;
+      const availableSkills: { lt: LearnedTechnique; tech: any }[] = (updatedPlayer.learnedTechniques || [])
+        .map(lt => ({ lt, tech: TECHNIQUES_DATA.find(t => t.id === lt.techniqueId) }))
+        .filter((x): x is { lt: LearnedTechnique; tech: any } => !!x.tech && x.tech.type === 'active' && !!x.tech.skill)
+        .filter(({ lt }) => (newCooldowns[lt.techniqueId] || 0) <= 0)
+        .filter(({ tech }) => (tech.skill.cost.mp || 0) <= updatedPlayer.stats.mp);
+
+      if (availableSkills.length > 0) {
+        const best = (availableSkills as any[]).reduce((a: any, b: any) =>
+          a.tech.skill.damageMultiplier > b.tech.skill.damageMultiplier ? a : b);
+        skillMultiplier = best.tech.skill.damageMultiplier;
+        usedSkillName = best.tech.skill.name;
+        updatedPlayer.stats.mp = Math.max(0, updatedPlayer.stats.mp - (best.tech.skill.cost.mp || 0));
+        newCooldowns[best.lt.techniqueId] = best.tech.skill.cooldown;
+        updatedPlayer.skillCooldowns = newCooldowns;
+      }
+
+      for (const monster of monsters) {
+        if (!monster.isAlive || foughtThisTick.has(monster.id) || playerMonsterHit) continue;
+
+        const dx = Math.abs(monster.position.x - updatedPlayer.position.x);
+        const dy = Math.abs(monster.position.y - updatedPlayer.position.y);
+        if (dx > 1 || dy > 1) continue;
+
+        foughtThisTick.add(monster.id);
+        playerMonsterHit = true;
+
+        const basePlayerDmg = calculateDamage(effectiveAttack, monster.defense);
+        const playerDmg = usedSkillName ? Math.floor(basePlayerDmg * skillMultiplier) : basePlayerDmg;
+        const monsterDmg = calculateDamage(monster.attack, effectiveDefense);
+
+        // --- P1b: 装备词条 — 暴击 + 吸血 ---
+        let critBonus = 1.0;
+        let lifestealPct = 0;
+        for (const eq of Object.values(equipSlots)) {
+          if (!eq) continue;
+          for (const affix of eq.affixes || []) {
+            if (affix.stat === 'critRate' && Math.random() * 100 < affix.value) critBonus = 1.5;
+            if (affix.stat === 'critDamage' && critBonus > 1.0) critBonus = 1.0 + affix.value / 100;
+            if (affix.stat === 'lifesteal') lifestealPct += affix.value / 100;
+          }
+        }
+        const finalPlayerDmg = Math.floor(playerDmg * critBonus);
+        const healFromLifesteal = Math.floor(finalPlayerDmg * lifestealPct);
+
+        monster.hp -= finalPlayerDmg;
+        updatedPlayer.stats.hp = Math.min(updatedPlayer.stats.maxHp, updatedPlayer.stats.hp - monsterDmg + healFromLifesteal);
+
+        const critTag = critBonus > 1.0 ? '【暴击】' : '';
+        if (usedSkillName) {
+          state.addLog({ type: 'combat', message: `${critTag}你施展【${usedSkillName}】攻击 ${monster.name}，造成 ${finalPlayerDmg} 点伤害！` });
+        } else {
+          state.addLog({ type: 'combat', message: `${critTag}你向 ${monster.name} 发起攻击，造成 ${finalPlayerDmg} 点伤害！` });
+        }
+        state.addLog({ type: 'combat', message: `${monster.name} 向你反击，造成 ${monsterDmg} 点伤害！` });
+
+        if (monster.hp <= 0) {
+          monster.isAlive = false;
+          // --- P1b: 装备 expRate 词条加成 ---
+          let expRateBonus = 0;
+          for (const eq of Object.values(equipSlots)) {
+            if (!eq) continue;
+            for (const affix of eq.affixes || []) {
+              if (affix.stat === 'expRate') expRateBonus += affix.value;
+            }
+          }
+          const expGain = Math.floor(monster.expReward * (1 + expRateBonus / 100));
+          const stonesGain = MONSTER_TYPES_DATA[monster.name].spiritStoneDrop;
+          updatedPlayer.stats.exp = Math.min(updatedPlayer.stats.exp + expGain, updatedPlayer.stats.maxExp);
+          const newInv = { ...updatedPlayer.inventory };
+          newInv['灵石'] = (newInv['灵石'] || 0) + stonesGain;
+          updatedPlayer.inventory = newInv;
+          updatedPlayer.hiddenStats = {
+            ...updatedPlayer.hiddenStats,
+            killCount: updatedPlayer.hiddenStats.killCount + 1,
+          };
+          state.addLog({ type: 'combat', message: `你击败了 ${monster.name}！获得 ${expGain} 点修为和 ${stonesGain} 灵石。` });
+          get().addReputation(Math.max(2, Math.floor(monster.expReward / 6)), 'monster_kill');
+        }
+
+        if (updatedPlayer.stats.hp <= 0) {
+          const capital = COUNTRIES_DATA[updatedPlayer.country]?.capital || { x: 50, y: 50 };
+          updatedPlayer.stats.hp = 1;
+          updatedPlayer.position = { ...capital };
+          state.addLog({ type: 'combat', message: `你不敌 ${monster.name}，重伤逃遁至${updatedPlayer.country}国都城！` });
+        }
       }
     }
 
@@ -2003,7 +2106,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       );
 
       for (const clan of aiClans) {
-        // --- 1.4a: AI diplomatic decisions ---
+        // --- 1.4a: AI diplomatic decisions (LLM-driven with random fallback) ---
+        // Check for cached LLM decision for this faction
+        const llmDecision = get()._factionLLMResults[clan.id];
+        if (llmDecision !== undefined) {
+          get().clearFactionAIResult(clan.id);
+        }
+
+        // LLM 'none' decision: skip all random checks for this clan
+        if (llmDecision && llmDecision.action === 'none') continue;
+
         for (const other of updatedClans) {
           if (other.id === clan.id) continue;
           if (other.isAscendingFamily) continue;
@@ -2011,37 +2123,107 @@ export const useGameStore = create<GameState>((set, get) => ({
           const currentStatus = getDiplomaticStatusFromClans(updatedClans, clan.id, other.id);
           const powerRatio = (clan.reputation + 10) / (other.reputation + 10); // avoid div by 0
 
-          // Alliance: similar power, neutral
-          if (currentStatus === '中立' && powerRatio > 0.5 && powerRatio < 2.0 && Math.random() < 0.02) {
-            const alliance: ClanDiplomacy = {
-              status: '同盟',
-              conflictLevel: '和平',
-              declaredBy: clan.id,
-              allianceDate: Date.now(),
-            };
-            updatedClans = updatedClans.map(c => {
-              if (c.id === clan.id) {
-                return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: alliance } };
-              }
-              if (c.id === other.id) {
-                const reverse: ClanDiplomacy = {
-                  status: '同盟', conflictLevel: '和平', declaredBy: other.id, allianceDate: Date.now(),
-                };
-                return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
-              }
-              return c;
-            });
-            const selfClan = updatedClans.find(c => c.id === clan.id);
-            state.addWorldEvent({
-              type: 'alliance',
-              npcNameA: selfClan?.name || clan.id,
-              npcNameB: other.name,
-              description: `【${selfClan?.name || clan.id}】与【${other.name}】缔结同盟！`,
-              timestamp: Date.now(),
-            });
+          // LLM-driven action for this specific pair
+          if (llmDecision && llmDecision.targetClanId === other.id) {
+            if (llmDecision.action === 'alliance' && currentStatus === '中立') {
+              const alliance: ClanDiplomacy = {
+                status: '同盟', conflictLevel: '和平', declaredBy: clan.id, allianceDate: Date.now(),
+              };
+              updatedClans = updatedClans.map(c => {
+                if (c.id === clan.id) return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: alliance } };
+                if (c.id === other.id) {
+                  const reverse: ClanDiplomacy = {
+                    status: '同盟', conflictLevel: '和平', declaredBy: other.id, allianceDate: Date.now(),
+                  };
+                  return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+                }
+                return c;
+              });
+              const selfClan = updatedClans.find(c => c.id === clan.id);
+              state.addWorldEvent({
+                type: 'alliance', npcNameA: selfClan?.name || clan.id, npcNameB: other.name,
+                description: `【${selfClan?.name || clan.id}】与【${other.name}】缔结同盟！`, timestamp: Date.now(),
+              });
+              continue;
+            }
+            if (llmDecision.action === 'war' && currentStatus === '中立') {
+              const war: ClanDiplomacy = {
+                status: '战争', conflictLevel: '局部冲突', declaredBy: clan.id,
+              };
+              updatedClans = updatedClans.map(c => {
+                if (c.id === clan.id) return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: war } };
+                if (c.id === other.id) {
+                  const reverse: ClanDiplomacy = {
+                    status: '战争', conflictLevel: '局部冲突', declaredBy: other.id,
+                  };
+                  return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+                }
+                return c;
+              });
+              const selfClan = updatedClans.find(c => c.id === clan.id);
+              state.addWorldEvent({
+                type: 'conflict', npcNameA: selfClan?.name || clan.id, npcNameB: other.name,
+                description: `【${selfClan?.name || clan.id}】向【${other.name}】宣战！`, timestamp: Date.now(),
+              });
+              continue;
+            }
+            if (llmDecision.action === 'truce' && currentStatus === '战争') {
+              const truce: ClanDiplomacy = {
+                status: '停战', conflictLevel: '和平', declaredBy: clan.id, truceUntil: Date.now() + 120000,
+              };
+              updatedClans = updatedClans.map(c => {
+                if (c.id === clan.id) return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: truce } };
+                if (c.id === other.id) {
+                  const reverse: ClanDiplomacy = {
+                    status: '停战', conflictLevel: '和平', declaredBy: other.id, truceUntil: Date.now() + 120000,
+                  };
+                  return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+                }
+                return c;
+              });
+              const selfClan = updatedClans.find(c => c.id === clan.id);
+              state.addWorldEvent({
+                type: 'system', npcNameA: selfClan?.name || clan.id, npcNameB: other.name,
+                description: `【${selfClan?.name || clan.id}】与【${other.name}】达成停战。`, timestamp: Date.now(),
+              });
+              continue;
+            }
           }
 
-          // War: significantly stronger, neutral
+          // Random fallback (only when no LLM decision for this clan)
+          if (!llmDecision) {
+            // Alliance: similar power, neutral
+            if (currentStatus === '中立' && powerRatio > 0.5 && powerRatio < 2.0 && Math.random() < 0.02) {
+              const alliance: ClanDiplomacy = {
+                status: '同盟',
+                conflictLevel: '和平',
+                declaredBy: clan.id,
+                allianceDate: Date.now(),
+              };
+              updatedClans = updatedClans.map(c => {
+                if (c.id === clan.id) {
+                  return { ...c, diplomacy: { ...(c.diplomacy || {}), [other.id]: alliance } };
+                }
+                if (c.id === other.id) {
+                  const reverse: ClanDiplomacy = {
+                    status: '同盟', conflictLevel: '和平', declaredBy: other.id, allianceDate: Date.now(),
+                  };
+                  return { ...c, diplomacy: { ...(c.diplomacy || {}), [clan.id]: reverse } };
+                }
+                return c;
+              });
+              const selfClan = updatedClans.find(c => c.id === clan.id);
+              state.addWorldEvent({
+                type: 'alliance',
+                npcNameA: selfClan?.name || clan.id,
+                npcNameB: other.name,
+                description: `【${selfClan?.name || clan.id}】与【${other.name}】缔结同盟！`,
+                timestamp: Date.now(),
+              });
+            }
+          }
+
+          // Random fallback War
           if (currentStatus === '中立' && powerRatio > 1.8 && Math.random() < 0.015) {
             const war: ClanDiplomacy = {
               status: '战争',
@@ -2400,7 +2582,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.player) return [];
     const effects: TechniqueEffect[] = [];
-    for (const lt of state.player.learnedTechniques) {
+    for (const lt of (state.player.learnedTechniques || [])) {
       const technique = TECHNIQUES_DATA.find(t => t.id === lt.techniqueId);
       if (!technique) continue;
       for (const eff of technique.effects) {
@@ -2430,6 +2612,21 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     const labels: Record<SquadCombatStance, string> = { '进攻': '全体进攻', '集中火力': '集中火力', '撤退': '撤退', '防御阵型': '防御阵型' };
     get().addLog({ type: 'event', message: `【指令】队伍切换至「${labels[stance]}」模式。` });
+  },
+
+  // Phase 1.1d: Merge server NPC states into nearbyNPCs
+  mergeServerNPCs: (serverNpcs) => {
+    set(state => {
+      const serverIds = new Set(serverNpcs.map(n => n.id));
+      const squadNpcIds = new Set(state.squadMembers.map(m => m.id));
+      const kept = state.nearbyNPCs.filter(n => !serverIds.has(n.id));
+      return {
+        nearbyNPCs: [
+          ...kept,
+          ...serverNpcs.filter(n => !squadNpcIds.has(n.id))
+        ]
+      };
+    });
   },
 
   saveToSlot: (slot: number) => {

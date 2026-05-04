@@ -26,6 +26,7 @@ import {
 import { getSocket } from '../shared/socket';
 import { type SceneEntry, type ScenePanelState } from '../shared/types/scene';
 import { InitiativeService, InitiativeType, type InitiativeEvent } from '../store/gameService';
+import type { NPC } from '../store/gameConstants';
 
 // Scripted NPC dialogue responses for fallback when LLM is unavailable
 const NPC_DIALOGUE: Record<string, { name: string; role: string; text: string; metText?: string }> = {
@@ -220,6 +221,55 @@ export const Game = () => {
 
     return () => {
       socket.off('npc:interactions', handler);
+    };
+  }, []);
+
+  // Socket.IO listener for npc:state-sync (Phase 1.1d — server NPC state → client)
+  useEffect(() => {
+    const socket = getSocket();
+
+    const handler = (data: { npcStates: any[]; tick: number }) => {
+      const { mergeServerNPCs } = useGameStore.getState();
+      const mapped: NPC[] = data.npcStates.map(s => ({
+        id: s.id,
+        clanId: s.clanId || 'unknown',
+        name: s.name,
+        role: s.role,
+        realm: s.realm,
+        power: s.power,
+        hp: s.hp,
+        maxHp: s.maxHp,
+        mp: s.mp ?? Math.floor(s.power * 5),
+        maxMp: s.maxMp ?? Math.floor(s.power * 5),
+        personality: {
+          ambition: s.ambition ?? 50,
+          caution: s.caution ?? 50,
+          loyalty: s.loyalty ?? 50,
+          greed: s.greed ?? 50,
+        },
+        resources: { spiritStone: s.spiritStone ?? 0 },
+        activity: s.activity,
+        position: { x: s.x, y: s.y },
+      }));
+      mergeServerNPCs(mapped);
+    };
+    socket.on('npc:state-sync', handler);
+
+    return () => {
+      socket.off('npc:state-sync', handler);
+    };
+  }, []);
+
+  // Socket.IO listener for faction:ai-decision-result (Phase 1.4a)
+  useEffect(() => {
+    const socket = getSocket();
+    const handler = (data: { clanId: string; decision: { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null }) => {
+      useGameStore.getState().resolveFactionAI(data.clanId, data.decision);
+    };
+    socket.on('faction:ai-decision-result', handler);
+
+    return () => {
+      socket.off('faction:ai-decision-result', handler);
     };
   }, []);
 
@@ -512,6 +562,58 @@ export const Game = () => {
         }
       }
     }, 2000);
+    return () => clearInterval(interval);
+  }, [player]);
+
+  // Phase 1.4a: Poll faction AI decisions every 15s
+  useEffect(() => {
+    if (!player) return;
+    const interval = setInterval(() => {
+      const s = useGameStore.getState();
+      if (!s.player) return;
+
+      const aiClans = s.clans.filter(c =>
+        c.id !== s.playerFactionId && (c.treasury || 0) >= 100
+      );
+      const now = Date.now();
+      const socket = getSocket();
+
+      for (const clan of aiClans) {
+        // Skip if in cooldown
+        const cooldown = s._factionLLMCooldowns[clan.id];
+        if (cooldown && now < cooldown) continue;
+        // Skip if already awaiting LLM response
+        if (s._factionLLMQueue.includes(clan.id)) continue;
+
+        // Build other clans context
+        const otherClans = s.clans
+          .filter(o => o.id !== clan.id && !o.isAscendingFamily)
+          .map(o => ({
+            id: o.id,
+            name: o.name,
+            reputation: o.reputation,
+            treasury: o.treasury || 0,
+            type: o.type || 'unknown',
+            currentStatus: (() => {
+              const entry = clan.diplomacy?.[o.id];
+              return entry?.status || '中立';
+            })(),
+          }));
+
+        if (otherClans.length === 0) continue;
+
+        // Mark as queued and emit
+        s.enqueueFactionAI(clan.id);
+        socket.emit('faction:ai-decision', {
+          clanId: clan.id,
+          clanName: clan.name,
+          clanType: clan.type || 'unknown',
+          clanReputation: clan.reputation,
+          clanTreasury: clan.treasury || 0,
+          otherClans,
+        });
+      }
+    }, 15000);
     return () => clearInterval(interval);
   }, [player]);
 

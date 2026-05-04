@@ -422,6 +422,33 @@ export class LLMHttpClient {
     };
   }
 
+  async requestStructured<T>(
+    context: LLMRequestContext,
+    temperature: number,
+    maxTokens: number,
+    logLabel: string,
+    validate: (text: string) => { ok: boolean; result: T; error?: string },
+  ): Promise<{ success: boolean; result: T | null; error: string | null; latencyMs: number; fallback: boolean }> {
+    const result = await this.requestWithRetry<T>(
+      context,
+      temperature,
+      maxTokens,
+      undefined,
+      logLabel,
+      validate,
+      () => ({}),
+      () => ({}),
+    );
+
+    return {
+      success: result.success,
+      result: result.result,
+      error: result.error,
+      latencyMs: result.latencyMs,
+      fallback: result.fallback,
+    };
+  }
+
   clearFallback(npcId: string): void {
     this.fallbackUntil.delete(npcId);
   }

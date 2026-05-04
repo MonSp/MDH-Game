@@ -17,6 +17,8 @@ import { NPCWorldService } from './services/NPCWorldService';
 import { LLMIntegrationManager } from './game/services/LLMIntegrationManager';
 import { LLMHttpClient, DialogueRequestContext } from './llm/LLMHttpClient';
 import { buildDialogueSystemPrompt, buildDialogueUserPrompt } from './llm/DialoguePrompts';
+import { buildFactionSystemPrompt, buildFactionUserPrompt, FactionDecision } from './llm/FactionAIPrompts';
+import { parseFactionDecision } from './llm/FactionDecisionParser';
 
 import { PlayerState, Country, CultivationRealm, GAME_CONFIG, NPCEvent, EventBus } from '../shared';
 
@@ -425,6 +427,46 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('faction:ai-decision', async (data: {
+    clanId: string; clanName: string; clanType: string;
+    clanReputation: number; clanTreasury: number;
+    otherClans: Array<{ id: string; name: string; reputation: number; treasury: number; type: string; currentStatus: string }>;
+  }) => {
+    const playerSocket = playerSockets.get(socket.id);
+    if (!playerSocket) return;
+
+    // Rate limit: reuse dialogue rate limit (10s)
+    const lastRequest = dialogueRateMap.get(socket.id);
+    if (lastRequest && Date.now() - lastRequest < DIALOGUE_RATE_LIMIT_MS) {
+      socket.emit('faction:ai-decision-result', { clanId: data.clanId, decision: null });
+      return;
+    }
+    dialogueRateMap.set(socket.id, Date.now());
+
+    const systemPrompt = buildFactionSystemPrompt();
+    const userPrompt = buildFactionUserPrompt(
+      { name: data.clanName, type: data.clanType, reputation: data.clanReputation, treasury: data.clanTreasury },
+      data.otherClans,
+    );
+
+    const llmClient = LLMHttpClient.getInstance();
+    const result = await llmClient.requestStructured<FactionDecision>(
+      { npcId: `faction_${data.clanId}`, npcName: data.clanName, systemPrompt, userPrompt },
+      0.7, 400,
+      'FactionAI',
+      (text) => {
+        const decision = parseFactionDecision(text);
+        if (!decision) return { ok: false, result: null as unknown as FactionDecision, error: 'Failed to parse faction decision' };
+        return { ok: true, result: decision };
+      },
+    );
+
+    socket.emit('faction:ai-decision-result', {
+      clanId: data.clanId,
+      decision: result.success ? result.result : null,
+    });
+  });
+
   socket.on('disconnect', () => {
     const playerSocket = playerSockets.get(socket.id);
     if (playerSocket) {
@@ -625,6 +667,9 @@ function startGameLoop(): void {
         // Skip dead NPCs
         if (state.npc.hp <= 0) continue;
 
+        // Respect NPCWorldService planQueue — don't override active plans
+        if (state.planQueue.length > 0 && state.activityUntil > Date.now()) continue;
+
         // Get behavior from LLM planning or fallback
         const oldBehavior = state.activity;
         const behavior = llmIntegration.getBehaviorForNPC(npcId, state.npc);
@@ -663,12 +708,35 @@ function startGameLoop(): void {
     }
   }, 2000);
 
+  // NPCRole → Chinese display string
+  function mapRole(role: string): string {
+    const map: Record<string, string> = {
+      'family_head': '家主', 'elder': '长老',
+      'core_disciple': '核心子弟', 'inner_disciple': '内门子弟',
+      'branch_disciple': '支脉子弟', 'law_enforcement_elder': '执法堂长老',
+    };
+    return map[role] || '内门子弟';
+  }
+
+  // RealmLevel → Chinese display string
+  function mapRealm(realm: string): string {
+    const map: Record<string, string> = {
+      'mortal': '凡人', 'qi_refining': '练气', 'foundation_building': '筑基',
+      'golden_core': '金丹', 'yuan_infant': '元婴', 'transcension': '化神',
+    };
+    return map[realm] || '练气';
+  }
+
   // NPC state sync to connected clients every 2 seconds
   setInterval(() => {
     const npcWorld = NPCWorldService.getInstance();
     const npcStates: Array<{
       id: string; name: string; activity: string; emotion: string;
       x: number; y: number; hp: number; maxHp: number; power: number;
+      clanId: string; role: string; realm: string;
+      mp: number; maxMp: number;
+      ambition: number; caution: number; loyalty: number; greed: number;
+      spiritStone: number;
     }> = [];
     for (const [id, state] of npcWorld.getAllNPCs()) {
       npcStates.push({
@@ -681,6 +749,16 @@ function startGameLoop(): void {
         hp: state.npc.hp,
         maxHp: state.npc.maxHp,
         power: state.npc.power,
+        clanId: state.npc.clanId,
+        role: mapRole(state.npc.role),
+        realm: mapRealm(state.npc.realm),
+        mp: state.npc.mp,
+        maxMp: state.npc.maxMp,
+        ambition: state.npc.personality.ambition,
+        caution: state.npc.personality.caution,
+        loyalty: state.npc.personality.loyalty,
+        greed: state.npc.personality.greed,
+        spiritStone: state.npc.resources.spiritStones,
       });
     }
     io.emit('npc:state-sync', { npcStates, tick: Date.now() });
