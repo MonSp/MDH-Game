@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.13.1.0] - 2026-05-06
+
+### Added
+- Right info panel now collapses to icon-only bar — toggle button frees ~20% screen space
+- Screen shake + blood splatter particles trigger on monster hits for combat feedback
+- Element-colored skill burst particles (fire/ice/lightning) randomly appear during combat
+- Siege debris particles periodically spawn at warring faction bases
+
+### Changed
+- Right panel layout restructured: expanded content wrapped in collapsible ternary, icon shortcuts for all actions when collapsed
+
 ## [1.13.0.1] - 2026-05-06
 
 ### Added
