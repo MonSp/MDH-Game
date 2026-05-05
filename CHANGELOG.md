@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.12.0.0] - 2026-05-05
+
+### Added
+- Phase 4.3b — Captive system: capture defeated NPCs (50% base chance modified by realm difference), panel to manage captives with recruit/release/execute actions; loyalty system (recruit at 70+, +10 on failure), loot on execution, reputation effects
+- Phase 4.2b — Siege equipment building: consume 5000 treasury + 10 ticks to build, 1.5× damage multiplier during siege, auto-consumed after use; progress tracking and WarPanel status indicators
+- `CaptivePanel` UI: modal with captive list (realm/class icons), loyalty bar, action buttons (recruit/release/execute), confirmation dialogs for destructive actions
+- `MapGeneratorService` server singleton: wraps terrain.ts with in-memory LRU cache, exposes `getTerrainTile(x,y)` and `getMovementCost(x,y)` for collision/pathing queries
+- Scout vision extension: scout-role squad members get 2× vision radius in fog-of-war computation
+- Server broadcast of NPC deletion: `npc:removed` Socket.IO event fires when server NPCs are deallocated, client removes them from nearbyNPCs
+- P2 war stat counters: `battlesLost` and `alliesLost` now increment in all 3 combat paths (inter-NPC war, army-vs-army, player-led combat)
+
+### Changed
+- Server-client NPC pool synchronization: `mergeServerNPCs()` now tracks sync misses per NPC and auto-cleans stale NPCs after 3 consecutive missed syncs; cleaning restores them to server-only simulation
+- Combat helper extraction: `combatDmg()`, `applyNpcDefeat()`, `resolveArmyCombat()` extracted from inline code in `updateNPCs()` (~850 lines) for readability, preserving exact behavior
+- Vision radius computation in Map2D fog-of-war detects scout-role squad members and applies `SCOUT_VISION_MULTIPLIER` (2.0×)
+
+### Fixed
+- Module-level state leak in faction AI state tests: `_serverSyncMissCount` tracking between test files — `resetServerSyncTracking()` exposed and called in `beforeEach`
+
 ## [1.11.0.0] - 2026-05-05
 
 ### Added

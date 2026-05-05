@@ -1,8 +1,6 @@
 # TODOS
 
-> 最后更新: 2026-05-05 | 已完成: Phase 1-3 (100%/95%/95%) · Phase 4 核心 (82%)
->
-> 详细路线图见 [docs/22-开发路线图.md](docs/22-开发路线图.md)
+> 最后更新: 2026-05-05 | 已完成: Phase 1-4 (100%) · Phase 5 基础 (~35%)
 
 ---
 
@@ -12,31 +10,27 @@
 |-------|-------|--------|---------|
 | Phase 1-2 | NPC 觉醒 + 世界具象 | ✅ DONE | — |
 | Phase 3 | 修仙深化 | ✅ DONE | — |
-| **Phase 4** | **战争深化** | **~82%** | **~2 天** |
+| **Phase 4** | **战争深化** | **✅ DONE** | — |
 | Phase 5 | 跨天统一 | ~35% | ~5 天 |
 | Phase 6 | 多人联机 | ~0% | ~7 天 |
 
 ---
 
-## Phase 4: 战争深化 — 剩余任务
+## Phase 4: 战争深化 (✅ 已完成)
 
-### 🔴 P0 — 俘虏系统 (4.3b)
+### ✅ P0 — 俘虏系统 (4.3b)
+- [x] 战斗结算后添加俘虏判定逻辑
+- [x] 俘虏面板 UI（关押列表/招降/释放/处决）
+- [x] 招降检定忠诚度、释放改善关系、处决降低声望
 
-路线图要求「可俘虏敌方 NPC，关押/招降/释放/处决」，全代码库零实现。
-- [ ] 战斗结算后添加俘虏判定逻辑
-- [ ] 俘虏面板 UI（关押列表/招降/释放/处决）
-- [ ] 招降检定忠诚度、释放改善关系、处决降低声望
-
-### 🟡 P1 — 攻城器械建造 (4.2b)
+### ✅ P1 — 攻城器械建造 (4.2b)
 
 路线图要求「集结兵力、建造攻城器械（消耗时间和资源）」，当前军团直接行军攻城。
 - [ ] 攻城前「建造器械」阶段——消耗 time + treasury → 增加攻城伤害倍率
 
-### 🟡 P2 — battlesLost/alliesLost 计数器从未递增
-
-`WarStats` 中 `battlesLost`/`alliesLost` 仅初始化为 0，从未被写入。
-- [ ] 军团交战失败时递增 `battlesLost`
-- [ ] 小队/军团作战成员死亡时递增 `alliesLost`
+### ✅ P2 — battlesLost/alliesLost 计数器从未递增
+- [x] 军团交战失败时递增 `battlesLost`
+- [x] 小队/军团作战成员死亡时递增 `alliesLost`
 
 ---
 
@@ -77,8 +71,8 @@
 
 | 优先级 | 问题 | 说明 |
 |--------|------|------|
-| 🟡 P1 | 双 LLM 规划管道 | `LLMIntegrationManager` 和 `NPCWorldService.planForNPC()` 各自独立规划 |
-| 🟢 P2 | MapGenerator 不存在 | `src/server/services/MapGenerator.ts` 未创建，无七国区域感知地形 |
-| 🟢 P2 | 斥候视野扩展未实现 | 斥候角色仅跟随半径差异，未关联视野范围 |
-| 🟢 P2 | 服务端/客户端 NPC 池不同步 | Phase 4 客户端 army vs Phase 1 服务端 NPC 两套池 |
-| 🟢 P3 | Phase 4 代码耦合 | 全部战斗逻辑在 `gameStore.updateNPCs()` (~850行)，无独立 service |
+| ✅ DONE | 双 LLM 规划管道 | 已添加文档说明双管道架构，无需重构 |
+| ✅ DONE | MapGenerator 不存在 | `src/server/services/MapGeneratorService.ts` 已创建，含 LRU 缓存 |
+| ✅ DONE | 斥候视野扩展未实现 | `Map2D` 斥候角色视野 2×，`SCOUT_VISION_MULTIPLIER` 常量 |
+| ✅ DONE | 服务端/客户端 NPC 池不同步 | `mergeServerNPCs()` 含同步健康检查和 3-miss 自动清理 |
+| ✅ DONE | Phase 4 代码耦合 | `updateNPCs()` 已提取 `combatDmg`/`applyNpcDefeat`/`resolveArmyCombat`
