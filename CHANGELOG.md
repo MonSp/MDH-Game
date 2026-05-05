@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.11.0.0] - 2026-05-05
+
+### Added
+- Phase 3.3 — Alchemy crafting system: 6 recipes (回血丹/续命丹/聚气散/培元丹/筑基丹/凝婴丹) with success rate calculation, material consumption, and pill inventory management
+- `AlchemyPanel` UI: modal with recipe list, material check, craft button, success rate with alchemy hall buff display, result feedback, inventory summary
+- `ItemQuality`/`PillEffect`/`CraftRecipe` types in `src/shared/types/items.ts` — defines 4-tier item quality (凡品/下品/中品/上品) and pill effect system
+- Inventory management: `addItem`/`removeItem` store actions for procedural item manipulation
+- `COUNTRY_COLORS` constant for territory map overlay (7 warring states colors)
+
+### Changed
+- NPCWorldService clan ID system: replaced hardcoded `'sect_main'` with configurable round-robin clan ID pool; `generateDefaultClanIds()` produces 112 IDs matching client heaven-nation-type-index format
+- Server NPC clan pool initialized to heaven level 9 at startup (covers all 7 countries × 3 tiers)
+- LLM planning context now includes NPC memory: `triggerAndGetActions()` → `triggerPlanning()` → `createPlanningRequest()` pipeline passes formatted memory lines (up to 10) as `major_events`
+- LLMPlanningService cache key includes memory hash to avoid stale plans when NPC memory changes
+
 ## [1.10.0.0] - 2026-05-05
 
 ### Added
