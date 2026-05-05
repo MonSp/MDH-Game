@@ -391,6 +391,16 @@ export interface Clan {
   // Phase 4: siege warfare
   garrison?: number;      // defensive power (0 = no defense)
   fortification?: number; // wall HP (0 = undefended)
+  // Phase 4.2b: siege equipment build progress
+  siegeEquipment?: { building: boolean; ready: boolean; multiplier: number; progressTicks: number; requiredTicks: number };
+}
+
+/** A captured NPC held prisoner — can be recruited, released, or executed */
+export interface CaptiveNPC {
+  npc: NPC;
+  capturedAtTick: number;
+  loyalty: number;
+  originalClanId: string;
 }
 
 export interface NPC {
@@ -783,6 +793,16 @@ export interface GameState {
   // Phase 4: Formation & Combat
   setFormation: (formation: FormationType) => void;
   setSquadCombatStance: (stance: SquadCombatStance) => void;
+
+  // Phase 4.2b: Siege equipment
+  buildSiegeEquipment: (clanId: string) => void;
+
+  // Phase 4.3b: Captive system
+  captives: CaptiveNPC[];
+  captureNPC: (npc: NPC, realmDiff: number) => void;
+  releaseCaptive: (index: number) => void;
+  executeCaptive: (index: number) => void;
+  recruitCaptive: (index: number) => void;
 }
 
 export interface CountryInfo {

@@ -17,7 +17,7 @@ export const WarPanel = ({ onClose }: WarPanelProps) => {
   const {
     player, clans, playerFactionId, squadMembers, warStats, currentFormation,
     setSquadCombatStance, setFormation,
-    getDiplomaticRelations,
+    getDiplomaticRelations, buildSiegeEquipment,
   } = useGameStore();
 
   const [tab, setTab] = useState<'active' | 'history'>('active');
@@ -185,6 +185,46 @@ export const WarPanel = ({ onClose }: WarPanelProps) => {
                   </div>
                 </div>
               )}
+
+              {/* Siege equipment build section */}
+              {faction && (() => {
+                const eq = faction.siegeEquipment;
+                return (
+                  <div className="border-t border-zinc-700 pt-4">
+                    <h3 className="text-sm font-medium text-amber-400 mb-3 flex items-center gap-2">
+                      <Sword size={14} />
+                      攻城器械
+                    </h3>
+                    {!eq ? (
+                      <button
+                        onClick={() => buildSiegeEquipment(playerFactionId)}
+                        disabled={(faction.treasury || 0) < 5000}
+                        className="w-full flex items-center justify-center gap-2 py-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-300 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Swords size={12} />
+                        建造攻城器械（消耗 5000 灵石）
+                      </button>
+                    ) : eq.building ? (
+                      <div className="p-2 bg-zinc-800/50 rounded border border-zinc-700">
+                        <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                          <span>建造中</span>
+                          <span className="text-amber-400">{eq.progressTicks}/{eq.requiredTicks}</span>
+                        </div>
+                        <div className="w-full bg-zinc-950 rounded-full h-1.5">
+                          <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${(eq.progressTicks / eq.requiredTicks) * 100}%` }} />
+                        </div>
+                      </div>
+                    ) : eq.ready ? (
+                      <div className="p-2 bg-emerald-900/20 border border-emerald-700/40 rounded">
+                        <div className="flex items-center gap-2 text-xs text-emerald-400">
+                          <Swords size={12} />
+                          <span>攻城器械已就绪！攻城伤害 ×{eq.multiplier}</span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               {/* Current formation display */}
               <div className="border-t border-zinc-700 pt-4">

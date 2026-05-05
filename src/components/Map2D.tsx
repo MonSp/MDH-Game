@@ -4,7 +4,7 @@ import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS, getClanTerritoryCenter } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
-import { getTerrainTile, getVisionRadius } from '../utils/terrain';
+import { getTerrainTile, getVisionRadius, SCOUT_VISION_MULTIPLIER } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
 
@@ -846,7 +846,9 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     : 0;
   const visionBonus = watchtowerLevel > 0 ? BUILDING_VISION_BONUS[watchtowerLevel] || 0 : 0;
   // Realm-based vision radius for fog of war
-  const visionRadius = player ? getVisionRadius(player.realm, visionBonus) : 12;
+  const baseVision = player ? getVisionRadius(player.realm, visionBonus) : 12;
+  const hasScout = squadMembers.some(m => m.isAlive && m.role === '斥候型');
+  const visionRadius = hasScout ? Math.round(baseVision * SCOUT_VISION_MULTIPLIER) : baseVision;
 
   // Keyboard Movement + proximity trigger
   useEffect(() => {

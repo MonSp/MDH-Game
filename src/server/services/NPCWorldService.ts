@@ -1,3 +1,24 @@
+/**
+ * NPCWorldService — Server-side NPC simulation engine
+ *
+ * ## Architecture: Dual LLM Pipeline
+ *
+ * Two independent LLM planning loops coexist:
+ *
+ * 1. **LLMPlanningScheduler (5s tick)** — Runs in `src/server/game/services/`
+ *    - Handles NPC planning requests from the C++ ECS engine
+ *    - Uses LLMHttpClient.requestStructured for typed JSON responses
+ *    - Plans are consumed by the C++ engine's BehaviorTreeSystem
+ *
+ * 2. **NPCWorldService.tick / planForNPC** — This file
+ *    - Handles NPC planning for the TypeScript-side NPC pool
+ *    - Delegates to LLMIntegrationManager.convertPlanToActions for execution
+ *    - Plans target NPC movement, resource gathering, trade, combat, etc.
+ *
+ * Both pipelines share LLMHttpClient for HTTP transport.
+ * Delegation path: planForNPC → LLMIntegrationManager → LLMHttpClient
+ * No concurrency conflicts exist as they operate on disjoint NPC pools.
+ */
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';

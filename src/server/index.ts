@@ -14,6 +14,7 @@ import {
   ItemService
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
+import { MapGeneratorService } from './services/MapGeneratorService';
 import { LLMIntegrationManager } from './game/services/LLMIntegrationManager';
 import { LLMHttpClient, DialogueRequestContext } from './llm/LLMHttpClient';
 import { buildDialogueSystemPrompt, buildDialogueUserPrompt } from './llm/DialoguePrompts';
@@ -741,6 +742,7 @@ function startGameLoop(): void {
   }
 
   // NPC state sync to connected clients every 2 seconds
+  let prevNpcIds: Set<string> = new Set();
   setInterval(() => {
     const npcWorld = NPCWorldService.getInstance();
     const npcStates: Array<{
@@ -781,6 +783,17 @@ function startGameLoop(): void {
     if (interactions.length > 0) {
       io.emit('npc:interactions', { interactions, tick: Date.now() });
     }
+
+    // Deletion broadcast: detect NPCs removed since last sync
+    const currentIds = new Set(npcStates.map(n => n.id));
+    const removedIds: string[] = [];
+    for (const id of prevNpcIds) {
+      if (!currentIds.has(id)) removedIds.push(id);
+    }
+    if (removedIds.length > 0) {
+      io.emit('npc:removed', { ids: removedIds, tick: Date.now() });
+    }
+    prevNpcIds = currentIds;
   }, 2000);
 }
 

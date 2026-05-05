@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useGameStore } from '../src/store/gameStore';
+import { useGameStore, resetServerSyncTracking } from '../src/store/gameStore';
 import type { NPC } from '../src/store/gameConstants';
 
 beforeEach(() => {
+  resetServerSyncTracking();
   useGameStore.setState({
     player: null,
     playerFactionId: null,

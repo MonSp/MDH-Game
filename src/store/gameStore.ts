@@ -26,7 +26,14 @@ import {
 // Re-export all public API from gameConstants
 export * from './gameConstants';
 import { getRecipe, FORGE_RECIPE_META, attemptCraft } from './craftingRecipes';
+import type { CaptiveNPC } from './gameConstants';
 let lastMoraleWarningAt: number | undefined;
+/** Tracks consecutive server-sync misses per NPC ID for stale-NPC cleanup */
+const _serverSyncMissCount = new Map<string, number>();
+const MAX_SYNC_MISSES = 3;
+
+/** Reset server-sync miss tracking (exposed for testing) */
+export function resetServerSyncTracking() { _serverSyncMissCount.clear(); }
 
 export const useGameStore = create<GameState>((set, get) => ({
   servers: [
@@ -53,6 +60,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   clanArmies: [],
   /** Phase 4: war statistics */
   warStats: { battlesWon: 0, battlesLost: 0, npcsKilled: 0, alliesLost: 0, treasuryLooted: 0, citiesCaptured: 0 },
+  captives: [],
   market: {
     '洗髓丹': { name: '洗髓丹', basePrice: 500, currentPrice: 500, stock: 10 },
     '低级法器': { name: '低级法器', basePrice: 200, currentPrice: 200, stock: 50 },
@@ -327,6 +335,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
         
         const clan = get().clans.find(c => c.id === npc.clanId);
+        // 击败NPC后尝试俘虏
+        const playerIdx = REALM_LIST.indexOf(get().player!.realm);
+        const npcIdx = REALM_LIST.indexOf(npc.realm);
+        const realmDiff = npcIdx >= 0 && playerIdx >= 0 ? (playerIdx - npcIdx) : 0;
+        get().captureNPC(npc, realmDiff);
         // 击败NPC获得声望
         get().addReputation(Math.floor((npc.power / 1000) + 5), 'npc_combat_win');
         if (clan && clan.reputation < 0) {
@@ -1580,6 +1593,27 @@ export const useGameStore = create<GameState>((set, get) => ({
     let playerHit = false;
     let clanTreasuryUpdates: Record<string, number> = {};
     let clanMoraleUpdates: Record<string, number> = {};
+    // Inline combat helpers (extracted for readability)
+    const combatDmg = (power: number) => Math.max(1, Math.floor(power * 0.3));
+    const applyNpcDefeat = (npc: NPC, loserClanId: string, winnerClanId: string, winnerPower: number): NPC => {
+      const loot = Math.max(3, Math.floor((winnerPower || 50) * 0.1));
+      clanTreasuryUpdates[winnerClanId] = (clanTreasuryUpdates[winnerClanId] || 0) + loot;
+      clanTreasuryUpdates[loserClanId] = (clanTreasuryUpdates[loserClanId] || 0) - Math.max(1, Math.floor(loot * 0.5));
+      clanMoraleUpdates[loserClanId] = (clanMoraleUpdates[loserClanId] || 0) - 1;
+      if (loserClanId === state.playerFactionId) siegeWarStats.npcsKilled++;
+      return { ...npc, hp: 0, retreatTicksRemaining: 5 };
+    };
+    const resolveArmyCombat = (armyA: ClanArmy, armyB: ClanArmy, treasury: Record<string, number>): { casualties: number; winner: ClanArmy; loser: ClanArmy } => {
+      const aWins = armyA.totalPower > armyB.totalPower;
+      const winner = aWins ? armyA : armyB;
+      const loser = aWins ? armyB : armyA;
+      const casualties = Math.max(1, Math.floor(loser.size * 0.3));
+      loser.size -= casualties;
+      loser.totalPower = Math.max(0, loser.totalPower - casualties * 10);
+      treasury[winner.clanId] = (treasury[winner.clanId] || 0) + casualties * 2;
+      treasury[loser.clanId] = (treasury[loser.clanId] || 0) - casualties;
+      return { casualties, winner, loser };
+    };
     let playerMonsterHit = false; // player engaged with a monster this tick
 
     // Process NPCs: behavior + NPC vs Monster combat
@@ -1701,28 +1735,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         // Resolve combat
         const aPower = a.power || 50;
         const bPower = b.power || 50;
-        const aDmg = Math.max(1, Math.floor(aPower * 0.3));
-        const bDmg = Math.max(1, Math.floor(bPower * 0.3));
+        const aDmg = combatDmg(aPower);
+        const bDmg = combatDmg(bPower);
 
         npcsAfterWar[i] = { ...a, hp: a.hp - bDmg };
         npcsAfterWar[j] = { ...b, hp: b.hp - aDmg };
 
-        if (npcsAfterWar[i].hp <= 0) {
-          npcsAfterWar[i] = { ...npcsAfterWar[i], hp: 0, retreatTicksRemaining: 5 };
-          const loot = Math.max(3, Math.floor((bPower || 50) * 0.1));
-          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) + loot;
-          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) - Math.max(1, Math.floor(loot * 0.5));
-          clanMoraleUpdates[a.clanId] = (clanMoraleUpdates[a.clanId] || 0) - 1;
-          if (a.clanId === state.playerFactionId) siegeWarStats.npcsKilled++;
-        }
-        if (npcsAfterWar[j].hp <= 0) {
-          npcsAfterWar[j] = { ...npcsAfterWar[j], hp: 0, retreatTicksRemaining: 5 };
-          const loot = Math.max(3, Math.floor((aPower || 50) * 0.1));
-          clanTreasuryUpdates[a.clanId] = (clanTreasuryUpdates[a.clanId] || 0) + loot;
-          clanTreasuryUpdates[b.clanId] = (clanTreasuryUpdates[b.clanId] || 0) - Math.max(1, Math.floor(loot * 0.5));
-          clanMoraleUpdates[b.clanId] = (clanMoraleUpdates[b.clanId] || 0) - 1;
-          if (b.clanId === state.playerFactionId) siegeWarStats.npcsKilled++;
-        }
+        if (npcsAfterWar[i].hp <= 0) npcsAfterWar[i] = applyNpcDefeat(a, a.clanId, b.clanId, bPower);
+        if (npcsAfterWar[j].hp <= 0) npcsAfterWar[j] = applyNpcDefeat(b, b.clanId, a.clanId, aPower);
         break; // one fight per NPC per tick
       }
     }
@@ -1799,14 +1819,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (dist > 2) continue; // armies must be close
 
         // Resolve army combat: compare totalPower
-        const aWins = a.totalPower > b.totalPower;
-        const winner = aWins ? a : b;
-        const loser = aWins ? b : a;
-        const casualties = Math.max(1, Math.floor(loser.size * 0.3));
-        loser.size -= casualties;
-        loser.totalPower = Math.max(0, loser.totalPower - casualties * 10);
-        updatedClanTreasury[winner.clanId] = (updatedClanTreasury[winner.clanId] || 0) + casualties * 2;
-        updatedClanTreasury[loser.clanId] = (updatedClanTreasury[loser.clanId] || 0) - casualties;
+        const { casualties, winner, loser } = resolveArmyCombat(a, b, updatedClanTreasury);
         // Remove that many NPCs from the loser's clan
         let removed = 0;
         npcs = npcs.map(n => {
@@ -1943,6 +1956,7 @@ export const useGameStore = create<GameState>((set, get) => ({
           updatedPlayer.stats.hp = 1;
           updatedPlayer.position = { ...capital };
           state.addLog({ type: 'combat', message: `你不敌 ${monster.name}，重伤逃遁至${updatedPlayer.country}国都城！` });
+          siegeWarStats.battlesLost++;
         }
       }
     }
@@ -2030,6 +2044,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               }
             }
             member.equipment = [];
+            siegeWarStats.alliesLost++;
             state.addLog({ type: 'combat', message: `【战死】${member.name} 在战斗中力竭身亡！你的心腹就此陨落...` });
           }
           break; // one monster per member per tick
@@ -2436,13 +2451,24 @@ export const useGameStore = create<GameState>((set, get) => ({
         const warStatus = getDiplomaticStatusFromClans(updatedClans, attackerClanId, targetClan.id);
         if (warStatus !== '战争') return;
 
+        // Apply siege equipment buff
+        const attackerClan = updatedClans.find(c => c.id === attackerClanId);
+        let effectiveAttackPower = attackPower;
+        if (attackerClan?.siegeEquipment?.ready) {
+          effectiveAttackPower = Math.floor(attackPower * attackerClan.siegeEquipment.multiplier);
+          state.addLog({ type: 'combat', message: `【攻城器械】攻城器械发挥作用，攻击力提升至 ${effectiveAttackPower}！` });
+          updatedClans = updatedClans.map(c =>
+            c.id === attackerClanId ? { ...c, siegeEquipment: undefined } : c
+          );
+        }
+
         if ((targetClan.fortification ?? 0) > 0) {
-          const dmg = Math.max(1, Math.floor(attackPower * 0.05));
+          const dmg = Math.max(1, Math.floor(effectiveAttackPower * 0.05));
           updatedClans = updatedClans.map(c =>
             c.id === targetClan!.id ? { ...c, fortification: Math.max(0, (c.fortification ?? 0) - dmg) } : c
           );
         } else if ((targetClan.garrison ?? 0) > 0) {
-          const dmg = Math.max(1, Math.floor(attackPower * 0.08));
+          const dmg = Math.max(1, Math.floor(effectiveAttackPower * 0.08));
           const counterDmg = Math.max(1, Math.floor((targetClan.garrison ?? 0) * 0.03));
           updatedClans = updatedClans.map(c =>
             c.id === targetClan!.id ? { ...c, garrison: Math.max(0, (c.garrison ?? 0) - dmg) } : c
@@ -2483,6 +2509,9 @@ export const useGameStore = create<GameState>((set, get) => ({
             siegeWarStats.treasuryLooted += loot;
             siegeWarStats.citiesCaptured++;
           }
+          if (targetClan!.id === state.playerFactionId) {
+            siegeWarStats.battlesLost++;
+          }
           const attackerName = updatedClans.find(c => c.id === attackerClanId)?.name || attackerClanId;
           const defenderName = postSiegeClan?.name || '未知';
           state.addLog({ type: 'event', message: `【攻城】${attackerName}攻陷了${defenderName}的山门！掠夺灵石${loot}。` });
@@ -2509,6 +2538,18 @@ export const useGameStore = create<GameState>((set, get) => ({
           resolveSiege(army.clanId, army.position, Math.floor(army.totalPower * 0.5));
         }
       }
+
+      // Progress siege equipment building
+      updatedClans = updatedClans.map(c => {
+        if (c.siegeEquipment?.building && !c.siegeEquipment.ready) {
+          const nextTick = c.siegeEquipment.progressTicks + 1;
+          if (nextTick >= c.siegeEquipment.requiredTicks) {
+            return { ...c, siegeEquipment: { ...c.siegeEquipment, building: false, ready: true, progressTicks: nextTick } };
+          }
+          return { ...c, siegeEquipment: { ...c.siegeEquipment, progressTicks: nextTick } };
+        }
+        return c;
+      });
     }
 
     set({
@@ -2700,12 +2741,138 @@ export const useGameStore = create<GameState>((set, get) => ({
     get().addLog({ type: 'event', message: `【指令】队伍切换至「${labels[stance]}」模式。` });
   },
 
+  // Phase 4.2b: Siege equipment
+  buildSiegeEquipment: (clanId) => {
+    set(s => ({
+      clans: s.clans.map(c =>
+        c.id === clanId && !c.siegeEquipment?.building
+          ? { ...c, siegeEquipment: { building: true, ready: false, multiplier: 1.5, progressTicks: 0, requiredTicks: 10 }, treasury: c.treasury - 5000 }
+          : c
+      ),
+    }));
+    const clan = get().clans.find(c => c.id === clanId);
+    if (clan) get().addLog({ type: 'event', message: `【攻城器械】${(clanId === get().playerFactionId ? '你的' : '')}势力开始建造攻城器械，消耗 5000 灵石。` });
+  },
+
+  // Phase 4.3b: Captive system
+  captureNPC: (npc, realmDiff) => {
+    const state = get();
+    const baseChance = 0.5;
+    const chance = Math.min(0.9, Math.max(0.1, baseChance + realmDiff * 0.1));
+    if (Math.random() < chance) {
+      const captive: CaptiveNPC = {
+        npc: { ...npc },
+        capturedAtTick: state._factionTickCount,
+        loyalty: Math.max(10, Math.min(90, 50 + Math.floor(Math.random() * 30) - 15)),
+        originalClanId: npc.clanId,
+      };
+      set(s => ({ captives: [...s.captives, captive] }));
+      state.addLog({ type: 'combat', message: `【俘虏】你俘虏了 ${npc.name}！忠诚度 ${captive.loyalty}。` });
+    } else {
+      state.addLog({ type: 'combat', message: `${npc.name} 宁死不降，未能俘虏。` });
+    }
+  },
+
+  releaseCaptive: (index) => {
+    const state = get();
+    const captive = state.captives[index];
+    if (!captive) return;
+    set(s => ({ captives: s.captives.filter((_, i) => i !== index) }));
+    get().addReputation(10, 'captive_release');
+    state.addLog({ type: 'event', message: `【释放】你释放了 ${captive.npc.name}，声望+10。` });
+  },
+
+  executeCaptive: (index) => {
+    const state = get();
+    const captive = state.captives[index];
+    if (!captive) return;
+    // Chance to find loot on execution
+    const stonesFound = Math.floor(Math.random() * 200) + 50;
+    set(s => {
+      const inv = { ...s.player!.inventory };
+      inv['灵石'] = (inv['灵石'] || 0) + stonesFound;
+      return {
+        captives: s.captives.filter((_, i) => i !== index),
+        player: s.player ? { ...s.player, inventory: inv } : null,
+      };
+    });
+    get().addReputation(-30, 'captive_execute');
+    state.addLog({ type: 'combat', message: `【处决】你处决了 ${captive.npc.name}，获得 ${stonesFound} 灵石。天下修士无不胆寒...` });
+  },
+
+  recruitCaptive: (index) => {
+    const state = get();
+    const captive = state.captives[index];
+    if (!captive) return;
+    if (captive.loyalty >= 70) {
+      const newMember: SquadMember = {
+        id: captive.npc.id,
+        npcId: captive.npc.id,
+        name: captive.npc.name,
+        clanId: captive.originalClanId,
+        role: '战斗型',
+        realm: captive.npc.realm,
+        hp: captive.npc.maxHp,
+        maxHp: captive.npc.maxHp,
+        mp: captive.npc.mp,
+        maxMp: captive.npc.maxMp,
+        power: captive.npc.power,
+        level: 1,
+        exp: 0,
+        maxExp: 100,
+        kills: 0,
+        joinDate: Date.now(),
+        equipment: [],
+        personality: { ...captive.npc.personality },
+        position: { ...captive.npc.position },
+        isAlive: true,
+        activity: '待命',
+      };
+      set(s => ({
+        captives: s.captives.filter((_, i) => i !== index),
+        squadMembers: [...s.squadMembers, newMember],
+      }));
+      state.addLog({ type: 'event', message: `【招降】${captive.npc.name} 归顺于你，加入小队！` });
+    } else {
+      const newLoyalty = Math.min(100, captive.loyalty + 10);
+      set(s => ({
+        captives: s.captives.map((c, i) => i === index ? { ...c, loyalty: newLoyalty } : c),
+      }));
+      state.addLog({ type: 'event', message: `【招降】${captive.npc.name} 拒绝归顺（忠诚度 ${captive.loyalty}/70），忠誠+10。` });
+    }
+  },
+
   // Phase 1.1d: Merge server NPC states into nearbyNPCs
   mergeServerNPCs: (serverNpcs) => {
     set(state => {
       const serverIds = new Set(serverNpcs.map(n => n.id));
       const squadNpcIds = new Set(state.squadMembers.map(m => m.id));
-      const kept = state.nearbyNPCs.filter(n => !serverIds.has(n.id));
+
+      // Increment miss counter for local-only NPCs (not in latest server sync)
+      for (const n of state.nearbyNPCs) {
+        if (!serverIds.has(n.id) && !squadNpcIds.has(n.id)) {
+          const misses = (_serverSyncMissCount.get(n.id) ?? 0) + 1;
+          _serverSyncMissCount.set(n.id, misses);
+        }
+      }
+      // Reset miss counter for NPCs confirmed alive on server
+      for (const n of serverNpcs) {
+        _serverSyncMissCount.set(n.id, 0);
+      }
+
+      // Filter out stale local NPCs missing from server for too many syncs
+      const kept = state.nearbyNPCs.filter(n => {
+        if (serverIds.has(n.id)) return false; // replaced by server version
+        if (squadNpcIds.has(n.id)) return true;
+        return (_serverSyncMissCount.get(n.id) ?? 0) < MAX_SYNC_MISSES;
+      });
+
+      // Clean up miss tracking for removed NPCs
+      const keptIds = new Set(kept.map(n => n.id));
+      for (const id of _serverSyncMissCount.keys()) {
+        if (!keptIds.has(id)) _serverSyncMissCount.delete(id);
+      }
+
       return {
         nearbyNPCs: [
           ...kept,
@@ -2731,6 +2898,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       squadMembers: s.squadMembers,
       ascensionQuests: s.ascensionQuests,
       playerFactionId: s.playerFactionId,
+      captives: s.captives,
     }, s.player.name, s.player.realm, s.player.heavenLevel);
   },
 
@@ -2753,6 +2921,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         squadMembers: gameState.squadMembers ?? [],
         ascensionQuests: gameState.ascensionQuests ?? [],
         playerFactionId: gameState.playerFactionId ?? null,
+        captives: gameState.captives ?? [],
       });
       return true;
     } catch {

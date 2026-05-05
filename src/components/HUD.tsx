@@ -1,7 +1,7 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import { InitiativeService, InitiativeType } from '../store/gameService';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle, Swords, FlaskRound, Hammer } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle, Swords, FlaskRound, Hammer, UserX } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 import { SquadPanel } from './SquadPanel';
@@ -11,13 +11,14 @@ import { SkillBar } from './SkillBar';
 import { WarPanel } from './WarPanel';
 import { AlchemyPanel } from './AlchemyPanel';
 import { ForgePanel } from './ForgePanel';
+import { CaptivePanel } from './CaptivePanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
 }
 
 export const HUD = ({ onOpenChronicle }: HUDProps) => {
-  const { player, clans, squadMembers, playerFactionId, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot, getTechniqueEffects } = useGameStore();
+  const { player, clans, squadMembers, playerFactionId, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot, getTechniqueEffects, captives } = useGameStore();
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
   const [showCycle, setShowCycle] = useState(false);
@@ -29,6 +30,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [showSkillBar, setShowSkillBar] = useState(false);
   const [showAlchemy, setShowAlchemy] = useState(false);
   const [showForge, setShowForge] = useState(false);
+  const [showCaptives, setShowCaptives] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState('');
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
@@ -397,6 +399,19 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         </button>
 
         <button
+          onClick={() => setShowCaptives(true)}
+          className="flex items-center justify-center space-x-2 w-full py-2 bg-rose-900/40 hover:bg-rose-800/60 border border-rose-700/50 rounded transition-colors text-rose-300 font-medium"
+        >
+          <UserX size={16} />
+          <span>俘虏</span>
+          {captives.length > 0 && (
+            <span className="inline-flex items-center justify-center w-5 h-5 bg-rose-500/20 border border-rose-500/50 rounded-full text-xs text-rose-400">
+              {captives.length}
+            </span>
+          )}
+        </button>
+
+        <button
           className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
         >
           <Save size={14} />
@@ -496,6 +511,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {showSkillBar && <SkillBar onClose={() => setShowSkillBar(false)} />}
       {showAlchemy && <AlchemyPanel onClose={() => setShowAlchemy(false)} />}
       {showForge && <ForgePanel onClose={() => setShowForge(false)} />}
+      {showCaptives && <CaptivePanel onClose={() => setShowCaptives(false)} />}
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">

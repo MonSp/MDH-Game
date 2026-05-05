@@ -1,3 +1,19 @@
+/**
+ * LLMIntegrationManager — Orchestrates LLM-powered NPC behavior planning
+ *
+ * ## Dual Pipeline Context
+ *
+ * This service is the bridge between the two LLM planning pipelines:
+ * - Receives planning requests from NPCWorldService (TS-side NPCs)
+ * - Delegates execution to LLMPlanningService → LLMHttpClient
+ * - Tick interval aligned with NPCWorldService.tick cadence
+ *
+ * The other pipeline (LLMPlanningScheduler via C++ ECS engine) uses
+ * this service's methods indirectly through shared LLMHttpClient transport.
+ * No coordination is needed — the two pipelines operate on disjoint NPC state.
+ *
+ * @see NPCWorldService for the TS-side pipeline entry point
+ */
 import { EventEmitter } from 'events';
 import {
   LLMTier,

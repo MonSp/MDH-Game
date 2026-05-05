@@ -263,3 +263,71 @@ describe('generateEquipment for forge output', () => {
     expect(high.baseStats.attack!).toBeGreaterThan(low.baseStats.attack!);
   });
 });
+
+describe('siege equipment', () => {
+  it('buildSiegeEquipment starts building process and consumes treasury', () => {
+    useGameStore.setState({
+      clans: [{
+        id: 'test-clan', name: '测试势力', country: '赵', type: '1级',
+        reputation: 500, treasury: 50000, heavenLevel: 9,
+        isAscendingFamily: false,
+      }],
+      playerFactionId: 'test-clan',
+    });
+    useGameStore.getState().buildSiegeEquipment('test-clan');
+    const clan = useGameStore.getState().clans.find(c => c.id === 'test-clan')!;
+    expect(clan.siegeEquipment).toBeDefined();
+    expect(clan.siegeEquipment!.building).toBe(true);
+    expect(clan.siegeEquipment!.ready).toBe(false);
+    expect(clan.siegeEquipment!.multiplier).toBe(1.5);
+    expect(clan.treasury).toBe(45000); // 50000 - 5000
+  });
+
+  it('does not overwrite existing siege equipment that is already building', () => {
+    useGameStore.setState({
+      clans: [{
+        id: 'test-clan', name: '测试势力', country: '赵', type: '1级',
+        reputation: 500, treasury: 50000, heavenLevel: 9,
+        isAscendingFamily: false,
+        siegeEquipment: { building: true, ready: false, multiplier: 1.5, progressTicks: 3, requiredTicks: 10 },
+      }],
+      playerFactionId: 'test-clan',
+    });
+    useGameStore.getState().buildSiegeEquipment('test-clan');
+    const clan = useGameStore.getState().clans.find(c => c.id === 'test-clan')!;
+    expect(clan.siegeEquipment!.progressTicks).toBe(3); // unchanged
+    expect(clan.treasury).toBe(50000); // not consumed again
+  });
+
+  it('progresses siege equipment ticks each siege tick', () => {
+    useGameStore.setState({
+      player: {
+        id: 'test-player', name: 'TestPlayer', heavenLevel: 9 as const, realm: '练气',
+        bodyType: '凡体', potential: '无', country: '赵', clanId: 'test-clan',
+        stats: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 100, attack: 10, defense: 5, exp: 0, maxExp: 10000 },
+        hiddenStats: { killCount: 0, cultivateCount: 0, gatherCount: 0, ascensionCount: 0, merit: 0 },
+        reputation: 1000, position: { x: 50, y: 50 }, inventory: { '灵石': 10000 },
+        cycleInfo: { type: null as any }, isAscending: false,
+        talent: { spiritualRoot: 25, boneConstitution: 30, comprehension: 40, fortune: 20 },
+        skillCooldowns: {}, equipmentSlots: {},
+      },
+      _factionTickCount: 0,
+      currentFormation: '散开' as any,
+      clans: [{
+        id: 'test-clan', name: '测试势力', country: '赵', type: '1级',
+        reputation: 500, treasury: 50000, heavenLevel: 9,
+        isAscendingFamily: false,
+        siegeEquipment: { building: true, ready: false, multiplier: 1.5, progressTicks: 0, requiredTicks: 10 },
+      }],
+      nearbyNPCs: [], wildMonsters: [], logs: [], clanArmies: [], resourcePoints: [],
+      warStats: { battlesWon: 0, battlesLost: 0, npcsKilled: 0, alliesLost: 0, treasuryLooted: 0, citiesCaptured: 0 },
+      metNpcs: [], npcMemory: {}, squadMembers: [], ascensionQuests: [], worldEvents: [], captives: [],
+      market: {}, _factionLLMCooldowns: {}, _factionLLMQueue: [], _factionLLMEnqueueTime: {}, _factionLLMResults: {},
+    });
+    // Set tick to 5 (5 % 5 === 0 triggers siege tick)
+    useGameStore.setState({ _factionTickCount: 5 });
+    useGameStore.getState().updateNPCs();
+    const clan = useGameStore.getState().clans.find(c => c.id === 'test-clan')!;
+    expect(clan.siegeEquipment!.progressTicks).toBe(1);
+  });
+});

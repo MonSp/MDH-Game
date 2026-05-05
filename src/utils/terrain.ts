@@ -75,6 +75,9 @@ export function getMovementCost(x: number, y: number): number {
   return TERRAIN_MOVE_COST[tile.biome] || 1.0;
 }
 
+/** Scout vision multiplier (applied when a scout squad member is present) */
+export const SCOUT_VISION_MULTIPLIER = 2.0;
+
 /** Get vision radius for a realm level (with optional watchtower bonus) */
 export function getVisionRadius(realm: string, watchtowerBonus: number = 0): number {
   const base = REALM_VISION_RANGES[realm] || REALM_VISION_RANGES['练气'];
