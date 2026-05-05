@@ -3,7 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS, getClanTerritoryCenter } from '../store/gameStore';
-import { generateCharacterStyle } from '../utils/appearance';
+import { generateCharacterStyle, getRealmAura } from '../utils/appearance';
 import { getTerrainTile, getVisionRadius, SCOUT_VISION_MULTIPLIER } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
@@ -11,10 +11,160 @@ import { PixelCharacterSprite } from './PixelCharacterSprite';
 import { PixelMonsterSprite } from './PixelMonsterSprite';
 import { PixelResourceSprite } from './PixelResourceSprite';
 import { CombatParticles, GatheringEffect, BreakthroughEffect } from './PixelParticleEffects';
-import { generateTerrainTileTexture, generateEffectTexture } from '../utils/pixelSpriteGenerator';
+import { generateTerrainTileTexture, generateEffectTexture, generateDecorationSprite, type DecorationType } from '../utils/pixelSpriteGenerator';
+import { PixelDecoration } from './PixelDecoration';
+import { PixelBuildingSprite } from './PixelBuildingSprite';
 
 // Constants
 const VIEW_RADIUS = 15;
+
+// Weather effect — rain or snow based on player biome
+const WeatherEffect = ({ playerPos }: { playerPos: { x: number; y: number } }) => {
+  const pointsRef = useRef<THREE.Points>(null);
+  const tile = getTerrainTile(playerPos.x, playerPos.y);
+  const isSnow = tile.biome === TerrainType.SNOW;
+  const isWaterBiome = tile.biome === TerrainType.DEEP_WATER || tile.biome === TerrainType.SHALLOW_WATER;
+  const showWeather = isSnow || (isWaterBiome && seededRandom(Math.round(playerPos.x / 10), Math.round(playerPos.y / 10)) < 0.35);
+  const count = isSnow ? 200 : 400;
+  const range = VIEW_RADIUS;
+
+  const [positions, velocities] = useMemo(() => {
+    const pos = new Float32Array(count * 3);
+    const vel = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * range * 2;
+      pos[i * 3 + 1] = Math.random() * 5;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * range * 2;
+      vel[i] = 0.5 + Math.random() * 0.5;
+    }
+    return [pos, vel];
+  }, [count, range]);
+
+  useFrame((_, delta) => {
+    if (!pointsRef.current || !showWeather) return;
+    const geo = pointsRef.current.geometry;
+    const pos = geo.attributes.position.array as Float32Array;
+    for (let i = 0; i < count; i++) {
+      pos[i * 3 + 1] -= velocities[i] * delta * (isSnow ? 0.5 : 2);
+      if (isSnow) {
+        pos[i * 3] += Math.sin(Date.now() * 0.001 + i) * delta * 0.3;
+        pos[i * 3 + 2] += Math.cos(Date.now() * 0.0013 + i * 0.7) * delta * 0.3;
+      }
+      if (pos[i * 3 + 1] < -1) {
+        pos[i * 3] = (Math.random() - 0.5) * range * 2;
+        pos[i * 3 + 1] = 4 + Math.random() * 2;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * range * 2;
+      }
+    }
+    geo.attributes.position.needsUpdate = true;
+  });
+
+  const particleTexture = useMemo(() => generateEffectTexture(isSnow ? 'star' : 'spark'), [isSnow]);
+
+  if (!showWeather) return null;
+
+  return (
+    <points ref={pointsRef}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={count}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        map={particleTexture}
+        size={isSnow ? 0.08 : 0.04}
+        color={isSnow ? '#ffffff' : '#94a3b8'}
+        transparent
+        opacity={isSnow ? 0.7 : 0.35}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
+  );
+};
+function seededRandom(x: number, y: number): number {
+  const h = (x * 374761393 + y * 668265263) & 0x7fffffff;
+  return (h % 1000) / 1000;
+}
+
+// Animated water tile with flowing texture
+const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number; yPos: number }) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const tex = useMemo(() => {
+    const t = getTerrainTexture(biome).clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1, 1);
+    return t;
+  }, [biome]);
+
+  useFrame((_, delta) => {
+    if (meshRef.current) {
+      const mat = meshRef.current.material as THREE.MeshStandardMaterial;
+      if (mat.map) {
+        mat.map.offset.x += delta * 0.08;
+        mat.map.offset.y += delta * 0.03;
+      }
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, yPos, 0]} receiveShadow>
+      <boxGeometry args={[1, height, 1]} />
+      <meshStandardMaterial
+        map={tex}
+        transparent
+        opacity={0.7}
+        roughness={0.1}
+        metalness={0.6}
+      />
+    </mesh>
+  );
+};
+
+function getDecorationForTile(x: number, y: number, biome: TerrainType): DecorationType | null {
+  const r = seededRandom(x, y);
+  switch (biome) {
+    case TerrainType.GRASS:
+      if (r < 0.12) return 'flower_white';
+      if (r < 0.22) return 'flower_red';
+      if (r < 0.32) return 'flower_yellow';
+      if (r < 0.55) return 'grass_tuft';
+      return null;
+    case TerrainType.FOREST:
+      if (r < 0.15) return 'mushroom';
+      if (r < 0.35) return 'bush';
+      if (r < 0.50) return 'grass_tuft';
+      return null;
+    case TerrainType.ROCK:
+      if (r < 0.25) return 'rock_small';
+      if (r < 0.40) return 'gravel';
+      if (r < 0.50) return 'crystal_small';
+      return null;
+    case TerrainType.SAND:
+      if (r < 0.08) return 'cactus';
+      if (r < 0.20) return 'dry_grass';
+      if (r < 0.30) return 'rock_small';
+      return null;
+    case TerrainType.MOUNTAIN:
+      if (r < 0.10) return 'alpine_grass';
+      if (r < 0.20) return 'crystal_small';
+      if (r < 0.30) return 'rock_small';
+      return null;
+    case TerrainType.SNOW:
+      if (r < 0.15) return 'snow_mound';
+      if (r < 0.25) return 'ice_shard';
+      return null;
+    case TerrainType.SHALLOW_WATER:
+      if (r < 0.10) return 'lilypad';
+      if (r < 0.18) return 'reed';
+      return null;
+    default:
+      return null;
+  }
+}
 
 // 1. Tree Component
 const Tree = ({ position }: { position: [number, number, number] }) => (
@@ -105,16 +255,18 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
         return (
           <group key={`${tile.x},${tile.y}`} position={[tile.dx, 0, tile.dy]}>
             {/* Main terrain block with pixel texture */}
-            <mesh position={[0, yPos, 0]} castShadow={!isWaterTile} receiveShadow>
-              <boxGeometry args={[1, height, 1]} />
-              <meshStandardMaterial
-                map={tex}
-                transparent={isWaterTile}
-                opacity={isWaterTile ? 0.7 : 1}
-                roughness={isWaterTile ? 0.1 : 0.9}
-                metalness={isWaterTile ? 0.6 : 0.0}
-              />
-            </mesh>
+            {isWaterTile ? (
+              <WaterTile biome={tile.biome} height={height} yPos={yPos} />
+            ) : (
+              <mesh position={[0, yPos, 0]} castShadow receiveShadow>
+                <boxGeometry args={[1, height, 1]} />
+                <meshStandardMaterial
+                  map={tex}
+                  roughness={0.9}
+                  metalness={0.0}
+                />
+              </mesh>
+            )}
             {/* Mountain peak extra block */}
             {showPeak && (
               <mesh position={[0, yPos + height / 2, 0]}>
@@ -126,6 +278,22 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
             {tile.hasTree && (
               isMountain ? null : <Tree position={[0, yPos + height / 2, 0]} />
             )}
+            {/* Terrain decorations */}
+            {(() => {
+              const decor = getDecorationForTile(tile.x, tile.y, tile.biome);
+              if (!decor) return null;
+              const topY = isWaterTile ? 0.05 : yPos + height / 2;
+              const decorScale = (decor === 'bush' || decor === 'cactus') ? 0.35 : 0.25;
+              const swayTypes: DecorationType[] = ['grass_tuft', 'flower_white', 'flower_red', 'flower_yellow', 'reed', 'alpine_grass', 'dry_grass'];
+              return (
+                <PixelDecoration
+                  type={decor}
+                  position={[0, topY, 0]}
+                  scale={decorScale}
+                  sway={swayTypes.includes(decor)}
+                />
+              );
+            })()}
           </group>
         );
       })}
@@ -181,6 +349,7 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
   const interactWithResource = useGameStore(state => state.interactWithResource);
   const clans = useGameStore(state => state.clans);
   const [hovered, setHovered] = useState(false);
+  const [gathering, setGathering] = useState(false);
   useCursor(hovered);
 
   const tile = getTerrainTile(res.position.x, res.position.y);
@@ -189,8 +358,18 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
   const owner = res.ownerClanId ? clans.find(c => c.id === res.ownerClanId) : null;
   const ownerColor = '#fbbf24';
 
+  const handleGather = (e: any) => {
+    e.stopPropagation();
+    interactWithResource(res.id);
+    setGathering(true);
+    setTimeout(() => setGathering(false), 1200);
+  };
+
   return (
     <group position={[dx, baseHeight + 0.4, dy]}>
+      {/* Gathering effect */}
+      {gathering && <GatheringEffect position={[0, 0.5, 0]} resourceType={res.type} duration={1000} />}
+
       {/* Owner indicator flag */}
       {owner && (
         <mesh position={[0, 0.8, 0]}>
@@ -200,7 +379,7 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
       )}
       {/* Pixel art sprite */}
       <group
-        onClick={(e) => { e.stopPropagation(); interactWithResource(res.id); }}
+        onClick={handleGather}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
       >
@@ -435,11 +614,19 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
   const tile = getTerrainTile(monster.position.x, monster.position.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
 
+  // Realm-based aura
+  const realmAura = useMemo(() => getRealmAura(monster.realm), [monster.realm]);
+  const monsterRealmIndex = useMemo(() => ['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'].indexOf(monster.realm), [monster.realm]);
+
   // Floating damage numbers
   const [damageNumbers, setDamageNumbers] = useState<{ id: number; value: number; color: string }[]>([]);
   const prevHpRef = useRef(monster.hp);
   const damageIdRef = useRef(0);
   const mountedRef = useRef(true);
+
+  // Combat particles trigger
+  const [showCombat, setShowCombat] = useState(false);
+  const [combatPos, setCombatPos] = useState<[number, number, number]>([0, 0.5, 0]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -449,6 +636,12 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
       const id = damageIdRef.current++;
       const color = dmg > monster.attack ? '#ffffff' : '#ff6666';
       setDamageNumbers(prev => [...prev, { id, value: dmg, color }]);
+      // Trigger combat particles
+      setCombatPos([(Math.random() - 0.5) * 0.3, 0.5, (Math.random() - 0.5) * 0.3]);
+      setShowCombat(true);
+      setTimeout(() => {
+        if (mountedRef.current) setShowCombat(false);
+      }, 800);
       setTimeout(() => {
         if (mountedRef.current) {
           setDamageNumbers(prev => prev.filter(n => n.id !== id));
@@ -465,11 +658,25 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
 
   return (
     <group position={[dx, baseHeight, dy]}>
-      {/* Red aura circle */}
+      {/* Realm-based aura */}
       <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.6, 32]} />
-        <meshBasicMaterial color="#ef4444" transparent opacity={0.3} />
+        <circleGeometry args={[realmAura.auraSize, 32]} />
+        <meshBasicMaterial color={realmAura.auraColor} transparent opacity={realmAura.auraOpacity} />
       </mesh>
+
+      {/* Combat spark particles */}
+      {showCombat && <CombatParticles position={combatPos} count={8} color="#ff6b35" duration={800} />}
+
+      {/* Sparkles for high-realm monsters (金丹+) */}
+      {monsterRealmIndex >= 3 && (
+        <Sparkles
+          count={monsterRealmIndex >= 6 ? 12 : 6}
+          scale={1.2}
+          size={0.08}
+          speed={0.4}
+          color={realmAura.auraColor}
+        />
+      )}
 
       {/* Pixel art monster sprite */}
       <mesh position={[0, 0.5, 0]}>
@@ -622,6 +829,10 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
         );
       })}
 
+      {/* Faction building sprite */}
+      <group position={[0, 0.45, 0]}>
+        <PixelBuildingSprite type="city" country={country} scale={0.45} />
+      </group>
       {/* Garrison HP bar */}
       {(garrison ?? 0) > 0 && (
         <Html position={[0, 1.2, 0]} center style={{ pointerEvents: 'none' }}>
@@ -644,10 +855,10 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
           </div>
         </Html>
       )}
-      {/* Faction flag label */}
-      <Html position={[0, 1.5, 0]} center style={{ pointerEvents: 'none' }}>
-        <div className="bg-amber-900/80 border border-amber-500/60 px-2 py-0.5 rounded text-xs whitespace-nowrap shadow-lg text-amber-300 font-medium backdrop-blur-sm">
-          ⚐ {faction.name}
+      {/* Faction name label */}
+      <Html position={[0, 1.3, 0]} center style={{ pointerEvents: 'none' }}>
+        <div className="text-amber-300 text-[11px] font-bold whitespace-nowrap drop-shadow-lg">
+          {faction.name}
         </div>
       </Html>
     </group>
@@ -696,6 +907,20 @@ const TRIGGER_COOLDOWN_MS = 30000;
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
   const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent, exploredTiles } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
+
+  // Breakthrough effect
+  const prevRealmRef = useRef(player?.realm);
+  const [breakthroughEffect, setBreakthroughEffect] = useState<{ pos: [number, number, number]; ts: number } | null>(null);
+
+  useEffect(() => {
+    if (!player) return;
+    if (prevRealmRef.current && prevRealmRef.current !== player.realm) {
+      // Player broke through! Show effect at player position (center of map)
+      setBreakthroughEffect({ pos: [0, 0.2, 0], ts: Date.now() });
+      setTimeout(() => setBreakthroughEffect(null), 2500);
+    }
+    prevRealmRef.current = player.realm;
+  }, [player?.realm]);
 
   // Phase 1.3: NPC interaction visual effects
   const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);
@@ -845,15 +1070,16 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
       
       return (
         <group key={`capital-${country}`} position={[dx, baseHeight, dy]}>
-          <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-            <cylinderGeometry args={[0.6, 0.8, 1, 8]} />
-            <meshStandardMaterial color="#b45309" /> {/* amber-700 */}
+          {/* Capital building sprite */}
+          <PixelBuildingSprite type="capital" country={country} scale={0.7} />
+          {/* Capital glow ring */}
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[1.0, 1.3, 32]} />
+            <meshBasicMaterial color={COUNTRY_COLORS[country] || '#b45309'} transparent opacity={0.4} side={THREE.DoubleSide} />
           </mesh>
-          <Html position={[0, 1.2, 0]} center style={{ pointerEvents: 'none' }}>
-            <div className="flex flex-col items-center">
-              <div className="bg-amber-900/80 border border-amber-500/50 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg text-amber-400 font-bold backdrop-blur-sm">
-                {country}国都城坊市
-              </div>
+          <Html position={[0, 0.9, 0]} center style={{ pointerEvents: 'none' }}>
+            <div className="text-amber-400 text-[10px] font-bold whitespace-nowrap drop-shadow-lg">
+              {country}都
             </div>
           </Html>
         </group>
@@ -896,6 +1122,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
 
         <Terrain playerPos={player.position} />
         <FogOfWar playerPos={player.position} exploredTiles={exploredTiles} visionRadius={visionRadius} />
+        <WeatherEffect playerPos={player.position} />
 
         {capitals}
 
@@ -968,6 +1195,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           );
         })}
         <PlayerMesh player={player} />
+        {breakthroughEffect && (
+          <BreakthroughEffect
+            key={breakthroughEffect.ts}
+            position={breakthroughEffect.pos}
+            color="#ffd700"
+          />
+        )}
       </Canvas>
 
       {/* 坐标 + 控制提示 */}

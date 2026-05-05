@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { X, ShoppingCart } from 'lucide-react';
+import { PixelItemIcon } from './PixelItemIcon';
 
 export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
   const { player, market, buyItem, sellItem } = useGameStore();
@@ -55,7 +56,7 @@ export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
             return (
               <div key={item.name} className="bg-zinc-800/50 p-2 rounded flex flex-col">
                 <div className="grid grid-cols-5 items-center">
-                  <div className="col-span-2 font-medium text-amber-200">{item.name} <span className="text-xs text-zinc-500">(拥有: {playerOwns})</span></div>
+                  <div className="col-span-2 font-medium text-amber-200 flex items-center"><PixelItemIcon itemName={item.name} size={16} className="mr-1.5 shrink-0" />{item.name} <span className="text-xs text-zinc-500 ml-1">(拥有: {playerOwns})</span></div>
                   <div>{item.stock}</div>
                   <div className="text-emerald-400">{item.currentPrice}</div>
                   <div>

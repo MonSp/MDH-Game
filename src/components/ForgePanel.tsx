@@ -3,6 +3,7 @@ import { getForgeRecipes, FORGE_RECIPE_META, CRAFT_RECIPES } from '../store/craf
 import { useGameStore, getFactionBuildingLevel } from '../store/gameStore';
 import { ItemQuality } from '../shared/types/items';
 import { Hammer, X, Sword, Shield } from 'lucide-react';
+import { PixelItemIcon } from './PixelItemIcon';
 
 interface ForgePanelProps {
   onClose: () => void;
@@ -124,13 +125,13 @@ export const ForgePanel = ({ onClose }: ForgePanelProps) => {
                       {Object.entries(recipe.materials).map(([mat, count]) => (
                         <span
                           key={mat}
-                          className={`text-[10px] px-1.5 py-0.5 rounded ${
+                          className={`text-[10px] px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 ${
                             (inventory[mat] || 0) >= count
                               ? 'bg-zinc-700/50 text-zinc-400'
                               : 'bg-red-900/30 text-red-400'
                           }`}
                         >
-                          {mat} x{count}
+                          <PixelItemIcon itemName={mat} size={12} />{mat} x{count}
                           <span className="text-zinc-600 ml-0.5">(拥{(inventory[mat] || 0)})</span>
                         </span>
                       ))}
@@ -179,8 +180,8 @@ export const ForgePanel = ({ onClose }: ForgePanelProps) => {
                 .filter(([name, count]) => count > 0 && !['灵石'].includes(name))
                 .slice(0, 20)
                 .map(([name, count]) => (
-                  <span key={name} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
-                    {name} x{count}
+                  <span key={name} className="text-[10px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded inline-flex items-center gap-0.5">
+                    <PixelItemIcon itemName={name} size={12} />{name} x{count}
                   </span>
                 ))}
               {Object.keys(inventory).filter(k => k !== '灵石').length === 0 && (

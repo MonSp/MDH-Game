@@ -12,6 +12,7 @@ import { WarPanel } from './WarPanel';
 import { AlchemyPanel } from './AlchemyPanel';
 import { ForgePanel } from './ForgePanel';
 import { CaptivePanel } from './CaptivePanel';
+import { PixelItemIcon } from './PixelItemIcon';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
@@ -199,7 +200,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           {player.inventory['洗髓丹'] > 0 && (
             <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
               <div className="flex items-center text-purple-400 space-x-1">
-                <Sparkles size={14} /><span>洗髓丹 ({player.inventory['洗髓丹']})</span>
+                <Sparkles size={14} /><PixelItemIcon itemName="洗髓丹" size={14} className="mr-1" /><span>洗髓丹 ({player.inventory['洗髓丹']})</span>
               </div>
               <button 
                 onClick={() => useItem('洗髓丹')}
@@ -236,8 +237,8 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             </div>
             <div className="text-zinc-400 text-xs space-y-1">
               <div>境界要求：<span className="text-emerald-400">✓ 已满足</span></div>
-              <div>飞升令：<span className={hasFlypanStone ? 'text-emerald-400' : 'text-red-400'}>{(player.inventory['飞升令'] || 0)}/1</span></div>
-              <div>灵石消耗：<span className={hasEnoughSpiritStones ? 'text-emerald-400' : 'text-red-400'}>{(player.inventory['灵石'] || 0)}/100000</span></div>
+              <div><PixelItemIcon itemName="飞升令" size={14} className="mr-1" />飞升令：<span className={hasFlypanStone ? 'text-emerald-400' : 'text-red-400'}>{(player.inventory['飞升令'] || 0)}/1</span></div>
+              <div><PixelItemIcon itemName="灵石" size={14} className="mr-1" />灵石消耗：<span className={hasEnoughSpiritStones ? 'text-emerald-400' : 'text-red-400'}>{(player.inventory['灵石'] || 0)}/100000</span></div>
               <div>天道任务：<span className={incompleteQuests === 0 ? 'text-emerald-400' : 'text-red-400'}>{ascensionQuests.length - incompleteQuests}/{ascensionQuests.length}</span></div>
             </div>
             <button
@@ -461,7 +462,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
 
               <div className="p-3 bg-zinc-800 rounded">
                 <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">消耗灵石</span>
+                  <span className="text-zinc-400 flex items-center"><PixelItemIcon itemName="灵石" size={14} className="mr-1" />消耗灵石</span>
                   <span className={
                     (player.inventory['灵石'] || 0) >= breakthroughCost
                       ? 'text-emerald-400 font-medium'
@@ -533,11 +534,11 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
                     <span className="text-emerald-400">✓ {player.realm}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-400">飞升令</span>
+                    <span className="text-zinc-400 flex items-center"><PixelItemIcon itemName="飞升令" size={14} className="mr-1" />飞升令</span>
                     <span className={hasFlypanStone ? 'text-emerald-400' : 'text-red-400'}>{(player.inventory['飞升令'] || 0)}/1</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-400">灵石消耗</span>
+                    <span className="text-zinc-400 flex items-center"><PixelItemIcon itemName="灵石" size={14} className="mr-1" />灵石消耗</span>
                     <span className={hasEnoughSpiritStones ? 'text-emerald-400' : 'text-red-400'}>{(player.inventory['灵石'] || 0)}/100000</span>
                   </div>
                 </div>
