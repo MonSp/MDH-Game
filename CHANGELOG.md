@@ -4,20 +4,32 @@
 
 ### Added
 - Phase 2.3 — Pixel art style upgrade: all procedurally-generated 3D voxel models replaced with Canvas2D pixel sprites
-- `pixelSpriteGenerator.ts` — procedural pixel sprite generator: 48×48 character sprites (8-layer rendering: aura, robe, sleeves, head, hair, glow, realm overlay), 32×32 monster sprites (7 distinct species: 赤焰蛇/冰晶蝎/幽冥狼/雷纹虎/血玉蛛/玄冰蟒/金翅大鹏), 32×32 terrain tiles (9 biomes), 32×32 resource sprites (灵田/矿脉/遗迹), 16×16 effect textures (spark/star/glow/leaf/crystal/ember)
-- `PixelCharacterSprite` — THREE.Sprite component with reactive sprite regeneration on realm/bodyType/role change; breathing, bounce, and float animations
+- `pixelSpriteGenerator.ts` — procedural pixel sprite generator: 48×48 character sprites (8-layer rendering: aura, robe, sleeves, head, hair, glow, realm overlay), 32×32 monster sprites (7 distinct species: 赤焰蛇/冰晶蝎/幽冥狼/雷纹虎/血玉蛛/玄冰蟒/金翅大鹏), 32×32 terrain tiles (9 biomes), 32×32 resource sprites (灵田/矿脉/遗迹), 16×16 effect textures (spark/star/glow/leaf/crystal/ember), 16×16 item icons (25+ types)
+- `PixelCharacterSprite` — THREE.Sprite component with reactive sprite regeneration; breathing, bounce, and float animations
 - `PixelMonsterSprite` — THREE.Sprite with fade-out on death animation; idle float + scale pulse
 - `PixelResourceSprite` — THREE.Sprite with gentle scale oscillation
+- `PixelBuildingSprite` — THREE.Sprite with idle bob and scale-pulse animation
+- `PixelItemIcon` — React HTML component using Canvas2D-generated data URLs for inventory/panel icons
+- `PixelDecoration` — procedurally-generated pixel grass, flowers, rocks, trees scattered across the map
 - `PixelParticleEffects` — THREE.Points-based combat sparks (12 particles, physics), gathering effects (8 particles, type-dependent), breakthrough effects (expanding ring + glow sprite)
 - Map2D terrain tiles now use pixel art textures with `NearestFilter` for crisp rendering
 - `drei Sparkles` aura effect around high-realm NPCs (金丹+) and player
+- Realm-based monster auras (colored rings + glow) mapped from realm cultivation color
+- Building idle animation: gentle vertical bob and subtle scale oscillation
+- Item icons integrated into MarketPanel, AlchemyPanel, ForgePanel, and HUD
+- Monster realm auras: colored rings and glow based on cultivation realm
+- Particle effects wired into game loop: combat sparks on HP change, gathering particles on resource click, breakthrough expansion on realm ascension
+- Weather system: animated water tiles, cloud cover, rain particles, fog overlay
+- Water animation: undulating pixel waves with color cycling for DEEP_WATER/SHALLOW_WATER tiles
+- Procedural decoration system: seeded-random grass tufts, flowers, rocks, pine trees, dead trees placed on terrain
 
 ### Changed
 - CultivatorModel refactored from 12-box voxel assembly to single `PixelCharacterSprite` billboard
-- MonsterMesh refactored from box+sphere geometry to single `PixelMonsterSprite`
+- MonsterMesh refactored from box+sphere geometry to single `PixelMonsterSprite` with realm aura integration
 - ResourceMesh refactored from rotating box to `PixelResourceSprite`
 - Canvas2D config: `antialias: false` for crisp pixel rendering
 - Terrain textures use `THREE.NearestFilter` with `generateMipmaps: false`
+- `getRealmAura` from appearance.ts used for monster/NPC realm ring colors
 
 ### Removed
 - Voxel mesh construction removed from CultivatorModel (12 box geometries, arm rotation logic)
