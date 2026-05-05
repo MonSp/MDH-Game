@@ -617,6 +617,23 @@ export const Game = () => {
     return () => clearInterval(interval);
   }, [player]);
 
+  // Auto-dequeue stale faction AI queue entries after 30s
+  useEffect(() => {
+    if (!player) return;
+    const interval = setInterval(() => {
+      const s = useGameStore.getState();
+      if (s._factionLLMQueue.length === 0) return;
+      const staleCutoff = Date.now() - 30000;
+      for (const id of s._factionLLMQueue) {
+        const enqueuedAt = s._factionLLMEnqueueTime[id];
+        if (enqueuedAt && enqueuedAt < staleCutoff) {
+          s.clearStaleFactionAI(id);
+        }
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [player]);
+
   // Phase 1.2: Handle encounter event choice
   const handleEncounterChoice = useCallback((event: InitiativeEvent, choiceIndex: number) => {
     const service = InitiativeService.getInstance();

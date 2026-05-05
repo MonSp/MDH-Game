@@ -693,6 +693,8 @@ export interface GameState {
   _factionLLMCooldowns: Record<string, number>;
   /** Phase 1.4a: faction IDs currently awaiting LLM response */
   _factionLLMQueue: string[];
+  /** Phase 1.4a: enqueue timestamps for stale entry cleanup */
+  _factionLLMEnqueueTime: Record<string, number>;
   /** Phase 1.4a: cached LLM decisions for factions */
   _factionLLMResults: Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>;
 
@@ -766,6 +768,7 @@ export interface GameState {
   enqueueFactionAI: (factionId: string) => void;
   resolveFactionAI: (factionId: string, decision: { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null) => void;
   clearFactionAIResult: (factionId: string) => void;
+  clearStaleFactionAI: (factionId: string) => void;
 
   // Phase 4: Formation & Combat
   setFormation: (formation: FormationType) => void;

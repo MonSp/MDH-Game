@@ -68,6 +68,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   _factionLLMCooldowns: {} as Record<string, number>,
   /** Phase 1.4a: faction IDs currently awaiting LLM response */
   _factionLLMQueue: [] as string[],
+  /** Phase 1.4a: enqueue timestamps for stale entry cleanup */
+  _factionLLMEnqueueTime: {} as Record<string, number>,
   /** Phase 1.4a: cached LLM decisions for factions */
   _factionLLMResults: {} as Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>,
 
@@ -140,13 +142,27 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   enqueueFactionAI: (factionId) => set(state => ({
     _factionLLMQueue: state._factionLLMQueue.includes(factionId) ? state._factionLLMQueue : [...state._factionLLMQueue, factionId],
+    _factionLLMEnqueueTime: state._factionLLMQueue.includes(factionId) ? state._factionLLMEnqueueTime : { ...state._factionLLMEnqueueTime, [factionId]: Date.now() },
   })),
 
-  resolveFactionAI: (factionId, decision) => set(state => ({
-    _factionLLMQueue: state._factionLLMQueue.filter(id => id !== factionId),
-    _factionLLMResults: { ...state._factionLLMResults, [factionId]: decision },
-    _factionLLMCooldowns: { ...state._factionLLMCooldowns, [factionId]: Date.now() + 150000 },
-  })),
+  resolveFactionAI: (factionId, decision) => set(state => {
+    const { [factionId]: _, ...enqueueTimes } = state._factionLLMEnqueueTime;
+    return {
+      _factionLLMQueue: state._factionLLMQueue.filter(id => id !== factionId),
+      _factionLLMResults: { ...state._factionLLMResults, [factionId]: decision },
+      _factionLLMCooldowns: { ...state._factionLLMCooldowns, [factionId]: Date.now() + 150000 },
+      _factionLLMEnqueueTime: enqueueTimes,
+    };
+  }),
+
+  clearStaleFactionAI: (factionId) => set(state => {
+    const { [factionId]: _, ...enqueueTimes } = state._factionLLMEnqueueTime;
+    return {
+      _factionLLMQueue: state._factionLLMQueue.filter(id => id !== factionId),
+      _factionLLMCooldowns: { ...state._factionLLMCooldowns, [factionId]: Date.now() + 10000 },
+      _factionLLMEnqueueTime: enqueueTimes,
+    };
+  }),
 
   clearFactionAIResult: (factionId) => set(state => {
     const { [factionId]: _, ...rest } = state._factionLLMResults;

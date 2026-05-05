@@ -35,7 +35,9 @@ app.use(express.json());
 
 // Rate limiting for dialogue requests
 const dialogueRateMap = new Map<string, number>();
+const factionRateMap = new Map<string, number>();
 const DIALOGUE_RATE_LIMIT_MS = 10000;
+const FACTION_AI_RATE_LIMIT_MS = 10000;
 
 // Sanitize user-provided scene context to prevent prompt injection
 function sanitizeSceneContext(input: string | undefined): string | undefined {
@@ -435,36 +437,45 @@ io.on('connection', (socket) => {
     const playerSocket = playerSockets.get(socket.id);
     if (!playerSocket) return;
 
-    // Rate limit: reuse dialogue rate limit (10s)
-    const lastRequest = dialogueRateMap.get(socket.id);
-    if (lastRequest && Date.now() - lastRequest < DIALOGUE_RATE_LIMIT_MS) {
+    // Separate rate limit from dialogue to prevent cross-blocking
+    const lastRequest = factionRateMap.get(socket.id);
+    if (lastRequest && Date.now() - lastRequest < FACTION_AI_RATE_LIMIT_MS) {
       socket.emit('faction:ai-decision-result', { clanId: data.clanId, decision: null });
       return;
     }
-    dialogueRateMap.set(socket.id, Date.now());
+    factionRateMap.set(socket.id, Date.now());
+
+    // Validate client-supplied data to prevent prompt injection
+    const safeReputation = Math.max(0, Math.min(data.clanReputation, 100000));
+    const safeTreasury = Math.max(0, Math.min(data.clanTreasury, 10000000));
+    const safeType = /^(1级|2级|3级|皇族|unknown)$/.test(data.clanType) ? data.clanType : 'unknown';
 
     const systemPrompt = buildFactionSystemPrompt();
     const userPrompt = buildFactionUserPrompt(
-      { name: data.clanName, type: data.clanType, reputation: data.clanReputation, treasury: data.clanTreasury },
+      { name: data.clanName, type: safeType, reputation: safeReputation, treasury: safeTreasury },
       data.otherClans,
     );
 
     const llmClient = LLMHttpClient.getInstance();
-    const result = await llmClient.requestStructured<FactionDecision>(
-      { npcId: `faction_${data.clanId}`, npcName: data.clanName, systemPrompt, userPrompt },
-      0.7, 400,
-      'FactionAI',
-      (text) => {
-        const decision = parseFactionDecision(text);
-        if (!decision) return { ok: false, result: null as unknown as FactionDecision, error: 'Failed to parse faction decision' };
-        return { ok: true, result: decision };
-      },
-    );
+    try {
+      const result = await llmClient.requestStructured<FactionDecision>(
+        { npcId: `faction_${data.clanId}`, npcName: data.clanName, systemPrompt, userPrompt },
+        0.7, 400,
+        'FactionAI',
+        (text) => {
+          const decision = parseFactionDecision(text);
+          if (!decision) return { ok: false, result: null as unknown as FactionDecision, error: 'Failed to parse faction decision' };
+          return { ok: true, result: decision };
+        },
+      );
 
-    socket.emit('faction:ai-decision-result', {
-      clanId: data.clanId,
-      decision: result.success ? result.result : null,
-    });
+      socket.emit('faction:ai-decision-result', {
+        clanId: data.clanId,
+        decision: result.success ? result.result : null,
+      });
+    } catch {
+      socket.emit('faction:ai-decision-result', { clanId: data.clanId, decision: null });
+    }
   });
 
   socket.on('disconnect', () => {
@@ -474,6 +485,7 @@ io.on('connection', (socket) => {
       playerSockets.delete(socket.id);
     }
     dialogueRateMap.delete(socket.id); // clean up rate limit state
+    factionRateMap.delete(socket.id);
     console.log(`Client disconnected: ${socket.id}`);
   });
 });
