@@ -10,7 +10,7 @@ import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneR
 import { PixelCharacterSprite } from './PixelCharacterSprite';
 import { PixelMonsterSprite } from './PixelMonsterSprite';
 import { PixelResourceSprite } from './PixelResourceSprite';
-import { CombatParticles, GatheringEffect, BreakthroughEffect } from './PixelParticleEffects';
+import { CombatParticles, BloodParticles, CameraShake, triggerScreenShake, GatheringEffect, BreakthroughEffect, SkillParticles, DebrisParticles } from './PixelParticleEffects';
 import { generateTerrainTileTexture, generateEffectTexture, generateDecorationSprite, type DecorationType } from '../utils/pixelSpriteGenerator';
 import { PixelDecoration } from './PixelDecoration';
 import { PixelBuildingSprite } from './PixelBuildingSprite';
@@ -660,9 +660,10 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
       const id = damageIdRef.current++;
       const color = dmg > monster.attack ? '#ffffff' : '#ff6666';
       setDamageNumbers(prev => [...prev, { id, value: dmg, color }]);
-      // Trigger combat particles
+      // Trigger combat particles + screen shake
       setCombatPos([(Math.random() - 0.5) * 0.3, 0.5, (Math.random() - 0.5) * 0.3]);
       setShowCombat(true);
+      triggerScreenShake(0.5);
       setTimeout(() => {
         if (mountedRef.current) setShowCombat(false);
       }, 800);
@@ -690,6 +691,14 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
 
       {/* Combat spark particles */}
       {showCombat && <CombatParticles position={combatPos} count={8} color="#ff6b35" duration={800} />}
+      {/* P2: Screen shake on hit */}
+      {showCombat && <BloodParticles position={combatPos} count={12} duration={600} />}
+      {/* P2: Element-colored skill particles (30% chance, cycle through elements) */}
+      {showCombat && (() => {
+        const elements = ['fire', 'ice', 'lightning'] as const;
+        const el = elements[Math.floor(Math.random() * 3)];
+        return Math.random() < 0.3 ? <SkillParticles position={[combatPos[0], combatPos[1] + 0.3, combatPos[2]]} element={el} duration={500} /> : null;
+      })()}
 
       {/* Sparkles for high-realm monsters (金丹+) */}
       {monsterRealmIndex >= 3 && (
@@ -802,6 +811,19 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
   const tile = getTerrainTile(playerPos.x, playerPos.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
   const warRingRef = useRef<THREE.Mesh>(null);
+  // P2: Siege debris — periodic debris bursts when at war
+  const [showDebris, setShowDebris] = useState(false);
+  const [debrisKey, setDebrisKey] = useState(0);
+
+  useEffect(() => {
+    if (!isAtWar) return;
+    const interval = setInterval(() => {
+      setDebrisKey(k => k + 1);
+      setShowDebris(true);
+      setTimeout(() => setShowDebris(false), 800);
+    }, 3000 + Math.random() * 3000);
+    return () => clearInterval(interval);
+  }, [isAtWar]);
 
   useFrame((state) => {
     if (warRingRef.current && isAtWar) {
@@ -837,6 +859,8 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
           <meshBasicMaterial color="#ef4444" transparent opacity={0.5} side={THREE.DoubleSide} />
         </mesh>
       )}
+      {/* P2: Siege debris particles when at war */}
+      {showDebris && <DebrisParticles key={debrisKey} position={[0, 0.5, 0]} count={8} duration={700} />}
 
       {/* Small building indicators */}
       {(faction.buildings || []).map((b, i) => {
@@ -1150,6 +1174,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         <Terrain playerPos={player.position} />
         <FogOfWar playerPos={player.position} exploredTiles={exploredTiles} visionRadius={visionRadius} />
         <WeatherEffect playerPos={player.position} />
+        <CameraShake />
 
         {capitals}
 

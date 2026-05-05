@@ -40,6 +40,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
   const [showBreakthrough, setShowBreakthrough] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cultivatingRef = useRef(false);
 
@@ -229,25 +230,55 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         </div>
       </div>
 
-      {/* 家族与地图信息 */}
-      <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-lg backdrop-blur shadow-2xl h-fit flex flex-col space-y-4">
-        <div>
-          <div className="flex items-center space-x-2 text-emerald-400 mb-2 font-medium">
-            <Map size={16} /><span>第{player.heavenLevel}层天 · {player.country}</span>
-          </div>
-          <div className="text-sm space-y-1">
-            <div className="text-zinc-400">世界：<span className="text-emerald-400">{heavenInfo.name}</span></div>
-            <div className="text-zinc-400">国家特质：<span className="text-amber-400">{countryInfo?.feature || '仙域'}</span> ({countryInfo?.buff || '全属性+15%'})</div>
-            <div className="text-zinc-400">所属势力：<span className="text-zinc-200">{clan?.name} ({clan?.type})</span></div>
-            <div className="text-zinc-400">家族好感：<span className="text-zinc-200">{clan?.reputation}</span></div>
-            <div className="text-zinc-400">当前境界：<span className="text-emerald-400">{player.realm}</span> / <span className="text-amber-400">{maxRealm}</span></div>
-            <div className="text-zinc-400">当前坐标：<span className="text-emerald-400 font-mono">({player.position.x}, {player.position.y})</span></div>
-            <div className="text-zinc-400">资源倍率：<span className="text-purple-400">×{heavenInfo.resourceMultiplier}</span></div>
-          </div>
-        </div>
+      {/* 家族与地图信息 — 可折叠 */}
+      <div className={`bg-zinc-900/90 border border-zinc-800 rounded-lg backdrop-blur shadow-2xl h-fit flex flex-col ${panelCollapsed ? 'p-2' : 'p-4 space-y-4'}`}>
+        {/* Collapse toggle */}
+        <button
+          onClick={() => setPanelCollapsed(v => !v)}
+          className="self-end text-zinc-500 hover:text-zinc-300 transition-colors p-1 mb-1"
+          title={panelCollapsed ? '展开面板' : '折叠面板'}
+        >
+          {panelCollapsed ? '◀' : '▶'}
+        </button>
 
-        {/* Mini pixel-art minimap */}
-        <PixelMinimap
+        {panelCollapsed ? (
+          /* Collapsed: icon-only action buttons */
+          <div className="flex flex-col items-center gap-2">
+            <button onClick={() => setShowMarket(true)} className="p-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded text-emerald-300 transition-colors" title="坊市"><Store size={16} /></button>
+            <button onClick={() => setShowSkillBar(true)} className="p-2 bg-cyan-900/40 hover:bg-cyan-800/60 border border-cyan-700/50 rounded text-cyan-300 transition-colors" title="功法装备"><BookOpen size={16} /></button>
+            <button onClick={() => setShowSquad(true)} className="p-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-300 transition-colors" title="小队"><Users size={16} /></button>
+            <button onClick={() => setShowAlchemy(true)} className="p-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded text-emerald-300 transition-colors" title="炼丹"><FlaskRound size={16} /></button>
+            <button onClick={() => setShowForge(true)} className="p-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-300 transition-colors" title="炼器"><Hammer size={16} /></button>
+            {playerFactionId && (
+              <button onClick={() => setShowFaction(true)} className="p-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded text-amber-300 transition-colors" title="势力"><Flag size={16} /></button>
+            )}
+            {(() => { const pClan = clans.find(c => c.id === playerFactionId); const atWar = pClan?.diplomacy && Object.values(pClan.diplomacy).some(d => d.status === '战争'); if (!atWar) return null; return (
+              <button onClick={() => setShowWarPanel(true)} className="p-2 bg-red-900/40 hover:bg-red-800/60 border border-red-700/50 rounded text-red-300 transition-colors animate-pulse" title="战争"><Swords size={16} /></button>
+            ); })()}
+            <button onClick={() => setShowCaptives(true)} className="p-2 bg-rose-900/40 hover:bg-rose-800/60 border border-rose-700/50 rounded text-rose-300 transition-colors" title="俘虏"><UserX size={16} /></button>
+            <button onClick={onOpenChronicle} className="p-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded text-purple-300 transition-colors" title="宗门"><span className="text-xs font-bold">宗</span></button>
+            <button onClick={() => setShowDiplomacy(true)} className="p-2 bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/50 rounded text-purple-300 transition-colors" title="外交"><Handshake size={16} /></button>
+          </div>
+        ) : (
+          /* Expanded: full panel content */
+          <div>
+          <div>
+            <div className="flex items-center space-x-2 text-emerald-400 mb-2 font-medium">
+              <Map size={16} /><span>第{player.heavenLevel}层天 · {player.country}</span>
+            </div>
+            <div className="text-sm space-y-1">
+              <div className="text-zinc-400">世界：<span className="text-emerald-400">{heavenInfo.name}</span></div>
+              <div className="text-zinc-400">国家特质：<span className="text-amber-400">{countryInfo?.feature || '仙域'}</span> ({countryInfo?.buff || '全属性+15%'})</div>
+              <div className="text-zinc-400">所属势力：<span className="text-zinc-200">{clan?.name} ({clan?.type})</span></div>
+              <div className="text-zinc-400">家族好感：<span className="text-zinc-200">{clan?.reputation}</span></div>
+              <div className="text-zinc-400">当前境界：<span className="text-emerald-400">{player.realm}</span> / <span className="text-amber-400">{maxRealm}</span></div>
+              <div className="text-zinc-400">当前坐标：<span className="text-emerald-400 font-mono">({player.position.x}, {player.position.y})</span></div>
+              <div className="text-zinc-400">资源倍率：<span className="text-purple-400">×{heavenInfo.resourceMultiplier}</span></div>
+            </div>
+          </div>
+
+          {/* Mini pixel-art minimap */}
+          <PixelMinimap
           playerX={player.position.x}
           playerY={player.position.y}
           npcs={nearbyNPCs?.map((n: any) => ({ x: n.position.x, y: n.position.y, color: '#22d3ee' })) || []}
@@ -468,6 +499,8 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             </div>
           );
         })()}
+      </div>
+      )}
       </div>
 
       {showBreakthrough && (
