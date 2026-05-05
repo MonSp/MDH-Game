@@ -1,6 +1,6 @@
 # 系统实现状态总览
 
-> 最后更新: 2026-05-04 | 版本: 1.8.2.0
+> 最后更新: 2026-05-05 | 版本: 1.11.0.0
 
 ---
 
@@ -115,7 +115,52 @@
 
 ---
 
-## 二、小队系统
+### ✅ 7. 技能/功法系统
+
+**状态**: `gameStore.ts` — `learnTechnique()`, `cultivateTechnique()`
+**UI**: `SkillBar.tsx` (3 标签: 已学/装备/可用)
+**测试**: `combat.test.ts` (覆盖)
+
+**功能清单**:
+- [x] Technique 数据类型：TechniqueGrade/TechniqueType/Technique/TechniqueEffect/TechniqueSkill/LearnedTechnique
+- [x] 学习功法：境界检查、资源消耗、槽位分配
+- [x] 功法修炼：等级提升、灵石消耗、等级上限
+- [x] 8 个主动技能已接入战斗：自动选择最优技能、冷却/MP 管理
+- [x] 功法效果叠加到有效攻击/防御
+
+---
+
+### ✅ 8. 装备系统
+
+**状态**: `gameStore.ts` — `equipItem()`, `unequipItem()`, `generateEquipment()`
+**UI**: `SkillBar.tsx` (装备标签页), `SquadPanel.tsx` (队员装备)
+**测试**: `equipment-affix.test.ts` (词条测试)
+
+**功能清单**:
+- [x] 5 装备槽位：武器/护甲/饰品/法宝/坐骑
+- [x] 4 品稀有度：凡品/下品/中品/上品，RARITY_MULTIPLIER
+- [x] 8 种词条类型：critRate/lifesteal/expRate/critDamage 等
+- [x] 装备生成：按槽位/品阶/境界生成属性，随机 0-3 词条
+- [x] 词条效果已接入游戏逻辑：暴击、吸血、经验加成、暴击伤害
+
+---
+
+### ✅ 9. 炼丹与炼器系统
+
+**状态**: `gameStore.ts` — `attemptCraft()`, `forgeCraft()`
+**UI**: `AlchemyPanel.tsx` (炼丹), `ForgePanel.tsx` (炼器)
+**数据**: `craftingRecipes.ts` (6 丹方 + 6 炼器配方)
+**类型**: `items.ts` — ItemQuality/PillEffect/CraftRecipe
+**测试**: `forge.test.ts` (19 测试)
+
+**功能清单**:
+- [x] 6 种丹方：回血丹/续命丹/聚气散/培元丹/筑基丹/凝婴丹
+- [x] 6 种炼器配方：精铁剑/玄铁重甲/星辰剑/凤羽甲/帝剑·轩辕/天玄神甲
+- [x] 炼丹炉/炼器房 buff：每级 +10%，上限 95%
+- [x] 成功率计算 + 材料消耗 + 境界过滤
+- [x] 炼器自动装备到对应槽位 + `isCrafted` 标记
+- [x] 炼器房建筑：3 级升级，与丹房相同升级消耗
+- [x] 炼丹/炼器 UI：Modal 面板、材料检查、结果反馈、背包摘要
 
 ### ✅ 7. Squad 队员管理
 
@@ -139,7 +184,7 @@
 
 ## 三、势力与建筑系统
 
-### ✅ 8. 势力创建与管理
+### ✅ 11. 势力创建与管理
 
 **状态**: `gameStore.ts` — `playerFactionId`, `createFaction()`
 **UI**: `FactionPanel.tsx`
@@ -154,7 +199,7 @@
 
 ---
 
-### ✅ 9. 势力建筑
+### ✅ 12. 势力建筑
 
 **状态**: `gameStore.ts` — `upgradeBuilding()`, `BUILDING_EFFECTS`
 **UI**: `FactionPanel.tsx` (建筑 tab)
@@ -175,7 +220,7 @@
 
 ## 四、外交与战争系统
 
-### ✅ 10. 外交/战争
+### ✅ 13. 外交/战争
 
 **状态**: `gameStore.ts` — `clans[].diplomacy`, `setDiplomacy()`, `declareWar()` 等
 **UI**: `DiplomacyPanel.tsx`, `Map2D.tsx` (战争脉动光环)
@@ -196,7 +241,7 @@
 
 ## 五、NPC 系统
 
-### ✅ 11. NPC 世界（LLM 驱动）
+### ✅ 14. NPC 世界（LLM 驱动）
 
 **状态**: `NPCWorldService.ts` (服务端), `gameStore.ts` — `nearbyNPCs`, `interactWithNPC()`
 **UI**: `Map2D.tsx` (NPC 渲染 + 交互), `ScenePanel.tsx` (对话)
@@ -219,7 +264,7 @@
 
 ## 六、场景与叙事
 
-### ✅ 12. 场景叙事系统
+### ✅ 15. 场景叙事系统
 
 **状态**: `ScenePanel.tsx`, `src/content/scenes/`
 **UI**: `ScenePanel.tsx` (3 种状态: CHOOSING/LOADING/DIALOGUE)
@@ -244,7 +289,7 @@
 
 ## 七、飞升与轮回系统
 
-### ✅ 13. 飞升 (Ascension)
+### ✅ 16. 飞升 (Ascension)
 
 **状态**: `gameStore.ts` — `attemptAscension()`
 **测试**: `cultivation.test.ts` (覆盖)
@@ -258,7 +303,7 @@
 
 ---
 
-### ◐ 14. 轮回 (Cycle Rebirth)
+### ◐ 17. 轮回 (Cycle Rebirth)
 
 **状态**: `gameStore.ts` — `performCycleRebirth()`
 **测试**: 无专门测试
@@ -273,7 +318,7 @@
 
 ## 八、存档系统
 
-### ✅ 15. 存档/读档
+### ✅ 18. 存档/读档
 
 **状态**: `gameStore.ts` — `saveToSlot()`, `loadFromSlot()`
 **模块**: `saveManager.ts`
@@ -288,29 +333,29 @@
 
 ## 九、部分实现的系统
 
-### ◐ 16. 服务器端玩家服务
+### ◐ 19. 服务器端玩家服务
 
 **文件**: `PlayerService.ts`
 **状态**: `player` 类完整实现（状态机、回血、伤害、突破），但通过 Socket.IO 暴露的事件处理不完整。
 **问题**: 客户端 `gameStore.ts` 是实际游戏模拟，服务端 PlayerService 是并行体系，两者未完全打通。
 
-### ◐ 17. 服务端 NPC 行为树
+### ◐ 20. 服务端 NPC 行为树
 
 **文件**: `NPCService.ts` — `BehaviorTree`, `BehaviorExecutor`
 **状态**: 行为树评估逻辑完成，但 `execute*` 方法多数为 stub（patrol, chase, trade, compete）。
 **问题**: 客户端侧 `evaluateNPCBehavior()` 是实际运行的 NPC AI，服务端行为树未使用。
 
-### ◐ 18. 服务端死亡/寿命系统
+### ◐ 21. 服务端死亡/寿命系统
 
 **文件**: `DeathService.ts`
 **状态**: 掉落计算、灵魂池、世界恢复池存在，社交影响和通知为 stub。未接入实际 gameplay。
 
-### ◐ 19. 服务端人口系统
+### ◐ 22. 服务端人口系统
 
 **文件**: `PopulationService.ts`
 **状态**: PID 控制器完整，平衡控制器有逻辑但使用假数据。未接入实际 gameplay。
 
-### ◐ 20. 飞升后跨天世界
+### ◐ 23. 飞升后跨天世界
 
 **状态**: ascension 后进入下一重天，重置境界，在新天生成 clan/NPC/资源。但游戏目前只启动在天 9（凡界）。
 
@@ -318,22 +363,22 @@
 
 ## 十、骨架/未使用系统
 
-### 🏗️ 21. C++ ECS 引擎
+### 🏗️ 24. C++ ECS 引擎
 
 **文件**: `src/server/game/ecs/`, `src/server/game/npc/`, `src/server/game/job/`, `src/server/game/ipc/`
 **状态**: 完整的 header-only ECS（8 组件、5 系统、3 NPC 子系统、LLM 规划、IPC、线程池）。**未编译，未使用**。
 
-### 🏗️ 22. LLM 网关服务
+### 🏗️ 25. LLM 网关服务
 
 **文件**: `src/server/game/services/LLMGatewayService.ts`, `LLMIntegrationManager.ts`, `LLMPlanningService.ts`
 **状态**: 存在但未从游戏循环中调用。
 
-### 🏗️ 23. 服务端 NPCBehaviorTree
+### 🏗️ 26. 服务端 NPCBehaviorTree
 
 **文件**: `src/server/game/services/NPCBehaviorTree.ts`
 **状态**: 与 `gameStore.ts` 的 `evaluateNPCBehavior()` 分离的另一套行为树，未使用。
 
-### 🏗️ 24. 服务端物品数据库
+### 🏗️ 27. 服务端物品数据库
 
 **文件**: `EconomyService.ts` (ItemService)
 **状态**: 8 个硬编码物品，但与客户端市场商品清单分离。
@@ -342,26 +387,13 @@
 
 ## 十一、未实现系统
 
-### ❌ 25. 多人联机
+### ❌ 28. 多人联机
 - 无多玩家交互。服务器创建玩家但玩家间没有互动。
 - 无聊天系统、组队系统、PVP
 
-### ❌ 26. 真实地图
+### ❌ 29. 真实地图
 - 玩家在 2D 网格上移动但无碰撞检测、无地形类型、无障碍物
 - 无迷雾探索机制
-
-### ❌ 27. 合成/炼丹系统
-- 无合成/制造系统
-- 体质只做一次性升级
-
-### ❌ 28. 技能/法术系统
-- 无技能、法术、功法、战斗技能
-- 只有基础攻击（相邻自动攻击）
-
-### ❌ 29. 装备多样性
-- 只有 1 件可装备物品（低级法器）
-- 无装备栏位、无装备部位概念
-- 无装备稀有度/词条系统
 
 ### ❌ 30. 任务/活动系统
 - 仅飞升任务（3 个晋升任务）
@@ -372,7 +404,7 @@
 ## 十二、测试覆盖统计
 
 ```
-test/ 目录共计 19 个文件，488 个测试全部通过
+test/ 目录共计 30 个文件，653 个测试全部通过
 
 building-effects.test.ts         ✅ 建筑效果
 combat.test.ts                   ✅ 战斗机制
@@ -380,10 +412,19 @@ cultivation.test.ts              ✅ 修炼突破
 dialogue-prompts.test.ts         ✅ 对话提示
 diplomacy.test.ts                ✅ 外交战争
 effect-utils.test.ts             ✅ 效果引擎（56 测试，纯函数 100% 分支覆盖）
+equipment-affix.test.ts          ✅ 装备词条
 faction.test.ts                  ✅ 势力系统
+faction-ai.test.ts               ✅ 势力 AI
+faction-ai-decision.test.ts      ✅ 势力 AI 决策
+faction-ai-prompts.test.ts       ✅ 势力 AI 提示
+faction-ai-state.test.ts         ✅ 势力 AI 状态
+faction-decision-parser.test.ts  ✅ 势力决策解析
+forge.test.ts                    ✅ 锻造系统（19 测试）
 gameStore.test.ts                ✅ 游戏初始化
 llm-http-client-dialogue.test.ts ✅ LLM 对话客户端
+llm-integration.test.ts          ✅ LLM 集成
 llm-parser.test.ts               ✅ LLM 响应解析
+npc-behavior.test.ts             ✅ NPC 行为
 npc-memory.test.ts               ✅ NPC 记忆
 npc-world-service.test.ts        ✅ NPC 世界服务
 scene-panel.test.ts              ✅ 场景面板
@@ -393,6 +434,7 @@ server-dialogue-utils.test.ts    ✅ 服务端对话工具
 squad-system.test.ts             ✅ 小队系统
 squad.test.ts                    ✅ 小队机制
 talent.test.ts                   ✅ 天赋属性
+war-deepening.test.ts            ✅ 战争深化
 
 其他测试文件:
 test/llm-deterministic-benchmark.ts  ✅ LLM vs 确定性基准
@@ -405,7 +447,7 @@ test/llm-parser.smoke.ts             ✅ LLM 解析冒烟测试
 
 | 类别 | 完整实现 | 部分实现 | 骨架 | 未实现 |
 |------|---------|---------|------|-------|
-| 核心玩法 | 6 | 0 | 0 | 0 |
+| 核心玩法 | 9 | 0 | 0 | 0 |
 | 小队系统 | 1 | 0 | 0 | 0 |
 | 势力建筑 | 2 | 0 | 0 | 0 |
 | 外交战争 | 1 | 0 | 0 | 0 |
@@ -413,5 +455,5 @@ test/llm-parser.smoke.ts             ✅ LLM 解析冒烟测试
 | 场景叙事 | 1 | 0 | 0 | 0 |
 | 飞升轮回 | 1 | 1 | 0 | 0 |
 | 存档 | 1 | 0 | 0 | 0 |
-| 扩展系统 | 0 | 0 | 0 | 6 |
-| **合计** | **14** | **3** | **2** | **6** |
+| 扩展系统 | 0 | 0 | 0 | 3 |
+| **合计** | **17** | **3** | **2** | **3** |

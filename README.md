@@ -1,57 +1,73 @@
-# React + TypeScript + Vite
+# 太古纪元：霸业 — Xianxia Pixel MMORPG
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**太古纪元：霸业** is a 2.5D pixel-art cultivation (修仙) MMORPG set in a Warring States-inspired world. The game combines national strategy, family/clan politics, individual cultivation progression, and AI-driven NPC behavior.
 
-Currently, two official plugins are available:
+**Two runtimes coexist:**
+- **TypeScript (Node.js)**: Game server (Express + Socket.IO) + React client (Vite + Three.js)
+- **C++**: High-performance ECS engine for NPC simulation (100K+ entities), connected via IPC/Unix sockets for LLM-powered NPC planning
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Quick Start
 
-## Expanding the ESLint configuration
+```bash
+# Install dependencies
+npm install
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# Development server (starts Express + Socket.IO on port 3000)
+npm run dev
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+# Run tests (29 test files, 653+ tests)
+npm test
+
+# Production build
+npm run build
+
+# Start production server
+npm start
+
+# Lint
+npm run lint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Features
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **Cultivation system**: 10 realms (凡人→练气→筑基→金丹→元婴→化神→炼虚→合体→大乘→渡劫), talent attributes, breakthroughs, ascension
+- **Alchemy & Forging**: 6 pill recipes + 6 forge recipes, success rate calculation, hall buffs, slot-based equipment generation
+- **Combat**: Auto-combat with proportional damage formula, 7 monster types, NPC vs monster combat, squad combat
+- **Faction system**: Create/manage factions with 6 building types (3 upgrade levels each), officer appointments, tax collection
+- **Diplomacy & War**: 5 diplomacy actions, 5 diplomatic statuses, war hostility, truce system
+- **NPC AI**: LLM-driven NPC planning (OpenAI/Gemini), 50 NPC world simulation, relationship matrix, memory system
+- **NPC dialogue**: LLM-generated Chinese dialogue with personality/emotion/memory context, scripted fallback
+- **Squad system**: Recruit NPCs as squad members (4 roles), equipment, leveling, formation
+- **2.5D world**: Three.js terrain rendering, fog of war, resource nodes, territory visualization
+- **Scene narrative**: Branching story scenes with memory-dependent routing, 4 introductory scenes, grudge prototype
 
-export default tseslint.config({
-  extends: [
-    // other configs...
-    // Enable lint rules for React
-    reactX.configs['recommended-typescript'],
-    // Enable lint rules for React DOM
-    reactDom.configs.recommended,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+## Architecture
+
+### TypeScript Source (`src/`)
+
+| Directory | Purpose |
+|---|---|
+| `src/server/` | Express + Socket.IO server with service classes (Player, Country, Family, Cultivation, Economy, etc.) |
+| `src/pages/` | React pages — `Login` (`/`) and `Game` (`/game`) |
+| `src/components/` | Reusable UI components (HUD, Map2D, AlchemyPanel, ForgePanel, SkillBar, ScenePanel, FactionPanel, and more) |
+| `src/store/` | Central Zustand store (`gameStore.ts`) + crafting recipes, game constants |
+| `src/shared/types/` | TypeScript interfaces for all game domains |
+| `src/shared/constants/` | Game configuration constants |
+| `src/content/scenes/` | Scene narrative content files |
+
+### C++ ECS Engine (`src/server/game/`)
+
+Standalone ECS simulation with thread pool, LLM planning client, and Unix Socket IPC. Built with CMake.
+
+## Documentation
+
+- `docs/` — Game design documents (Chinese). `docs/README.md` is the index.
+- `code-design/` — Code architecture design docs (Chinese) mapping game design to implementation.
+- `CLAUDE.md` — AI agent instructions and project context.
+
+## Tech Stack
+
+- **Frontend**: React, TypeScript, Vite, Three.js, Tailwind CSS, Zustand
+- **Backend**: Node.js, Express, Socket.IO
+- **Testing**: Vitest (653+ tests)
+- **C++ Engine**: CMake, ECS architecture, libcurl (LLM HTTP)

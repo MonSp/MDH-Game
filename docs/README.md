@@ -100,12 +100,11 @@ AI生成世界格局（战略AI）
 ### 运行测试
 
 ```bash
-npm test          # 运行Vitest (95项测试, 3套件)
+npm test          # 运行Vitest (29个文件, 653项测试)
 npm run test:ui   # 启动Vitest UI
 ```
 
-测试套件: `test/llm-parser.test.ts` (36项, JSON计划解析/验证), `test/npc-memory.test.ts` (40项, 记忆系统),
-`test/npc-world-service.test.ts` (19项, NPC世界模拟/关系/回归测试)。
+测试套件: 29个文件, 653项测试。完整清单见 [system-status.md](system-status.md)。
 
 ### 开发服务器
 
@@ -120,6 +119,7 @@ npm start         # 生产启动
 ```
 docs/
 ├── README.md                          # 本文档
+├── system-status.md                   # 系统实现状态总览（功能完成度、测试覆盖）
 ├── game-design-prompt.md              # AI辅助设计提示词
 ├── 整合核心循环设计.md                 # 核心玩法循环
 ├── 系统交互矩阵.md                     # 系统交互关系
@@ -159,7 +159,7 @@ docs/
 ## 技术栈
 
 - **客户端**: Three.js (react-three-fiber) + React 19 + TypeScript + Tailwind CSS v4
-- **服务端**: Node.js + Express + Socket.IO + Vitest (95项测试)
+- **服务端**: Node.js + Express + Socket.IO + Vitest (653项测试)
 - **AI系统**: LLMHttpClient (OpenAI兼容/Gemini), PlanParser, NPCMemory (Phase 1b)
 - **C++引擎**: CMake + C++17 ECS (benchmark only, Unix Socket IPC)
 - **数据库**: better-sqlite3 (轻量, 大部分数据在内存中)
@@ -176,7 +176,7 @@ docs/
 
 已完成的基础设施不再单独列出，详细路线图见 [22-开发路线图](22-开发路线图.md)。
 
-### Phase 0 — 当前版本 (v1.4.0)
+### Phase 0 — 当前版本 (v1.11.0.0)
 - 2.5D 像素渲染引擎
 - 玩家修仙系统（境界/突破/天赋/体质）
 - 世界自动战斗系统（怪物生成/玩家/NPC 战斗/掉落）
@@ -208,7 +208,7 @@ docs/
 3. 使用[game-design-prompt](game-design-prompt.md)辅助AI设计
 4. 保持文档风格一致，使用Markdown格式
 5. 更新相关文档时同步更新本文档索引
-6. 修改代码后运行 `npm test` 确保95项测试全部通过
+6. 修改代码后运行 `npm test` 确保653项测试全部通过
 7. 新增功能时添加Vitest测试用例
 
 ## 联系方式

@@ -30,7 +30,7 @@ cd build && cmake .. && make
 # Run C++ engine benchmark: ./build/game_engine [threadCount] [npcCount]
 ```
 
-There are no tests yet — no test runner is configured in `package.json`.
+Tests use **Vitest** (`npm test`). The `test/` directory has 20+ test files covering game systems (forge, faction, squad, diplomacy, cultivation, equipment, NPC memory, LLM dialogue, LLM planning parser, effect utils, and more).
 
 ## Architecture
 
@@ -46,9 +46,9 @@ The C++ engine (`src/server/main.cpp`) is a standalone ECS simulation benchmark 
 | `src/server/services/` | Singleton service classes: `PlayerService`, `CountryService`, `FamilyService`, `CultivationService`, `EconomyService`, `ResourceService`, `NPCService`, `DeathService`, `PopulationService` |
 | `src/server/game/` | C++ ECS engine headers (compiled separately via CMake) |
 | `src/pages/` | React page components — `Login` (`/`) and `Game` (`/game`) |
-| `src/components/` | Reusable UI: `HUD`, `LogBox`, `Map2D`, `MarketPanel` |
-| `src/store/gameStore.ts` | **Central Zustand store** (~1400 lines). All game state and logic: player data, clans, NPCs, resources, market, cultivation, ascension, NPC behavior tree evaluation |
-| `src/shared/types/` | TypeScript interfaces for all game domains (`player.ts`, `npc.ts`, `cultivation.ts`, `country.ts`, `family.ts`, `economy.ts`, `resource.ts`, `life-cycle.ts`, `events.ts`) |
+| `src/components/` | Reusable UI: `HUD`, `LogBox`, `Map2D`, `MarketPanel`, `AlchemyPanel`, `ForgePanel`, `SkillBar`, `ScenePanel`, `FactionPanel`, `SquadPanel`, `DiplomacyPanel`, `WarPanel`, `ChroniclePanel`, `EventLog`, `SurveyPopup` |
+| `src/store/gameStore.ts` | **Central Zustand store** (~2768 lines). All game state and logic: player data, clans, NPCs, resources, market, cultivation, ascension, NPC behavior tree evaluation, alchemy/forge crafting |
+| `src/shared/types/` | TypeScript interfaces for all game domains (`player.ts`, `npc.ts`, `cultivation.ts`, `country.ts`, `family.ts`, `economy.ts`, `resource.ts`, `life-cycle.ts`, `events.ts`, `items.ts`, `map.ts`, `scene.ts`, `LLMPlanning.ts`) |
 | `src/shared/constants/` | Game config constants: map dimensions, tick rate |
 
 ### C++ ECS Engine (`src/server/game/`)
@@ -86,8 +86,8 @@ The C++ engine (`src/server/main.cpp`) is a standalone ECS simulation benchmark 
 
 - `tsconfig.json` has `strict: false` and `noImplicitAny: false` — TypeScript strictness is intentionally relaxed.
 - The C++ engine is a **benchmark/headless simulation** — it doesn't run as a production server. The TS Express server is the actual game server.
-- `gameStore.ts` is the largest file (~1400 lines) and contains both state and logic (NPC behavior tree, market economics, cultivation mechanics). Major game systems are implemented here rather than in separate service files.
-- The codebase is early-stage: no test suite, some placeholder implementations, and framework-level scaffolding mixed with detailed game logic.
+- `gameStore.ts` is the largest file (~2768 lines) and contains both state and logic (NPC behavior tree, market economics, cultivation mechanics, alchemy/forge crafting). Major game systems are implemented here rather than in separate service files.
+- The codebase is mid-stage: 20+ test files covering all major game systems, some placeholder implementations, and framework-level scaffolding mixed with detailed game logic.
 
 ## Skill routing
 
