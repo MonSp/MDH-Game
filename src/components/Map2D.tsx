@@ -90,6 +90,24 @@ function seededRandom(x: number, y: number): number {
   return (h % 1000) / 1000;
 }
 
+// Breathing pulse ring for player highlight
+const PlayerPulseRing = () => {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (ref.current) {
+      const pulse = 0.5 + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+      ref.current.scale.setScalar(1 + pulse * 0.3);
+      (ref.current.material as THREE.MeshBasicMaterial).opacity = 0.3 + pulse * 0.15;
+    }
+  });
+  return (
+    <mesh ref={ref} position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[0.8, 1.0, 32]} />
+      <meshBasicMaterial color="#4ade80" transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
+  );
+};
+
 // Animated water tile with flowing texture
 const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number; yPos: number }) => {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -116,9 +134,11 @@ const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number
       <meshStandardMaterial
         map={tex}
         transparent
-        opacity={0.7}
+        opacity={0.85}
         roughness={0.1}
         metalness={0.6}
+        emissive={biome === TerrainType.SHALLOW_WATER ? '#0a5a7a' : '#062a4a'}
+        emissiveIntensity={0.15}
       />
     </mesh>
   );
@@ -188,7 +208,7 @@ const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: {
   const s = height / 1.0;
 
   return (
-    <group scale={[s, s, s]}>
+    <group scale={[s * 1.3, s * 1.3, s * 1.3]}>
       <PixelCharacterSprite
         realm={appearance.realm || '凡人'}
         bodyType={appearance.bodyType || '凡体'}
@@ -264,6 +284,8 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
                   map={tex}
                   roughness={0.9}
                   metalness={0.0}
+                  emissive={isMountain ? '#2a2a2a' : tile.biome === TerrainType.GRASS ? '#1a3a1a' : tile.biome === TerrainType.SAND ? '#3a3a1a' : tile.biome === TerrainType.SNOW ? '#2a3a4a' : '#1a1a2a'}
+                  emissiveIntensity={0.08}
                 />
               </mesh>
             )}
@@ -402,11 +424,11 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
 };
 
 // 5. NPC Mesh
-const NPCMesh = ({ npc, dx, dy, onClick }: { npc: NPC, dx: number, dy: number, onClick: () => void }) => {
+const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true }: { npc: NPC, dx: number, dy: number, onClick: () => void, showNameTag?: boolean }) => {
   const [hovered, setHovered] = useState(false);
   useCursor(hovered);
   const appearance = useMemo(() => generateCharacterStyle(npc.realm, '凡体', npc.role), [npc]);
-  
+
   const tile = getTerrainTile(npc.position.x, npc.position.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
 
@@ -453,14 +475,16 @@ const NPCMesh = ({ npc, dx, dy, onClick }: { npc: NPC, dx: number, dy: number, o
         />
       )}
 
-      {/* Tags */}
+      {/* Tags — only show activity label for nearby NPCs (≤8 tiles) */}
       <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center">
-          <div className="bg-zinc-900/80 px-1.5 py-0.5 rounded text-[10px] text-emerald-300 border border-emerald-900/50 whitespace-nowrap shadow-sm mb-1">
-            {npc.activity}
-          </div>
+          {showNameTag && (
+            <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] text-white/80 whitespace-nowrap shadow-sm mb-1">
+              {npc.activity}
+            </div>
+          )}
           {hovered && (
-            <div className="bg-zinc-900/90 border border-zinc-700 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
+            <div className="bg-black/70 border border-zinc-700 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
               <div className="text-emerald-400 font-bold">{npc.name} <span className="text-zinc-500 font-normal">[{npc.realm}]</span></div>
               <div className="text-zinc-400 flex items-center space-x-2">
                 <span>{npc.role}</span>
@@ -495,10 +519,10 @@ const SquadMemberMesh = ({ member, dx, dy }: { member: SquadMember; dx: number; 
       {/* Tags */}
       <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center">
-          <div className="bg-amber-900/80 px-1.5 py-0.5 rounded text-[10px] text-amber-300 border border-amber-700/50 whitespace-nowrap shadow-sm mb-1">
+          <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] text-amber-300 whitespace-nowrap shadow-sm mb-1">
             {member.role}
           </div>
-          <div className="bg-zinc-900/80 px-1 py-0.5 rounded text-[10px] text-zinc-400 border border-zinc-800 whitespace-nowrap">
+          <div className="bg-black/50 px-1 py-0.5 rounded text-[10px] text-white/80 whitespace-nowrap">
             {member.name}
           </div>
         </div>
@@ -680,7 +704,7 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
 
       {/* Pixel art monster sprite */}
       <mesh position={[0, 0.5, 0]}>
-        <PixelMonsterSprite type={monster.name} realm={monster.realm} scale={0.7} />
+        <PixelMonsterSprite type={monster.name} realm={monster.realm} scale={1.1} />
       </mesh>
 
       {/* HP Bar */}
@@ -744,6 +768,9 @@ const PlayerMesh = ({ player }: { player: any }) => {
 
       {/* Body */}
       <CultivatorModel appearance={appearance} isMoving={isMoving} isFloating={tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER'} />
+
+      {/* Pulse ring — breathing highlight for player */}
+      <PlayerPulseRing />
 
       {/* Player cultivation aura sparkles */}
       <Sparkles
@@ -1071,7 +1098,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
       return (
         <group key={`capital-${country}`} position={[dx, baseHeight, dy]}>
           {/* Capital building sprite */}
-          <PixelBuildingSprite type="capital" country={country} scale={0.7} />
+          <PixelBuildingSprite type="capital" country={country} scale={1.1} />
           {/* Capital glow ring */}
           <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[1.0, 1.3, 32]} />
@@ -1091,8 +1118,8 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
   return (
     <div className="w-full h-full bg-zinc-950 relative overflow-hidden" style={{ width: '100vw', height: '100vh' }}>
       <Canvas shadows style={{ width: '100%', height: '100%' }} gl={{ antialias: false, powerPreference: 'high-performance' }}>
-        {/* 迷雾参数调整：颜色调亮，范围大幅推远，减少压抑感 */}
-        <fog attach="fog" args={['#18181b', 25 - visionBonus * 2, 60 + visionBonus * 10]} />
+        {/* 迷雾调亮，范围缩短 — 减少压抑感 */}
+        <fog attach="fog" args={['#2a2a35', 20, 55]} />
 
         <OrthographicCamera
           makeDefault
@@ -1103,14 +1130,14 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           onUpdate={c => c.lookAt(0, 0, 0)}
         />
         
-        {/* 环境光大幅调亮，模拟明亮的白天天光 */}
-        <ambientLight intensity={1.5} color="#f8fafc" /> 
-        
-        {/* 主平行光模拟太阳，强度提升，颜色调白亮 */}
-        <directionalLight 
-          position={[15, 25, 10]} 
-          intensity={2.0} 
-          color="#fef9c3"
+        {/* 环境光提升，冷白明亮 */}
+        <ambientLight intensity={2.5} color="#f0f4ff" />
+
+        {/* 主平行光冷白，模拟天光 */}
+        <directionalLight
+          position={[15, 25, 10]}
+          intensity={2.2}
+          color="#e8e8e8"
           castShadow 
           shadow-mapSize={[2048, 2048]} 
           shadow-camera-left={-30}
@@ -1152,12 +1179,27 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           return <ResourceMesh key={res.id} res={res} dx={dx} dy={dy} />;
         })}
 
-        {nearbyNPCs.map(npc => {
-          const dx = npc.position.x - player.position.x;
-          const dy = npc.position.y - player.position.y;
-          if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
-          return <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} onClick={() => setSelectedNPC(npc)} />;
-        })}
+        {(() => {
+          const npcsInRange = nearbyNPCs.map(npc => {
+            const dx = npc.position.x - player.position.x;
+            const dy = npc.position.y - player.position.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return { npc, dx, dy, dist };
+          }).filter(({ dx, dy }) => Math.abs(dx) <= VIEW_RADIUS && Math.abs(dy) <= VIEW_RADIUS);
+
+          // If >15 NPCs on screen, only show name tags for the nearest important ones
+          const tagThreshold = 8;
+          const nearbyCount = npcsInRange.filter(({ dist }) => dist <= tagThreshold).length;
+          const showAllTags = nearbyCount <= 15;
+
+          return npcsInRange.map(({ npc, dx, dy, dist }) => {
+            const isImportant = dist <= tagThreshold;
+            const showTag = showAllTags ? isImportant : (isImportant && (npc.clanId === player.clanId || dist <= 4));
+            return (
+              <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} showNameTag={showTag} onClick={() => setSelectedNPC(npc)} />
+            );
+          });
+        })()}
 
         {/* Phase 1.3: NPC interaction visual effects */}
         {activeEffects.map(effect => (
