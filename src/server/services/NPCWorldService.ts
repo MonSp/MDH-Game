@@ -105,11 +105,52 @@ export class NPCWorldService extends EventEmitter {
   /** Buffer of recent interactions for client sync */
   private recentInteractions: NPCInteractionEvent[] = [];
   private readonly MAX_RECENT_INTERACTIONS = 50;
+  /** Configurable clan ID pool (replaces hardcoded 'sect_main') */
+  private clanIdPool: string[] = [];
+  private clanIdIndex: number = 0;
 
   private constructor() {
     super();
     this.memory = new NPCMemoryStore();
     this.nextNPCId = 1;
+  }
+
+  /**
+   * Set the pool of clan IDs to assign to seeded NPCs.
+   * If not called, falls back to 'sect_main' for backwards compatibility.
+   */
+  setClanIds(ids: string[]): void {
+    this.clanIdPool = [...ids];
+    this.clanIdIndex = 0;
+  }
+
+  /** Pick the next clan ID from the pool (round-robin), or 'sect_main' if pool empty. */
+  private nextClanId(): string {
+    if (this.clanIdPool.length === 0) return 'sect_main';
+    const id = this.clanIdPool[this.clanIdIndex % this.clanIdPool.length];
+    this.clanIdIndex++;
+    return id;
+  }
+
+  /**
+   * Generate a default clan ID pool for a given heaven level.
+   * Produces IDs matching the client format: `${heavenLevel}-${country}-${type}[-${index}]`
+   * Includes all non-royal clans so NPCs are spread across families.
+   */
+  generateDefaultClanIds(heavenLevel: number = 9): string[] {
+    const countries = ['秦', '楚', '齐', '燕', '赵', '魏', '韩'];
+    const ids: string[] = [];
+    const familyCount = 16; // default for heaven 9
+    const firstCount = Math.floor(familyCount / 4);
+    const secondCount = Math.floor(familyCount / 3);
+    const thirdCount = familyCount - firstCount - secondCount;
+
+    for (const country of countries) {
+      for (let i = 1; i <= firstCount; i++) ids.push(`${heavenLevel}-${country}-1级-${i}`);
+      for (let i = 1; i <= secondCount; i++) ids.push(`${heavenLevel}-${country}-2级-${i}`);
+      for (let i = 1; i <= thirdCount; i++) ids.push(`${heavenLevel}-${country}-3级-${i}`);
+    }
+    return ids;
   }
 
   static getInstance(): NPCWorldService {
@@ -318,7 +359,7 @@ export class NPCWorldService extends EventEmitter {
       const npc: NPCEntity = {
         id: s.id,
         name: s.name,
-        clanId: 'sect_main',
+        clanId: this.nextClanId(),
         nation: '——',
         role: mapRole(s.role),
         realm: mapRealm(s.realm),
@@ -459,9 +500,15 @@ export class NPCWorldService extends EventEmitter {
       return;
     }
 
+    // Build memory context from NPCMemoryStore (relationships, interactions, witnessed events)
+    const nameResolver = (npcId: string) => {
+      const s = this.npcs.get(npcId);
+      return s ? s.npc.name : npcId;
+    };
+    const memoryContext = this.memory.buildMemoryContext(id, nameResolver);
     // Delegate planning to LLMIntegrationManager (single unified pipeline)
     state.planningNext = true;
-    const actions = await LLMIntegrationManager.getInstance().triggerAndGetActions(id, state.npc);
+    const actions = await LLMIntegrationManager.getInstance().triggerAndGetActions(id, state.npc, memoryContext);
     state.planningNext = false;
 
     if (actions.length > 0) {
@@ -544,7 +591,7 @@ export class NPCWorldService extends EventEmitter {
     const npc: NPCEntity = {
       id,
       name: candidate.name,
-      clanId: 'sect_main',
+      clanId: this.nextClanId(),
       nation: '——',
       role: mapRole(candidate.role),
       realm: mapRealm(candidate.realm),

@@ -624,7 +624,12 @@ const PlayerMesh = ({ player }: { player: any }) => {
 };
 
 // 6. Faction Base Mesh
-const FactionBaseMesh = ({ faction, playerPos, isAtWar, garrison, fortification }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; playerPos: { x: number; y: number }; isAtWar?: boolean; garrison?: number; fortification?: number; }) => {
+const COUNTRY_COLORS: Record<string, string> = {
+  '秦': '#e11d48', '楚': '#a855f7', '齐': '#3b82f6',
+  '燕': '#06b6d4', '赵': '#f97316', '魏': '#22c55e', '韩': '#eab308',
+};
+
+const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garrison, fortification }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; country: string; territory: number; playerPos: { x: number; y: number }; isAtWar?: boolean; garrison?: number; fortification?: number; }) => {
   const tile = getTerrainTile(playerPos.x, playerPos.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
   const warRingRef = useRef<THREE.Mesh>(null);
@@ -639,6 +644,17 @@ const FactionBaseMesh = ({ faction, playerPos, isAtWar, garrison, fortification 
 
   return (
     <group position={[0, baseHeight, 0]}>
+      {/* Phase 1.4b: Territory overlay — colored disc sized by territory value */}
+      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[1 + territory * 0.6, 48]} />
+        <meshBasicMaterial color={COUNTRY_COLORS[country] || '#787878'} transparent opacity={0.12} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {/* Territory border ring */}
+      <mesh position={[0, 0.008, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1 + territory * 0.6 - 0.08, 1 + territory * 0.6, 48]} />
+        <meshBasicMaterial color={COUNTRY_COLORS[country] || '#787878'} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+
       {/* Territory ring */}
       <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[1.5, 2.5, 32]} />
@@ -1010,7 +1026,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
             : false;
           return (
             <group key={faction.id} position={[dx, baseHeight, dy]}>
-              <FactionBaseMesh faction={faction} playerPos={player.position} isAtWar={atWar} garrison={faction.garrison} fortification={faction.fortification} />
+              <FactionBaseMesh faction={faction} country={faction.country} territory={faction.territory || 1} playerPos={player.position} isAtWar={atWar} garrison={faction.garrison} fortification={faction.fortification} />
             </group>
           );
         })}

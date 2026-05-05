@@ -617,6 +617,7 @@ function initializeGame(): void {
 
   // Start NPC simulation world
   const npcWorld = NPCWorldService.getInstance();
+  npcWorld.setClanIds(npcWorld.generateDefaultClanIds(9));
   npcWorld.initialize();
   npcWorld.start();
 

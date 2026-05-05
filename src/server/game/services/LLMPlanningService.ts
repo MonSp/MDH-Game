@@ -105,7 +105,8 @@ export class LLMPlanningService {
   }
 
   private getCacheKey(request: LLMPlanningRequest): string {
-    return `${request.npc_id}_${request.planning_horizon}_${request.world_context.war_active}`;
+    const memHash = request.world_context.major_events.join(',').length;
+    return `${request.npc_id}_${request.planning_horizon}_${request.world_context.war_active}_mem${memHash}`;
   }
 
   private getCachedPlan(cacheKey: string): LLMPlan | null {

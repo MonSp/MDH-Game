@@ -507,6 +507,25 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
+  addItem: (itemName) => {
+    set(s => {
+      if (!s.player) return s;
+      const inv = { ...s.player.inventory };
+      inv[itemName] = (inv[itemName] || 0) + 1;
+      return { player: { ...s.player, inventory: inv } };
+    });
+  },
+
+  removeItem: (itemName) => {
+    set(s => {
+      if (!s.player || !s.player.inventory[itemName] || s.player.inventory[itemName] <= 0) return s;
+      const inv = { ...s.player.inventory };
+      inv[itemName] -= 1;
+      if (inv[itemName] <= 0) delete inv[itemName];
+      return { player: { ...s.player, inventory: inv } };
+    });
+  },
+
   cultivate: () => {
     const state = get();
     if (!state.player) return;

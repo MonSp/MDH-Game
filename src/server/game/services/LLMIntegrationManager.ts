@@ -90,9 +90,9 @@ export class LLMPlanningScheduler {
     this.npcDataStore.clear();
   }
 
-  async triggerPlanning(npcId: string): Promise<void> {
+  async triggerPlanning(npcId: string, memoryContext?: string): Promise<void> {
     const planningService = LLMPlanningService.getInstance();
-    const request = this.createPlanningRequest(npcId);
+    const request = this.createPlanningRequest(npcId, memoryContext);
 
     if (!request) return;
 
@@ -179,12 +179,18 @@ export class LLMPlanningScheduler {
     }
   }
 
-  private createPlanningRequest(npcId: string): LLMPlanningRequest | null {
+  private createPlanningRequest(npcId: string, memoryContext?: string): LLMPlanningRequest | null {
     const info = this.npcDataStore.get(npcId);
     if (!info) return null;
 
     const tier = determineTier(info.data);
     const tierConfig = LLM_SERVICE_CONFIG.tier_config[tier];
+
+    const majorEvents: string[] = [];
+    if (memoryContext) {
+      // Include up to 10 most recent memory lines
+      majorEvents.push(...memoryContext.split('\n').filter(l => l.trim()).slice(0, 10));
+    }
 
     return {
       npc_id: npcId,
@@ -193,7 +199,7 @@ export class LLMPlanningScheduler {
         war_active: false,
         resource_density: 0.5,
         economy_status: 'normal',
-        major_events: [],
+        major_events: majorEvents,
       },
       planning_horizon: tierConfig.horizon,
       planning_type: PlanningType.NORMAL,
@@ -355,7 +361,7 @@ export class LLMIntegrationManager {
   }
 
   /** Trigger planning for an NPC and return converted PlanAction[], or [] on failure. */
-  async triggerAndGetActions(npcId: string, npcData: any): Promise<PlanAction[]> {
+  async triggerAndGetActions(npcId: string, npcData: any, memoryContext?: string): Promise<PlanAction[]> {
     // Register if not already registered
     this.scheduler.registerNPC(npcId, {
       id: npcId,
@@ -373,7 +379,7 @@ export class LLMIntegrationManager {
     if (actions.length > 0) return actions;
 
     // Force trigger planning and check again
-    await this.scheduler.triggerPlanning(npcId);
+    await this.scheduler.triggerPlanning(npcId, memoryContext);
     actions = this.convertPlanToActions(npcId);
     return actions;
   }

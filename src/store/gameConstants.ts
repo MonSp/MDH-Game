@@ -764,6 +764,10 @@ export interface GameState {
   // Phase 1.1d: Server NPC state sync
   mergeServerNPCs: (serverNpcs: NPC[]) => void;
 
+  // Phase 3.3: Inventory management
+  addItem: (itemName: string) => void;
+  removeItem: (itemName: string) => void;
+
   // Phase 1.4a: Faction AI with LLM
   enqueueFactionAI: (factionId: string) => void;
   resolveFactionAI: (factionId: string, decision: { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null) => void;
@@ -802,59 +806,70 @@ export const IMMORTAL_DOMAINS_DATA: Record<string, { name: string; culture: stri
 export const COUNTRIES = Object.keys(COUNTRIES_DATA);
 export const SURNAMES = ['赢', '芈', '姜', '姬', '赵', '魏', '韩', '李', '王', '白', '蒙', '项', '田', '林'];
 
+/** Country colors for territory map overlay */
+export const COUNTRY_COLORS: Record<string, string> = {
+  '秦': '#e11d48', // rose/red
+  '楚': '#a855f7', // purple
+  '齐': '#3b82f6', // blue
+  '燕': '#06b6d4', // cyan
+  '赵': '#f97316', // orange
+  '魏': '#22c55e', // green
+  '韩': '#eab308', // yellow
+};
+
 export function generateClans(heavenLevel: HeavenLevel): Clan[] {
   const clans: Clan[] = [];
   const familyCount = HEAVEN_INFO[heavenLevel].familyCount;
   const countries = heavenLevel <= 2 ? Object.keys(IMMORTAL_DOMAINS_DATA) : COUNTRIES;
-  
+
   countries.forEach(country => {
-    clans.push({ 
-      id: `${heavenLevel}-${country}-皇族`, 
-      name: `${country}国王室`, 
-      country, 
-      type: '皇族', 
-      reputation: 50, 
+    clans.push({
+      id: `${heavenLevel}-${country}-皇族`,
+      name: `${country}国王室`,
+      country,
+      type: '皇族',
+      reputation: 50,
       treasury: 100000 * HEAVEN_INFO[heavenLevel].resourceMultiplier,
       heavenLevel,
       isAscendingFamily: false
     });
-    
+
     const firstCount = Math.floor(familyCount / 4);
     for (let i = 1; i <= firstCount; i++) {
-      clans.push({ 
-        id: `${heavenLevel}-${country}-1级-${i}`, 
-        name: `${SURNAMES[Math.floor(Math.random() * SURNAMES.length)]}家`, 
-        country, 
-        type: '1级', 
-        reputation: 50, 
+      clans.push({
+        id: `${heavenLevel}-${country}-1级-${i}`,
+        name: `${SURNAMES[Math.floor(Math.random() * SURNAMES.length)]}家`,
+        country,
+        type: '1级',
+        reputation: 50,
         treasury: 50000 * HEAVEN_INFO[heavenLevel].resourceMultiplier,
         heavenLevel,
         isAscendingFamily: false
       });
     }
-    
+
     const secondCount = Math.floor(familyCount / 3);
     for (let i = 1; i <= secondCount; i++) {
-      clans.push({ 
-        id: `${heavenLevel}-${country}-2级-${i}`, 
-        name: `${SURNAMES[Math.floor(Math.random() * SURNAMES.length)]}氏`, 
-        country, 
-        type: '2级', 
-        reputation: 50, 
+      clans.push({
+        id: `${heavenLevel}-${country}-2级-${i}`,
+        name: `${SURNAMES[Math.floor(Math.random() * SURNAMES.length)]}氏`,
+        country,
+        type: '2级',
+        reputation: 50,
         treasury: 10000 * HEAVEN_INFO[heavenLevel].resourceMultiplier,
         heavenLevel,
         isAscendingFamily: false
       });
     }
-    
+
     const thirdCount = familyCount - firstCount - secondCount - 1;
     for (let i = 1; i <= thirdCount; i++) {
-      clans.push({ 
-        id: `${heavenLevel}-${country}-3级-${i}`, 
-        name: `${SURNAMES[Math.floor(Math.random() * SURNAMES.length)]}族`, 
-        country, 
-        type: '3级', 
-        reputation: 50, 
+      clans.push({
+        id: `${heavenLevel}-${country}-3级-${i}`,
+        name: `${SURNAMES[Math.floor(Math.random() * SURNAMES.length)]}族`,
+        country,
+        type: '3级',
+        reputation: 50,
         treasury: 5000 * HEAVEN_INFO[heavenLevel].resourceMultiplier,
         heavenLevel,
         isAscendingFamily: false
@@ -863,6 +878,7 @@ export function generateClans(heavenLevel: HeavenLevel): Clan[] {
   });
   return clans.map(c => ({
     ...c,
+    territory: c.type === '皇族' ? 8 : c.type === '1级' ? 5 : c.type === '2级' ? 3 : 2,
     garrison: Math.max(20, Math.floor(c.reputation * 0.5)),
     fortification: Math.max(10, Math.floor(c.reputation * 0.3)),
   }));

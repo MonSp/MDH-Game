@@ -1,7 +1,7 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import { InitiativeService, InitiativeType } from '../store/gameService';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle, Swords } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle, Swords, FlaskRound } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 import { SquadPanel } from './SquadPanel';
@@ -9,6 +9,7 @@ import { FactionPanel } from './FactionPanel';
 import { DiplomacyPanel } from './DiplomacyPanel';
 import { SkillBar } from './SkillBar';
 import { WarPanel } from './WarPanel';
+import { AlchemyPanel } from './AlchemyPanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
@@ -25,6 +26,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [showDiplomacy, setShowDiplomacy] = useState(false);
   const [showWarPanel, setShowWarPanel] = useState(false);
   const [showSkillBar, setShowSkillBar] = useState(false);
+  const [showAlchemy, setShowAlchemy] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState('');
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
@@ -377,6 +379,14 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         })()}
 
         <button
+          onClick={() => setShowAlchemy(true)}
+          className="flex items-center justify-center space-x-2 w-full py-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded transition-colors text-emerald-300 font-medium"
+        >
+          <FlaskRound size={16} />
+          <span>炼丹</span>
+        </button>
+
+        <button
           className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
         >
           <Save size={14} />
@@ -474,6 +484,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {showDiplomacy && <DiplomacyPanel onClose={() => setShowDiplomacy(false)} />}
       {showWarPanel && <WarPanel onClose={() => setShowWarPanel(false)} />}
       {showSkillBar && <SkillBar onClose={() => setShowSkillBar(false)} />}
+      {showAlchemy && <AlchemyPanel onClose={() => setShowAlchemy(false)} />}
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
@@ -653,6 +664,70 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
           </div>
         </div>
       )}
+      {/* Phase 1.2e: Floating bubble notifications for NPC initiative events */}
+      <NotificationBubbles />
     </div>
   );
 };
+
+/** Phase 1.2e: Auto-dismissing toast bubbles for NPC initiative events */
+function NotificationBubbles() {
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: string; npcName: string; fading: boolean }>>([]);
+  const seenRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const service = InitiativeService.getInstance();
+      const events = service.getPendingEvents().filter(e => e.type !== InitiativeType.ENCOUNTER);
+      for (const event of events) {
+        if (seenRef.current.has(event.id)) continue;
+        seenRef.current.add(event.id);
+        const toast = { id: event.id, message: event.message, type: event.type, npcName: event.npcName, fading: false };
+        setToasts(prev => [...prev.slice(-4), toast]);
+
+        // Auto-dismiss after 4s with fade
+        setTimeout(() => {
+          setToasts(prev => prev.map(t => t.id === event.id ? { ...t, fading: true } : t));
+          setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== event.id));
+            service.dismissEvent(event.id);
+          }, 500);
+        }, 4000);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (toasts.length === 0) return null;
+
+  const typeColors: Record<string, string> = {
+    greeting: 'border-emerald-600/60 bg-emerald-950/90',
+    trade_offer: 'border-amber-600/60 bg-amber-950/90',
+    challenge: 'border-red-600/60 bg-red-950/90',
+    plea: 'border-cyan-600/60 bg-cyan-950/90',
+  };
+  const typeIcons: Record<string, string> = {
+    greeting: '💬', trade_offer: '🤝', challenge: '⚔️', plea: '🆘',
+  };
+
+  return (
+    <div className="fixed top-20 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          className={`px-3 py-2 rounded-lg border shadow-xl backdrop-blur pointer-events-auto transition-all duration-500 ${
+            typeColors[t.type] || 'border-zinc-600/60 bg-zinc-950/90'
+          } ${t.fading ? 'opacity-0 translate-x-4' : 'opacity-100 translate-x-0'}`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-sm">{typeIcons[t.type] || '📢'}</span>
+            <div className="min-w-0">
+              <p className="text-xs text-zinc-300 font-medium truncate max-w-[200px]">{t.npcName}</p>
+              <p className="text-xs text-zinc-400 truncate max-w-[220px]">{t.message}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
