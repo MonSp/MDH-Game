@@ -1,0 +1,183 @@
+import React, { useRef, useMemo, useEffect } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+import { generateEffectTexture } from '../utils/pixelSpriteGenerator';
+
+// --- Combat spark particles ---
+interface CombatParticlesProps {
+  position: [number, number, number];
+  count?: number;
+  color?: string;
+  duration?: number;
+  onComplete?: () => void;
+}
+
+export const CombatParticles = ({ position, count = 12, color = '#ef4444', duration = 800, onComplete }: CombatParticlesProps) => {
+  const pointsRef = useRef<THREE.Points>(null);
+  const startRef = useRef(Date.now());
+  const sparkTexture = useMemo(() => generateEffectTexture('spark'), []);
+
+  const { positions, velocities } = useMemo(() => {
+    const pos = new Float32Array(count * 3);
+    const vel = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 0.2;
+      pos[i * 3 + 1] = Math.random() * 0.3;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 0.2;
+      vel[i * 3] = (Math.random() - 0.5) * 2;
+      vel[i * 3 + 1] = Math.random() * 2;
+      vel[i * 3 + 2] = (Math.random() - 0.5) * 2;
+    }
+    return { positions: pos, velocities: vel };
+  }, [count]);
+
+  useFrame(() => {
+    if (!pointsRef.current) return;
+    const elapsed = Date.now() - startRef.current;
+    const life = Math.max(0, 1 - elapsed / duration);
+    const geo = pointsRef.current.geometry;
+    const pos = geo.attributes.position.array as Float32Array;
+
+    for (let i = 0; i < count; i++) {
+      const t = elapsed / 1000;
+      pos[i * 3] += velocities[i * 3] * 0.02;
+      pos[i * 3 + 1] += velocities[i * 3 + 1] * 0.02 - 0.01; // gravity
+      pos[i * 3 + 2] += velocities[i * 3 + 2] * 0.02;
+    }
+    geo.attributes.position.needsUpdate = true;
+    (pointsRef.current.material as THREE.PointsMaterial).opacity = life;
+    pointsRef.current.scale.setScalar(life);
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => onComplete?.(), duration);
+    return () => clearTimeout(timer);
+  }, [duration, onComplete]);
+
+  return (
+    <points ref={pointsRef} position={position}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={count}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        map={sparkTexture}
+        size={0.15}
+        color={color}
+        blending={THREE.AdditiveBlending}
+        transparent
+        depthWrite={false}
+        opacity={1}
+      />
+    </points>
+  );
+};
+
+// --- Gathering effect ---
+interface GatheringEffectProps {
+  position: [number, number, number];
+  resourceType: string;
+  duration?: number;
+  onComplete?: () => void;
+}
+
+export const GatheringEffect = ({ position, resourceType, duration = 1000, onComplete }: GatheringEffectProps) => {
+  const pointsRef = useRef<THREE.Points>(null);
+  const startRef = useRef(Date.now());
+  const count = 8;
+  const textureType = resourceType === '矿脉' ? 'crystal' : 'leaf';
+  const particleTexture = useMemo(() => generateEffectTexture(textureType as any), [textureType]);
+
+  const positions = useMemo(() => {
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 0.4;
+      pos[i * 3 + 1] = 0;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 0.4;
+    }
+    return pos;
+  }, []);
+
+  useFrame(() => {
+    if (!pointsRef.current) return;
+    const elapsed = Date.now() - startRef.current;
+    const life = Math.max(0, 1 - elapsed / duration);
+    const geo = pointsRef.current.geometry;
+    const pos = geo.attributes.position.array as Float32Array;
+
+    const t = elapsed / 1000;
+    for (let i = 0; i < count; i++) {
+      pos[i * 3 + 1] = t * 0.8 + Math.sin(t * 3 + i) * 0.1;
+    }
+    geo.attributes.position.needsUpdate = true;
+    (pointsRef.current.material as THREE.PointsMaterial).opacity = life;
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => onComplete?.(), duration);
+    return () => clearTimeout(timer);
+  }, [duration, onComplete]);
+
+  return (
+    <points ref={pointsRef} position={position}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={count}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        map={particleTexture}
+        size={0.15}
+        blending={THREE.AdditiveBlending}
+        transparent
+        depthWrite={false}
+        opacity={1}
+      />
+    </points>
+  );
+};
+
+// --- Breakthrough effect ---
+interface BreakthroughEffectProps {
+  position: [number, number, number];
+  color?: string;
+}
+
+export const BreakthroughEffect = ({ position, color = '#ffd700' }: BreakthroughEffectProps) => {
+  const ringRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Sprite>(null);
+  const glowTexture = useMemo(() => generateEffectTexture('glow'), []);
+
+  useFrame((state) => {
+    if (!ringRef.current || !glowRef.current) return;
+    const t = state.clock.getElapsedTime();
+    const pulse = Math.sin(t * 4) * 0.5 + 0.5;
+
+    ringRef.current.scale.setScalar(1 + t * 3);
+    const ringMat = ringRef.current.material as THREE.MeshBasicMaterial;
+    ringMat.opacity = Math.max(0, 1 - t * 0.5);
+
+    glowRef.current.scale.setScalar(2 + pulse);
+    const glowMat = glowRef.current.material as THREE.SpriteMaterial;
+    glowMat.opacity = Math.max(0, 1 - t * 0.3);
+  });
+
+  return (
+    <group position={position}>
+      <mesh ref={ringRef} position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.5, 0.8, 24]} />
+        <meshBasicMaterial color={color} transparent opacity={0.8} side={THREE.DoubleSide} />
+      </mesh>
+      <sprite ref={glowRef} scale={[2, 2, 1]}>
+        <spriteMaterial map={glowTexture} color={color} transparent opacity={0.6} depthWrite={false} />
+      </sprite>
+    </group>
+  );
+};

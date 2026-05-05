@@ -1,6 +1,8 @@
 # TODOS
 
 > 最后更新: 2026-05-05 | 已完成: Phase 1-4 (100%) · Phase 5 基础 (~35%)
+>
+> 详细路线图见 [docs/22-开发路线图.md](docs/22-开发路线图.md)
 
 ---
 
@@ -8,29 +10,9 @@
 
 | Phase | Theme | 完成度 | 剩余工期 |
 |-------|-------|--------|---------|
-| Phase 1-2 | NPC 觉醒 + 世界具象 | ✅ DONE | — |
-| Phase 3 | 修仙深化 | ✅ DONE | — |
-| **Phase 4** | **战争深化** | **✅ DONE** | — |
+| Phase 1-4 | NPC 觉醒 + 世界具象 + 修仙深化 + 战争深化 | ✅ DONE | — |
 | Phase 5 | 跨天统一 | ~35% | ~5 天 |
 | Phase 6 | 多人联机 | ~0% | ~7 天 |
-
----
-
-## Phase 4: 战争深化 (✅ 已完成)
-
-### ✅ P0 — 俘虏系统 (4.3b)
-- [x] 战斗结算后添加俘虏判定逻辑
-- [x] 俘虏面板 UI（关押列表/招降/释放/处决）
-- [x] 招降检定忠诚度、释放改善关系、处决降低声望
-
-### ✅ P1 — 攻城器械建造 (4.2b)
-
-路线图要求「集结兵力、建造攻城器械（消耗时间和资源）」，当前军团直接行军攻城。
-- [ ] 攻城前「建造器械」阶段——消耗 time + treasury → 增加攻城伤害倍率
-
-### ✅ P2 — battlesLost/alliesLost 计数器从未递增
-- [x] 军团交战失败时递增 `battlesLost`
-- [x] 小队/军团作战成员死亡时递增 `alliesLost`
 
 ---
 
@@ -67,12 +49,6 @@
 
 ---
 
-## Technical Debt
+## Phase 2 ✅ DONE
 
-| 优先级 | 问题 | 说明 |
-|--------|------|------|
-| ✅ DONE | 双 LLM 规划管道 | 已添加文档说明双管道架构，无需重构 |
-| ✅ DONE | MapGenerator 不存在 | `src/server/services/MapGeneratorService.ts` 已创建，含 LRU 缓存 |
-| ✅ DONE | 斥候视野扩展未实现 | `Map2D` 斥候角色视野 2×，`SCOUT_VISION_MULTIPLIER` 常量 |
-| ✅ DONE | 服务端/客户端 NPC 池不同步 | `mergeServerNPCs()` 含同步健康检查和 3-miss 自动清理 |
-| ✅ DONE | Phase 4 代码耦合 | `updateNPCs()` 已提取 `combatDmg`/`applyNpcDefeat`/`resolveArmyCombat`
+- [x] **2.3** 像素风美术升级 — Canvas2D 程序化像素精灵（角色/怪物/地形/资源点/粒子特效）

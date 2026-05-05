@@ -1,12 +1,17 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrthographicCamera, Html, useCursor } from '@react-three/drei';
+import { OrthographicCamera, Html, useCursor, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS, getClanTerritoryCenter } from '../store/gameStore';
 import { generateCharacterStyle } from '../utils/appearance';
 import { getTerrainTile, getVisionRadius, SCOUT_VISION_MULTIPLIER } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
+import { PixelCharacterSprite } from './PixelCharacterSprite';
+import { PixelMonsterSprite } from './PixelMonsterSprite';
+import { PixelResourceSprite } from './PixelResourceSprite';
+import { CombatParticles, GatheringEffect, BreakthroughEffect } from './PixelParticleEffects';
+import { generateTerrainTileTexture, generateEffectTexture } from '../utils/pixelSpriteGenerator';
 
 // Constants
 const VIEW_RADIUS = 15;
@@ -27,117 +32,34 @@ const Tree = ({ position }: { position: [number, number, number] }) => (
   </group>
 );
 
-// 2. Cultivator Voxel Model
+// 2. Cultivator Pixel Sprite (replaces old voxel model)
 const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: { appearance: any, isMoving?: boolean, isFloating?: boolean }) => {
-  const { bodyHexColor, hairHexColor, skinHexColor, hasBun, height, glowColor } = appearance;
-  const isGlowing = glowColor !== 'transparent';
-  
-  const groupRef = useRef<THREE.Group>(null);
-  const leftArmRef = useRef<THREE.Mesh>(null);
-  const rightArmRef = useRef<THREE.Mesh>(null);
-
-  // 动画随机偏移，避免所有人动作完全同步
-  const animOffset = useMemo(() => Math.random() * Math.PI * 2, []);
-
-  useFrame((state) => {
-    const time = state.clock.getElapsedTime();
-
-    if (groupRef.current) {
-      if (isMoving) {
-        // 移动状态：跳跃动画 (使用绝对值的正弦波模拟蹦跳)
-        const bounceFreq = 15; // 跳跃频率
-        const bounceAmp = 0.15; // 跳跃高度
-        groupRef.current.position.y = Math.abs(Math.sin(time * bounceFreq)) * bounceAmp;
-
-        // 移动状态：手臂前后摆动
-        const swingFreq = 15;
-        const swingAmp = 0.5; // 摆动幅度
-        if (leftArmRef.current && rightArmRef.current) {
-          leftArmRef.current.rotation.x = Math.sin(time * swingFreq) * swingAmp;
-          rightArmRef.current.rotation.x = -Math.sin(time * swingFreq) * swingAmp;
-        }
-      } else {
-        // 闲置状态：根据是否在水面/闭关决定是漂浮还是呼吸
-        if (isFloating) {
-          // 水面上漂浮/御剑悬浮感
-          groupRef.current.position.y = Math.sin(time * 2 + animOffset) * 0.05;
-        } else {
-          // 陆地上的呼吸感 (极其微弱的缩放或Y轴位移)
-          groupRef.current.position.y = Math.sin(time * 3 + animOffset) * 0.02;
-        }
-
-        // 闲置状态：手臂自然下垂
-        if (leftArmRef.current && rightArmRef.current) {
-          leftArmRef.current.rotation.x = THREE.MathUtils.lerp(leftArmRef.current.rotation.x, 0, 0.1);
-          rightArmRef.current.rotation.x = THREE.MathUtils.lerp(rightArmRef.current.rotation.x, 0, 0.1);
-        }
-      }
-    }
-  });
-
-  // 基准缩放比例，适应不同的身高等级
-  const s = height / 1.0; 
+  const { height } = appearance;
+  const s = height / 1.0;
 
   return (
-    <group scale={[s, s, s]} ref={groupRef}>
-      {/* 头部 (Head) */}
-      <mesh position={[0, 0.7, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.3, 0.3, 0.3]} />
-        <meshStandardMaterial color={skinHexColor} />
-      </mesh>
-      
-      {/* 头发基座 (Hair Base) */}
-      <mesh position={[0, 0.86, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.32, 0.05, 0.32]} />
-        <meshStandardMaterial color={hairHexColor} />
-      </mesh>
-
-      {/* 发髻 (Hair Bun - 古风特征) */}
-      {hasBun && (
-        <mesh position={[0, 0.92, -0.05]} castShadow receiveShadow>
-          <boxGeometry args={[0.12, 0.15, 0.12]} />
-          <meshStandardMaterial color={hairHexColor} />
-        </mesh>
-      )}
-
-      {/* 飘逸后发 (Back Hair) */}
-      <mesh position={[0, 0.65, -0.16]} castShadow receiveShadow>
-        <boxGeometry args={[0.32, 0.4, 0.05]} />
-        <meshStandardMaterial color={hairHexColor} />
-      </mesh>
-
-      {/* 道袍躯干 (Robe Body) */}
-      <mesh position={[0, 0.35, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.35, 0.4, 0.2]} />
-        <meshStandardMaterial color={bodyHexColor} emissive={isGlowing ? glowColor : '#000000'} emissiveIntensity={0.5} />
-      </mesh>
-
-      {/* 道袍下摆 (Robe Skirt) */}
-      <mesh position={[0, 0.1, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.4, 0.2, 0.25]} />
-        <meshStandardMaterial color={bodyHexColor} emissive={isGlowing ? glowColor : '#000000'} emissiveIntensity={0.5} />
-      </mesh>
-
-      {/* 左臂大袖 (Left Arm) */}
-      <group position={[-0.25, 0.55, 0]} ref={leftArmRef}>
-        <mesh position={[0, -0.2, 0]} castShadow receiveShadow>
-          <boxGeometry args={[0.15, 0.35, 0.2]} />
-          <meshStandardMaterial color={bodyHexColor} emissive={isGlowing ? glowColor : '#000000'} emissiveIntensity={0.5} />
-        </mesh>
-      </group>
-
-      {/* 右臂大袖 (Right Arm) */}
-      <group position={[0.25, 0.55, 0]} ref={rightArmRef}>
-        <mesh position={[0, -0.2, 0]} castShadow receiveShadow>
-          <boxGeometry args={[0.15, 0.35, 0.2]} />
-          <meshStandardMaterial color={bodyHexColor} emissive={isGlowing ? glowColor : '#000000'} emissiveIntensity={0.5} />
-        </mesh>
-      </group>
+    <group scale={[s, s, s]}>
+      <PixelCharacterSprite
+        realm={appearance.realm || '凡人'}
+        bodyType={appearance.bodyType || '凡体'}
+        role={appearance.role || '内门子弟'}
+        isMoving={isMoving}
+        isFloating={isFloating}
+        scale={s}
+      />
     </group>
   );
 };
 
-// 3. Terrain Component
+// 3. Terrain Component with pixel art textures
+const terrainTextureCache = new Map<TerrainType, THREE.CanvasTexture>();
+function getTerrainTexture(biome: TerrainType): THREE.CanvasTexture {
+  if (!terrainTextureCache.has(biome)) {
+    terrainTextureCache.set(biome, generateTerrainTileTexture(biome));
+  }
+  return terrainTextureCache.get(biome)!;
+}
+
 const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
   const tiles = useMemo(() => {
     const t = [];
@@ -177,13 +99,16 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
         // Snow cap on high mountains
         const showSnowCap = isMountain && height > 1.8;
 
+        // Pixel terrain texture
+        const tex = getTerrainTexture(tile.biome);
+
         return (
           <group key={`${tile.x},${tile.y}`} position={[tile.dx, 0, tile.dy]}>
-            {/* Main terrain block */}
+            {/* Main terrain block with pixel texture */}
             <mesh position={[0, yPos, 0]} castShadow={!isWaterTile} receiveShadow>
               <boxGeometry args={[1, height, 1]} />
               <meshStandardMaterial
-                color={tile.color}
+                map={tex}
                 transparent={isWaterTile}
                 opacity={isWaterTile ? 0.7 : 1}
                 roughness={isWaterTile ? 0.1 : 0.9}
@@ -251,7 +176,7 @@ const FogOfWar = ({ playerPos, exploredTiles, visionRadius }: { playerPos: { x: 
       })}
     </group>
   );
-};// 4. Resource Mesh
+};// 4. Resource Point with pixel art sprite
 const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => {
   const interactWithResource = useGameStore(state => state.interactWithResource);
   const clans = useGameStore(state => state.clans);
@@ -261,12 +186,11 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
   const tile = getTerrainTile(res.position.x, res.position.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
 
-  const color = res.type === '灵田' ? '#16a34a' : res.type === '矿脉' ? '#78716c' : '#ca8a04';
   const owner = res.ownerClanId ? clans.find(c => c.id === res.ownerClanId) : null;
-  const ownerColor = '#fbbf24'; // amber/gold for owned resources
+  const ownerColor = '#fbbf24';
 
   return (
-    <group position={[dx, baseHeight + 0.5, dy]}>
+    <group position={[dx, baseHeight + 0.4, dy]}>
       {/* Owner indicator flag */}
       {owner && (
         <mesh position={[0, 0.8, 0]}>
@@ -274,16 +198,14 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
           <meshStandardMaterial color={ownerColor} side={THREE.DoubleSide} />
         </mesh>
       )}
-      <mesh
-        rotation={[Math.PI / 4, Math.PI / 4, 0]}
+      {/* Pixel art sprite */}
+      <group
         onClick={(e) => { e.stopPropagation(); interactWithResource(res.id); }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
-        castShadow
       >
-        <boxGeometry args={[0.6, 0.6, 0.6]} />
-        <meshStandardMaterial color={owner ? ownerColor : color} />
-      </mesh>
+        <PixelResourceSprite type={res.type} scale={0.8} />
+      </group>
       {hovered && (
         <Html position={[0, 1, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="bg-zinc-900/90 border border-zinc-700 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
@@ -312,6 +234,8 @@ const NPCMesh = ({ npc, dx, dy, onClick }: { npc: NPC, dx: number, dy: number, o
   const [isMoving, setIsMoving] = useState(false);
   const prevPos = useRef(npc.position);
 
+  const realmIndex = useMemo(() => ['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'].indexOf(npc.realm), [npc.realm]);
+
   useEffect(() => {
     if (prevPos.current.x !== npc.position.x || prevPos.current.y !== npc.position.y) {
       setIsMoving(true);
@@ -330,13 +254,25 @@ const NPCMesh = ({ npc, dx, dy, onClick }: { npc: NPC, dx: number, dy: number, o
       </mesh>
 
       {/* Body */}
-      <group 
+      <group
         onClick={(e) => { e.stopPropagation(); onClick(); }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
       >
         <CultivatorModel appearance={appearance} isMoving={isMoving} isFloating={tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER'} />
       </group>
+
+      {/* Sparkles for high-realm NPCs (金丹+) */}
+      {realmIndex >= 3 && (
+        <Sparkles
+          count={realmIndex >= 6 ? 15 : 8}
+          scale={[1.2, 0.8, 1.2]}
+          size={0.05}
+          speed={0.3}
+          color={appearance.auraColor}
+          opacity={0.4}
+        />
+      )}
 
       {/* Tags */}
       <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
@@ -414,6 +350,7 @@ const INTERACTION_EFFECT_COLORS: Record<string, string> = {
 const InteractionEffectParticles = ({ effect }: { effect: ActiveEffect }) => {
   const particleCount = effect.type === 'duel' || effect.type === 'conflict' ? 12 : 8;
   const color = INTERACTION_EFFECT_COLORS[effect.type];
+  const sparkTexture = useMemo(() => generateEffectTexture('spark'), []);
   const [particles] = useState(() =>
     Array.from({ length: particleCount }, (_, i) => ({
       id: i,
@@ -441,9 +378,9 @@ const InteractionEffectParticles = ({ effect }: { effect: ActiveEffect }) => {
       child.position.x = p.offsetX + Math.sin(dt * 4 + p.id) * p.spread * dt;
       child.position.z = p.offsetZ + Math.cos(dt * 3 + p.id) * p.spread * dt;
       child.position.y = p.offsetY + dt * 0.5;
-      const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      if (mat) mat.opacity = fadeOut * life;
       child.scale.setScalar(fadeOut);
+      const mat = (child as THREE.Sprite).material as THREE.SpriteMaterial;
+      if (mat) mat.opacity = fadeOut * life;
     });
   });
 
@@ -464,10 +401,9 @@ const InteractionEffectParticles = ({ effect }: { effect: ActiveEffect }) => {
   return (
     <group position={effect.position} ref={groupRef}>
       {particles.map((p) => (
-        <mesh key={p.id} position={[p.offsetX, p.offsetY, p.offsetZ]}>
-          <boxGeometry args={[0.08, 0.08, 0.08]} />
-          <meshBasicMaterial color={color} transparent opacity={0.9} />
-        </mesh>
+        <sprite key={p.id} position={[p.offsetX, p.offsetY, p.offsetZ]} scale={[0.15, 0.15, 1]}>
+          <spriteMaterial map={sparkTexture} color={color} transparent opacity={0.9} depthWrite={false} />
+        </sprite>
       ))}
       {/* Ground ring for alliance */}
       {effect.type === 'alliance' && (
@@ -494,7 +430,7 @@ const InteractionEffectParticles = ({ effect }: { effect: ActiveEffect }) => {
   );
 };
 
-// 4. Monster Mesh
+// 4. Monster Mesh with pixel art sprite
 const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy: number }) => {
   const tile = getTerrainTile(monster.position.x, monster.position.y);
   const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
@@ -535,20 +471,9 @@ const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy
         <meshBasicMaterial color="#ef4444" transparent opacity={0.3} />
       </mesh>
 
-      {/* Monster body - red glowing crystal */}
-      <mesh position={[0, 0.5, 0]} castShadow>
-        <boxGeometry args={[0.5, 0.8, 0.5]} />
-        <meshStandardMaterial color="#991b1b" emissive="#ef4444" emissiveIntensity={0.3} />
-      </mesh>
-
-      {/* Eyes - small bright dots */}
-      <mesh position={[-0.15, 0.6, 0.26]}>
-        <sphereGeometry args={[0.05, 8, 8]} />
-        <meshBasicMaterial color="#fef08a" />
-      </mesh>
-      <mesh position={[0.15, 0.6, 0.26]}>
-        <sphereGeometry args={[0.05, 8, 8]} />
-        <meshBasicMaterial color="#fef08a" />
+      {/* Pixel art monster sprite */}
+      <mesh position={[0, 0.5, 0]}>
+        <PixelMonsterSprite type={monster.name} realm={monster.realm} scale={0.7} />
       </mesh>
 
       {/* HP Bar */}
@@ -612,6 +537,16 @@ const PlayerMesh = ({ player }: { player: any }) => {
 
       {/* Body */}
       <CultivatorModel appearance={appearance} isMoving={isMoving} isFloating={tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER'} />
+
+      {/* Player cultivation aura sparkles */}
+      <Sparkles
+        count={20}
+        scale={[1.5, 1, 1.5]}
+        size={0.06}
+        speed={0.4}
+        color={appearance.auraColor}
+        opacity={0.5}
+      />
 
       <Html position={[0, appearance.height + 0.5, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="bg-zinc-900 border border-emerald-500 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg flex flex-col items-center">
@@ -929,7 +864,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
 
   return (
     <div className="w-full h-full bg-zinc-950 relative overflow-hidden" style={{ width: '100vw', height: '100vh' }}>
-      <Canvas shadows style={{ width: '100%', height: '100%' }}>
+      <Canvas shadows style={{ width: '100%', height: '100%' }} gl={{ antialias: false, powerPreference: 'high-performance' }}>
         {/* 迷雾参数调整：颜色调亮，范围大幅推远，减少压抑感 */}
         <fog attach="fog" args={['#18181b', 25 - visionBonus * 2, 60 + visionBonus * 10]} />
 

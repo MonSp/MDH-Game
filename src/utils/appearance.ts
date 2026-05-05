@@ -99,6 +99,9 @@ export function generateCharacterStyle(realm: Realm, bodyType: BodyType, role: s
   const { bodyColor, bodyHexColor, hairHexColor, skinHexColor, hasBun, height, width } = getRoleAppearance(role);
 
   return {
+    realm,
+    bodyType,
+    role,
     auraColor,
     auraSize,
     auraOpacity,
