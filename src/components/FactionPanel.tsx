@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore, BuildingType, BUILDING_EFFECTS, BUILDING_UPGRADE_COST, FACTION_CREATE_REQUIREMENTS, getReputationTitle } from '../store/gameStore';
 import { X, Building2, Users, Shield, Coins, Sword, Eye, FlaskRound, BookOpen, Warehouse, ChevronRight, ArrowUpCircle, Hammer } from 'lucide-react';
+import { PixelPanel } from './PixelPanel';
 
 const BUILDING_ICONS: Record<BuildingType, React.ReactNode> = {
   '议事厅': <Building2 size={16} />,
@@ -42,7 +43,7 @@ export const FactionPanel = ({ onClose }: { onClose: () => void }) => {
 
     return (
       <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[550px] max-h-[85vh] flex flex-col text-zinc-200">
+        <PixelPanel className="w-[550px] max-h-[85vh] flex flex-col text-zinc-200">
           <div className="flex justify-between items-center p-4 border-b border-zinc-700">
             <h2 className="text-xl font-bold flex items-center text-amber-400">
               <Building2 className="mr-2" /> 创建势力
@@ -86,7 +87,7 @@ export const FactionPanel = ({ onClose }: { onClose: () => void }) => {
               {allMet && factionName.trim() ? `消耗 ${FACTION_CREATE_REQUIREMENTS.spiritStones} 灵石，创建势力` : '条件未满足'}
             </button>
           </div>
-        </div>
+        </PixelPanel>
       </div>
     );
   }
@@ -98,7 +99,7 @@ export const FactionPanel = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[750px] max-h-[85vh] flex flex-col text-zinc-200">
+      <PixelPanel className="w-[750px] max-h-[85vh] flex flex-col text-zinc-200" contentClassName="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-zinc-700">
           <h2 className="text-xl font-bold flex items-center text-amber-400">
@@ -305,7 +306,7 @@ export const FactionPanel = ({ onClose }: { onClose: () => void }) => {
             </div>
           )}
         </div>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

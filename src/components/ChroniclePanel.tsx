@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { PixelPanel } from './PixelPanel';
 
 let globalIdCounter = 0;
 
@@ -195,7 +196,7 @@ export const ChroniclePanel = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex z-50" onClick={onClose}>
-      <div className="flex mx-auto my-8 w-[1200px] max-h-[90vh] bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+      <PixelPanel className="mx-auto my-8 w-[1200px] max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()} contentClassName="flex flex-1 min-h-0">
         {/* Left: NPC List */}
         <div className="w-72 bg-zinc-950 border-r border-zinc-800 flex flex-col">
           <div className="p-3 border-b border-zinc-800 text-center text-sm text-zinc-500">
@@ -302,7 +303,7 @@ export const ChroniclePanel = ({ onClose }: { onClose: () => void }) => {
         {/* Modals */}
         {showRecruit && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center" onClick={() => setShowRecruit(false)}>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-[500px]" onClick={e => e.stopPropagation()}>
+            <PixelPanel className="p-6 w-[500px]" onClick={e => e.stopPropagation()}>
               <h3 className="text-lg font-bold text-purple-300 mb-4">招募新弟子</h3>
               <div className="flex gap-3 mb-4">
                 {candidates.length === 0 ? (
@@ -319,22 +320,22 @@ export const ChroniclePanel = ({ onClose }: { onClose: () => void }) => {
                 )}
               </div>
               <button className="w-full py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm text-zinc-300" onClick={() => setShowRecruit(false)}>取消</button>
-            </div>
+            </PixelPanel>
           </div>
         )}
 
         {showAssign && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center" onClick={() => setShowAssign(false)}>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96" onClick={e => e.stopPropagation()}>
+            <PixelPanel className="p-6 w-96" onClick={e => e.stopPropagation()}>
               <h3 className="text-lg font-bold text-zinc-200 mb-4">分配任务</h3>
               <AssignForm npcs={npcs} onAssign={(npcId, task) => doAction('/api/assign', { npcId, task })} onCancel={() => setShowAssign(false)} />
-            </div>
+            </PixelPanel>
           </div>
         )}
 
         {showPromote && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center" onClick={() => setShowPromote(null)}>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96" onClick={e => e.stopPropagation()}>
+            <PixelPanel className="p-6 w-96" onClick={e => e.stopPropagation()}>
               <h3 className="text-lg font-bold mb-4" style={{ color: showPromote === 'promote' ? '#4c4' : '#f44' }}>
                 {showPromote === 'promote' ? '提拔弟子' : '贬斥弟子'}
               </h3>
@@ -353,10 +354,10 @@ export const ChroniclePanel = ({ onClose }: { onClose: () => void }) => {
                   {showPromote === 'promote' ? '提拔' : '贬斥'}
                 </button>
               </div>
-            </div>
+            </PixelPanel>
           </div>
         )}
-      </div>
+      </PixelPanel>
     </div>
   );
 };

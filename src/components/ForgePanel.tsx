@@ -4,6 +4,7 @@ import { useGameStore, getFactionBuildingLevel } from '../store/gameStore';
 import { ItemQuality } from '../shared/types/items';
 import { Hammer, X, Sword, Shield } from 'lucide-react';
 import { PixelItemIcon } from './PixelItemIcon';
+import { PixelPanel } from './PixelPanel';
 
 interface ForgePanelProps {
   onClose: () => void;
@@ -60,7 +61,7 @@ export const ForgePanel = ({ onClose }: ForgePanelProps) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+      <PixelPanel className="w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-700 px-5 py-3 flex items-center justify-between z-10">
           <div className="flex items-center gap-2">
@@ -190,7 +191,7 @@ export const ForgePanel = ({ onClose }: ForgePanelProps) => {
             </div>
           </div>
         </div>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore, type DiplomaticStatus, type ConflictLevel, type Clan } from '../store/gameStore';
 import { X, Handshake, Swords, Heart, Flag, Search, Shield } from 'lucide-react';
+import { PixelPanel } from './PixelPanel';
 
 const STATUS_LABELS: Record<DiplomaticStatus, string> = {
   '中立': '中立',
@@ -55,7 +56,7 @@ export const DiplomacyPanel = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[650px] max-h-[85vh] flex flex-col text-zinc-200">
+      <PixelPanel className="w-[650px] max-h-[85vh] flex flex-col text-zinc-200" contentClassName="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-zinc-700">
           <h2 className="text-xl font-bold flex items-center text-purple-400">
@@ -216,7 +217,7 @@ export const DiplomacyPanel = ({ onClose }: { onClose: () => void }) => {
             </div>
           )}
         </div>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

@@ -1462,6 +1462,205 @@ export function getItemIconDataURL(itemName: string): string | null {
   return url;
 }
 
+// --- Character portrait data URL (for HUD avatar) ---
+
+const portraitCache = new Map<string, string>();
+
+export function getCharacterPortraitDataURL(realm: string, bodyType: string, role: string): string | null {
+  const key = `${realm}|${bodyType}|${role}`;
+  const cached = portraitCache.get(key);
+  if (cached) return cached;
+
+  const tex = generateCharacterSprite(realm as any, bodyType as any, role);
+  const canvas = tex.image as HTMLCanvasElement;
+  const url = canvas.toDataURL();
+  portraitCache.set(key, url);
+  return url;
+}
+
+// --- Technique icons ---
+
+const techniqueIconCache = new Map<string, string>();
+
+function drawFireIcon(ctx: CanvasRenderingContext2D) {
+  drawPixel(ctx, 7, 2, '#f97316');
+  drawRect(ctx, 6, 3, 4, 2, '#f97316');
+  drawRect(ctx, 5, 5, 6, 2, '#fbbf24');
+  drawRect(ctx, 4, 7, 8, 3, '#ef4444');
+  drawRect(ctx, 5, 10, 6, 2, '#dc2626');
+  drawRect(ctx, 6, 12, 4, 2, '#ef4444');
+  drawPixel(ctx, 7, 14, '#f97316');
+  drawPixel(ctx, 6, 6, '#fef3c7');
+  drawPixel(ctx, 7, 7, '#fef3c7');
+}
+
+function drawEarthIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 6, 2, 4, 2, '#92400e');
+  drawRect(ctx, 5, 4, 6, 2, '#a16207');
+  drawRect(ctx, 4, 6, 8, 2, '#854d0e');
+  drawRect(ctx, 3, 8, 10, 2, '#713f12');
+  drawRect(ctx, 2, 10, 12, 2, '#92400e');
+  drawRect(ctx, 3, 12, 10, 2, '#a16207');
+  drawRect(ctx, 4, 14, 8, 2, '#854d0e');
+  drawPixel(ctx, 5, 7, '#fef3c7');
+}
+
+function drawWindIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 5, 1, 6, 2, '#0d9488');
+  drawRect(ctx, 4, 3, 8, 2, '#14b8a6');
+  drawRect(ctx, 6, 5, 5, 2, '#5eead4');
+  drawRect(ctx, 8, 7, 4, 2, '#14b8a6');
+  drawRect(ctx, 6, 9, 5, 2, '#0d9488');
+  drawRect(ctx, 4, 11, 8, 2, '#14b8a6');
+  drawRect(ctx, 5, 13, 6, 2, '#0d9488');
+  drawPixel(ctx, 9, 2, '#ccfbf1');
+  drawPixel(ctx, 5, 10, '#ccfbf1');
+}
+
+function drawWaterIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 4, 2, 8, 2, '#1d4ed8');
+  drawRect(ctx, 2, 4, 12, 2, '#2563eb');
+  drawRect(ctx, 3, 6, 10, 2, '#3b82f6');
+  drawRect(ctx, 4, 8, 8, 2, '#60a5fa');
+  drawRect(ctx, 2, 10, 12, 2, '#2563eb');
+  drawRect(ctx, 3, 12, 10, 2, '#1d4ed8');
+  drawRect(ctx, 4, 14, 8, 2, '#3b82f6');
+  drawPixel(ctx, 5, 5, '#bfdbfe');
+  drawPixel(ctx, 9, 9, '#bfdbfe');
+}
+
+function drawLightIcon(ctx: CanvasRenderingContext2D) {
+  drawPixel(ctx, 7, 0, '#fbbf24');
+  drawRect(ctx, 7, 1, 2, 3, '#f59e0b');
+  drawRect(ctx, 5, 4, 6, 2, '#fbbf24');
+  drawRect(ctx, 3, 5, 10, 3, '#f59e0b');
+  drawRect(ctx, 4, 8, 8, 2, '#fbbf24');
+  drawRect(ctx, 5, 10, 6, 2, '#f59e0b');
+  drawRect(ctx, 6, 12, 4, 2, '#fbbf24');
+  drawPixel(ctx, 7, 14, '#f59e0b');
+  drawPixel(ctx, 6, 6, '#fef3c7');
+  drawPixel(ctx, 8, 7, '#fef3c7');
+}
+
+function drawChaosIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 5, 1, 6, 2, '#7c3aed');
+  drawRect(ctx, 3, 3, 10, 2, '#8b5cf6');
+  drawRect(ctx, 2, 5, 12, 2, '#7c3aed');
+  drawRect(ctx, 2, 7, 12, 3, '#6d28d9');
+  drawRect(ctx, 3, 10, 10, 2, '#7c3aed');
+  drawRect(ctx, 4, 12, 8, 2, '#8b5cf6');
+  drawRect(ctx, 5, 14, 6, 2, '#7c3aed');
+  drawPixel(ctx, 6, 6, '#c4b5fd');
+  drawPixel(ctx, 8, 7, '#a78bfa');
+  drawPixel(ctx, 7, 8, '#c4b5fd');
+}
+
+function drawShieldIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 6, 1, 4, 2, '#2563eb');
+  drawRect(ctx, 5, 3, 6, 2, '#3b82f6');
+  drawRect(ctx, 4, 5, 8, 3, '#3b82f6');
+  drawRect(ctx, 4, 8, 8, 2, '#2563eb');
+  drawRect(ctx, 5, 10, 6, 2, '#1d4ed8');
+  drawRect(ctx, 6, 12, 4, 2, '#2563eb');
+  drawPixel(ctx, 7, 14, '#1d4ed8');
+  drawPixel(ctx, 7, 5, '#93c5fd');
+  drawPixel(ctx, 6, 6, '#93c5fd');
+  drawPixel(ctx, 8, 6, '#93c5fd');
+  drawPixel(ctx, 7, 7, '#93c5fd');
+}
+
+function drawMeditationIcon(ctx: CanvasRenderingContext2D) {
+  drawPixel(ctx, 7, 2, '#60a5fa');
+  drawRect(ctx, 6, 3, 4, 2, '#60a5fa');
+  drawRect(ctx, 5, 5, 6, 3, '#3b82f6');
+  drawRect(ctx, 6, 8, 4, 2, '#3b82f6');
+  drawRect(ctx, 5, 10, 6, 2, '#2563eb');
+  drawRect(ctx, 6, 12, 4, 2, '#3b82f6');
+  drawPixel(ctx, 7, 14, '#2563eb');
+  drawPixel(ctx, 5, 4, '#93c5fd');
+  drawPixel(ctx, 9, 4, '#93c5fd');
+}
+
+function drawFistIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 5, 1, 6, 2, '#d97706');
+  drawRect(ctx, 4, 3, 8, 3, '#f59e0b');
+  drawRect(ctx, 3, 6, 10, 2, '#d97706');
+  drawRect(ctx, 4, 8, 8, 2, '#b45309');
+  drawRect(ctx, 5, 10, 6, 2, '#d97706');
+  drawRect(ctx, 6, 12, 4, 2, '#f59e0b');
+  drawPixel(ctx, 7, 14, '#d97706');
+  drawPixel(ctx, 1, 5, '#fef3c7');
+  drawPixel(ctx, 14, 5, '#fef3c7');
+  drawPixel(ctx, 3, 2, '#fef3c7');
+  drawPixel(ctx, 12, 2, '#fef3c7');
+}
+
+function drawLifeIcon(ctx: CanvasRenderingContext2D) {
+  drawPixel(ctx, 7, 0, '#22c55e');
+  drawRect(ctx, 7, 1, 2, 3, '#16a34a');
+  drawRect(ctx, 5, 3, 6, 2, '#22c55e');
+  drawRect(ctx, 4, 5, 8, 3, '#16a34a');
+  drawRect(ctx, 5, 8, 6, 2, '#22c55e');
+  drawRect(ctx, 6, 10, 4, 2, '#16a34a');
+  drawRect(ctx, 5, 12, 6, 2, '#22c55e');
+  drawPixel(ctx, 7, 14, '#16a34a');
+  drawPixel(ctx, 7, 4, '#86efac');
+  drawPixel(ctx, 7, 6, '#86efac');
+}
+
+function drawVoidIcon(ctx: CanvasRenderingContext2D) {
+  drawRect(ctx, 4, 0, 8, 2, '#4c1d95');
+  drawRect(ctx, 2, 2, 12, 2, '#5b21b6');
+  drawRect(ctx, 1, 4, 14, 2, '#4c1d95');
+  drawRect(ctx, 1, 6, 14, 4, '#3b0764');
+  drawRect(ctx, 2, 10, 12, 2, '#4c1d95');
+  drawRect(ctx, 3, 12, 10, 2, '#5b21b6');
+  drawRect(ctx, 4, 14, 8, 2, '#4c1d95');
+  drawPixel(ctx, 3, 5, '#a78bfa');
+  drawPixel(ctx, 12, 5, '#a78bfa');
+  drawPixel(ctx, 4, 7, '#8b5cf6');
+  drawPixel(ctx, 11, 7, '#8b5cf6');
+  drawPixel(ctx, 7, 8, '#c4b5fd');
+}
+
+export function getTechniqueIconDataURL(techniqueId: string): string | null {
+  const cached = techniqueIconCache.get(techniqueId);
+  if (cached) return cached;
+
+  const [c, ctx] = createCanvas(16, 16);
+  ctx.fillStyle = '#18181b';
+  ctx.fillRect(0, 0, 16, 16);
+
+  const fire = ['flame_slash', 'soul_fire', 'phoenix_rebirth'];
+  const earth = ['earth_shaker', 'stone_skin', 'iron_body'];
+  const wind = ['swift_wind', 'qi_gathering'];
+  const water = ['flowing_water'];
+  const light = ['heavenly_blade', 'immortal_palm'];
+  const chaos = ['chaos_orb'];
+  const shield = ['spirit_shield'];
+  const meditation = ['meditation'];
+  const fist = ['vital_strike'];
+  const life = ['eternal_life'];
+  const voidTechs = ['void_step'];
+
+  if (fire.includes(techniqueId)) drawFireIcon(ctx);
+  else if (earth.includes(techniqueId)) drawEarthIcon(ctx);
+  else if (wind.includes(techniqueId)) drawWindIcon(ctx);
+  else if (water.includes(techniqueId)) drawWaterIcon(ctx);
+  else if (light.includes(techniqueId)) drawLightIcon(ctx);
+  else if (chaos.includes(techniqueId)) drawChaosIcon(ctx);
+  else if (shield.includes(techniqueId)) drawShieldIcon(ctx);
+  else if (meditation.includes(techniqueId)) drawMeditationIcon(ctx);
+  else if (fist.includes(techniqueId)) drawFistIcon(ctx);
+  else if (life.includes(techniqueId)) drawLifeIcon(ctx);
+  else if (voidTechs.includes(techniqueId)) drawVoidIcon(ctx);
+  else drawMeditationIcon(ctx);
+
+  const url = c.toDataURL();
+  techniqueIconCache.set(techniqueId, url);
+  return url;
+}
+
 // --- Cache clearing (for realm changes etc.) ---
 
 export function clearCharacterCache() { charCache.clear(); }
@@ -1474,4 +1673,6 @@ export function clearAllCaches() {
   buildingCache.clear();
   iconCache.clear();
   iconDataURLCache.clear();
+  portraitCache.clear();
+  techniqueIconCache.clear();
 }

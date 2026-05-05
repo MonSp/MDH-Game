@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { X, ShoppingCart } from 'lucide-react';
 import { PixelItemIcon } from './PixelItemIcon';
+import { PixelPanel } from './PixelPanel';
 
 export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
   const { player, market, buyItem, sellItem } = useGameStore();
@@ -23,7 +24,7 @@ export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-lg shadow-2xl w-[600px] text-zinc-200">
+      <PixelPanel className="p-6 w-[600px] text-zinc-200">
         <div className="flex justify-between items-center mb-6 border-b border-zinc-700 pb-2">
           <h2 className="text-xl font-bold flex items-center text-amber-400">
             <ShoppingCart className="mr-2" /> 中州坊市
@@ -98,7 +99,7 @@ export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
             );
           })}
         </div>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

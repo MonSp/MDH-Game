@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PixelPanel } from './PixelPanel';
 
 interface SurveyPopupProps {
   onClose: () => void;
@@ -26,7 +27,7 @@ export const SurveyPopup = ({ onClose }: SurveyPopupProps) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+      <PixelPanel className="p-8 max-w-md w-full mx-4">
         {step === 'intro' && (
           <div className="space-y-4">
             <h3 className="text-xl font-serif text-emerald-400">一个小问题</h3>
@@ -147,7 +148,7 @@ export const SurveyPopup = ({ onClose }: SurveyPopupProps) => {
             </button>
           </div>
         )}
-      </div>
+      </PixelPanel>
     </div>
   );
 };

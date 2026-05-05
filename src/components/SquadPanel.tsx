@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore, type SquadMember, SQUAD_ROLE_INFO, RECRUIT_REPUTATION_TIER, RECRUIT_SPIRITSTONE_COST, getReputationTitle, EQUIPPABLE_ITEMS } from '../store/gameStore';
 import { X, Users, UserPlus, Trash2, Shield, Sword, AlertTriangle } from 'lucide-react';
+import { PixelPanel } from './PixelPanel';
 
 export const SquadPanel = ({ onClose }: { onClose: () => void }) => {
   const { player, squadMembers, nearbyNPCs, recruitToSquad, dismissFromSquad, assignSquadRole, getRecruitCost } = useGameStore();
@@ -27,7 +28,7 @@ export const SquadPanel = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[750px] max-h-[85vh] flex flex-col text-zinc-200">
+      <PixelPanel className="w-[750px] max-h-[85vh] flex flex-col text-zinc-200" contentClassName="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-zinc-700">
           <h2 className="text-xl font-bold flex items-center text-emerald-400">
@@ -149,7 +150,7 @@ export const SquadPanel = ({ onClose }: { onClose: () => void }) => {
             )}
           </div>
         </div>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { X, UserCheck, UserX, Swords, Heart, Star } from 'lucide-react';
+import { PixelPanel } from './PixelPanel';
 
 interface CaptivePanelProps {
   onClose: () => void;
@@ -14,7 +15,7 @@ export const CaptivePanel = ({ onClose }: CaptivePanelProps) => {
   if (captives.length === 0) {
     return (
       <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-        <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[480px] flex flex-col text-zinc-200">
+        <PixelPanel className="w-[480px] flex flex-col text-zinc-200" contentClassName="flex flex-col flex-1 min-h-0">
           <div className="flex justify-between items-center p-4 border-b border-zinc-700">
             <h2 className="text-xl font-bold flex items-center text-amber-400">
               <UserX className="mr-2" /> 俘虏营
@@ -27,7 +28,7 @@ export const CaptivePanel = ({ onClose }: CaptivePanelProps) => {
             <p className="text-xs mt-2 text-zinc-700">击败敌方修士后可将其俘虏</p>
           </div>
           <button onClick={onClose} className="w-full py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-b-lg transition-colors text-sm">关闭</button>
-        </div>
+        </PixelPanel>
       </div>
     );
   }
@@ -42,7 +43,7 @@ export const CaptivePanel = ({ onClose }: CaptivePanelProps) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[580px] max-h-[85vh] flex flex-col text-zinc-200">
+      <PixelPanel className="w-[580px] max-h-[85vh] flex flex-col text-zinc-200" contentClassName="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-zinc-700">
           <h2 className="text-xl font-bold flex items-center text-amber-400">
@@ -159,7 +160,7 @@ export const CaptivePanel = ({ onClose }: CaptivePanelProps) => {
         <button onClick={onClose} className="w-full py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-b-lg transition-colors text-sm">
           关闭
         </button>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

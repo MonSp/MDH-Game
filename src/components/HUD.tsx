@@ -13,13 +13,17 @@ import { AlchemyPanel } from './AlchemyPanel';
 import { ForgePanel } from './ForgePanel';
 import { CaptivePanel } from './CaptivePanel';
 import { PixelItemIcon } from './PixelItemIcon';
+import { PixelTechniqueIcon } from './PixelTechniqueIcon';
+import { PixelMinimap } from './PixelMinimap';
+import { getCharacterPortraitDataURL } from '../utils/pixelSpriteGenerator';
+import { PixelPanel } from './PixelPanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
 }
 
 export const HUD = ({ onOpenChronicle }: HUDProps) => {
-  const { player, clans, squadMembers, playerFactionId, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot, getTechniqueEffects, captives } = useGameStore();
+  const { player, clans, squadMembers, playerFactionId, nearbyNPCs, wildMonsters, resourcePoints, useItem, attemptAscension, getAscensionQuests, completeAscensionQuest, performCycleRebirth, checkCycleCooldown, saveToSlot, getSaveSlots, deleteSaveSlot, getTechniqueEffects, captives } = useGameStore();
   const [showMarket, setShowMarket] = useState(false);
   const [showAscension, setShowAscension] = useState(false);
   const [showCycle, setShowCycle] = useState(false);
@@ -77,8 +81,20 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {/* 玩家状态 */}
       <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-lg backdrop-blur shadow-2xl w-72">
         <div className="flex items-center space-x-3 mb-4">
-          <div className="w-12 h-12 bg-emerald-900/50 rounded-full border border-emerald-700/50 flex items-center justify-center text-emerald-500 font-bold text-xl">
-            {player.name[0]}
+          <div className="w-12 h-12 bg-zinc-800 rounded-full border border-zinc-700 flex items-center justify-center overflow-hidden">
+            {(() => {
+              const portraitUrl = getCharacterPortraitDataURL(player.realm, player.bodyType, '散修');
+              return portraitUrl ? (
+                <img
+                  src={portraitUrl}
+                  alt={player.name}
+                  className="w-10 h-10"
+                  style={{ imageRendering: 'pixelated' }}
+                />
+              ) : (
+                <span className="text-emerald-500 font-bold text-xl">{player.name[0]}</span>
+              );
+            })()}
           </div>
           <div>
             <h2 className="font-bold text-zinc-100">{player.name}</h2>
@@ -229,6 +245,19 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             <div className="text-zinc-400">资源倍率：<span className="text-purple-400">×{heavenInfo.resourceMultiplier}</span></div>
           </div>
         </div>
+
+        {/* Mini pixel-art minimap */}
+        <PixelMinimap
+          playerX={player.position.x}
+          playerY={player.position.y}
+          npcs={nearbyNPCs?.map((n: any) => ({ x: n.position.x, y: n.position.y, color: '#22d3ee' })) || []}
+          monsters={wildMonsters?.map((m: any) => ({ x: m.position.x, y: m.position.y, color: '#ef4444' })) || []}
+          resources={resourcePoints?.map((r: any) => ({ x: r.x, y: r.y, color: '#a78bfa' })) || []}
+          points={clans?.map((c: any) => ({ x: c.base?.x || 0, y: c.base?.y || 0, color: c.id === player.clanId ? '#4ade80' : '#fbbf24' })) || []}
+          size={160}
+          scale={20}
+          className="mx-auto"
+        />
         
         {isAtMaxRealm && heavenInfo.ascensionRequired && (
           <div className="p-3 bg-amber-900/30 border border-amber-700/50 rounded">
@@ -443,7 +472,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
 
       {showBreakthrough && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96">
+          <PixelPanel className="p-6 w-96">
             <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center">
               <Sparkles size={20} className="mr-2" />渡劫突破
             </h3>
@@ -500,7 +529,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
                 </button>
               </div>
             </div>
-          </div>
+          </PixelPanel>
         </div>
       )}
 
@@ -515,7 +544,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {showCaptives && <CaptivePanel onClose={() => setShowCaptives(false)} />}
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
+          <PixelPanel className="p-6 w-96 max-h-[80vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center">
               <ArrowUp size={20} className="mr-2" />九重天劫·飞升台
             </h3>
@@ -591,13 +620,13 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
                 </button>
               </div>
             </div>
-          </div>
+          </PixelPanel>
         </div>
       )}
       
       {showCycle && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96">
+          <PixelPanel className="p-6 w-96">
             <h3 className="text-xl font-bold text-cyan-400 mb-4 flex items-center">
               <RefreshCw size={20} className="mr-2" />轮回转生
             </h3>
@@ -625,13 +654,13 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             >
               关闭
             </button>
-          </div>
+          </PixelPanel>
         </div>
       )}
 
       {showSaveDialog && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96">
+          <PixelPanel className="p-6 w-96">
             <h3 className="text-xl font-bold text-zinc-100 mb-4 flex items-center">
               <Save size={18} className="mr-2 text-emerald-400" />保存游戏
             </h3>
@@ -689,7 +718,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
             >
               关闭
             </button>
-          </div>
+          </PixelPanel>
         </div>
       )}
       {/* Phase 1.2e: Floating bubble notifications for NPC initiative events */}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGameStore, FORMATION_DATA, getClanTerritoryCenter, type SquadCombatStance } from '../store/gameStore';
 import { X, Swords, Shield, Target, Crosshair, ChevronDown, History, BarChart3, Users, Skull, CircleDot, Sword } from 'lucide-react';
+import { PixelPanel } from './PixelPanel';
 
 interface WarPanelProps {
   onClose: () => void;
@@ -48,7 +49,7 @@ export const WarPanel = ({ onClose }: WarPanelProps) => {
 
   return (
     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 pointer-events-auto backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl w-[580px] max-h-[85vh] flex flex-col text-zinc-200">
+      <PixelPanel className="w-[580px] max-h-[85vh] flex flex-col text-zinc-200" contentClassName="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-zinc-700">
           <h2 className="text-xl font-bold flex items-center text-red-400">
@@ -328,7 +329,7 @@ export const WarPanel = ({ onClose }: WarPanelProps) => {
         >
           关闭
         </button>
-      </div>
+      </PixelPanel>
     </div>
   );
 };

@@ -2,6 +2,8 @@ import { useGameStore, TECHNIQUES_DATA, REALM_LIST, type Equipment, type Equipme
 import { EquipmentRarity } from '../shared/types/cultivation';
 import { useState } from 'react';
 import { BookOpen, Zap, Shield, Heart, ArrowUp, Sword, Star } from 'lucide-react';
+import { PixelPanel } from './PixelPanel';
+import { PixelTechniqueIcon } from './PixelTechniqueIcon';
 
 interface SkillBarProps {
   onClose: () => void;
@@ -43,7 +45,7 @@ export const SkillBar = ({ onClose }: SkillBarProps) => {
 
   return (
     <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-[520px] max-h-[80vh] flex flex-col">
+      <PixelPanel className="p-6 w-[520px] max-h-[80vh] flex flex-col" contentClassName="flex flex-col flex-1 min-h-0">
         <h3 className="text-xl font-bold text-emerald-400 mb-4 flex items-center">
           <BookOpen size={20} className="mr-2" />功法与装备
         </h3>
@@ -111,7 +113,7 @@ export const SkillBar = ({ onClose }: SkillBarProps) => {
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          {isActive ? <Zap size={14} className="text-amber-400" /> : <BookOpen size={14} className="text-blue-400" />}
+                          <PixelTechniqueIcon techniqueId={tech.id} size={16} />
                           <span className="text-sm font-medium text-zinc-200">{tech.name}</span>
                           <span className={`text-xs ${gradeColors[tech.grade] || 'text-zinc-400'}`}>{tech.grade}</span>
                         </div>
@@ -206,7 +208,7 @@ export const SkillBar = ({ onClose }: SkillBarProps) => {
                         <div key={tech.id} className="p-3 bg-zinc-800/50 border border-zinc-700 rounded">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              {tech.type === 'active' ? <Zap size={14} className="text-amber-400" /> : <BookOpen size={14} className="text-blue-400" />}
+                              <PixelTechniqueIcon techniqueId={tech.id} size={16} />
                               <span className="text-sm text-zinc-200">{tech.name}</span>
                               <span className="text-xs text-zinc-500">{tech.grade}</span>
                             </div>
@@ -232,7 +234,7 @@ export const SkillBar = ({ onClose }: SkillBarProps) => {
                       {lockedTechs.map(tech => (
                         <div key={tech.id} className="p-3 bg-zinc-800/20 border border-zinc-800 rounded opacity-60">
                           <div className="flex items-center gap-2">
-                            {tech.type === 'active' ? <Zap size={14} className="text-zinc-500" /> : <BookOpen size={14} className="text-zinc-500" />}
+                            <PixelTechniqueIcon techniqueId={tech.id} size={16} />
                             <span className="text-sm text-zinc-400">{tech.name}</span>
                             <span className="text-xs text-zinc-500">{tech.grade}</span>
                             <span className="text-xs text-zinc-600 ml-auto">
@@ -255,7 +257,7 @@ export const SkillBar = ({ onClose }: SkillBarProps) => {
         >
           关闭
         </button>
-      </div>
+      </PixelPanel>
     </div>
   );
 };
