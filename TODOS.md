@@ -24,7 +24,7 @@
 | 1.4b | 势力领土变更 | ✅ 地图上每个势力根据 type 显示彩色领地圈（皇族8/1级5/2级3/3级2），7国各有颜色 |
 | 1.4c | 势力间战争 | ✅ Phase 4 已实现 siege combat + army grouping + garrison/fortification + vassal tribute + warPanel |
 
-**Tests:** 632 passed (28 files), 0 失败
+**Tests:** 651 passed (29 files), 0 失败
 
 ---
 
@@ -54,15 +54,15 @@ See `docs/22-开发路线图.md` for full context.
 |-------|-------|----------|------|
 | **Phase 1** | **NPC 觉醒** | **★★★★★** | **✅ DONE (100%)** |
 | Phase 2 | 世界具象化 | ★★★★☆ | ✅ DONE |
-| Phase 3 | 修仙深化 — skills, equipment, crafting, alchemy | ★★★★☆ | 🔄 IN PROGRESS (~78%, 3.1/3.2 完成, 3.3 炼丹上线) |
+| Phase 3 | 修仙深化 — skills, equipment, crafting, alchemy, forging | ★★★★☆ | 🔄 IN PROGRESS (~92%, 3.1/3.2/3.3 全部完成) |
 | Phase 4 | 战争深化 — siege, territory, armies | ★★★☆☆ | ✅ DONE |
 | Phase 5 | 跨天统一 — ascension cross-server | ★★★☆☆ | ~5 days |
 | Phase 6 | 多人联机 — multiplayer coordination | ★★☆☆☆ | ~7 days |
 
-## Phase 3: 修仙深化 🔄 IN PROGRESS (~78%)
+## Phase 3: 修仙深化 🔄 IN PROGRESS (~92%)
 
 **评估日期:** 2026-05-05 | **分支:** main
-**更新:** 3.1 功法技能 + 3.2 装备扩充已基本完成。3.3 炼丹系统已上线最小可玩循环（6 丹方、成功率计算、丹房 buff），炼器仍为零实现。
+**更新:** 3.1 功法技能 + 3.2 装备扩充已基本完成。3.3 炼丹炼器系统全部完成 — 6 丹方 + 6 炼器配方、成功率计算、炼丹炉/炼器房 buff、完整 UI 面板。
 
 ### 完成度总览
 
@@ -70,8 +70,8 @@ See `docs/22-开发路线图.md` for full context.
 |--------|-----------|---------|------|--------|
 | 3.1 功法技能 | 3.1a~3.1f | ✅ P0a+P0c 已修复 | ✅ | ~85% |
 | 3.2 装备扩充 | 3.2a~3.2d | ✅ P0b+P1a+P1b 已修复 | ✅ 10 新测试 | ~90% |
-| 3.3 炼丹炼器 | 3.3a~3.3c+3.3e | ✅ 炼丹完成 (炼器 0%) | ✅ 632 全局通过 | ~50% |
-| **Phase 3 整体** | | | | **~78%** |
+| 3.3 炼丹炼器 | 3.3a~3.3e | ✅ 全部完成 | ✅ 19 新锻造测试 | ~100% |
+| **Phase 3 整体** | | | | **~92%** |
 
 ---
 
@@ -99,15 +99,15 @@ See `docs/22-开发路线图.md` for full context.
 
 ---
 
-### 3.3 炼丹与炼器系统 — ~50%
+### 3.3 炼丹与炼器系统 — ~100%
 
 | # | Task | Status |
 |---|------|--------|
-| 3.3a | 材料系统 (`src/shared/types/items.ts`) | ✅ `ItemQuality`/`PillEffect`/`CraftRecipe` 类型定义，支撑炼丹系统 |
-| 3.3b | 炼丹配方 (`src/store/craftingRecipes.ts`) | ✅ 6 种丹方（回血丹/续命丹/聚气散/培元丹/筑基丹/凝婴丹），`attemptCraft()` 含成功率计算和境界过滤 |
+| 3.3a | 材料系统 (`src/shared/types/items.ts`) | ✅ `ItemQuality`/`PillEffect`/`CraftRecipe` 类型定义，支撑炼丹+炼器系统 |
+| 3.3b | 炼丹配方 (`src/store/craftingRecipes.ts`) | ✅ 6 种丹方 + 6 种炼器配方，`attemptCraft()` 含成功率计算和境界过滤，`FORGE_RECIPE_META` 装备参数映射 |
 | 3.3c | 炼丹 UI (`src/components/AlchemyPanel.tsx`) | ✅ Modal 面板：丹方列表/材料检查/炼制按钮/成功率显示/结果反馈/背包摘要 |
-| 3.3d | 炼器系统 | ❌ 无任何实现。`Equipment.isCrafted` 字段预留但无炼器逻辑 |
-| 3.3e | 丹房/炼器房 buff | ✅ 丹房等级加成炼丹成功率（每级 +10%），上限 95%。UI 显示当前 buff 状态 |
+| 3.3d | 炼器系统 | ✅ 6 配方（精铁剑→天玄神甲），`forgeCraft` action 自动装备，`ForgePanel.tsx` UI，炼器房 buff，19 测试 |
+| 3.3e | 丹房/炼器房 buff | ✅ 丹房/炼器房等级加成（每级 +10%），上限 95%。UI 显示当前 buff 状态 |
 
 ---
 
@@ -129,7 +129,7 @@ See `docs/22-开发路线图.md` for full context.
 **问题:** `critRate`/`lifesteal`/`expRate`/`critDamage` 无接入任何游戏逻辑。
 **修复:** 战斗循环中: `critRate`→暴击判定(1.5x 倍率,可叠加 critDamage), `lifesteal`→按伤害百分比回血, `expRate`→经验加成系数。
 
-#### 🟢 P2 — Phase 3.3 炼丹已上线，炼器仍为零
+#### ✅ P2 — Phase 3.3 炼丹+炼器全部完成
 
-**问题:** 炼器子系统（3.3d）未实现。`Equipment.isCrafted` 字段预留但无炼器逻辑，炼器房建筑不存在。
-**修复状态:** 炼丹最小可玩循环已完成（items.ts / craftingRecipes.ts / AlchemyPanel.tsx / 丹房 buff）。
+**完成:** 6 丹方 + 6 炼器配方、`attemptCraft()` 通用成功率计算、炼丹炉/炼器房 buff、`ForgePanel`/`AlchemyPanel` 双 UI 面板、完整测试覆盖。
+**炼器特性:** 自动装备到对应槽位、`isCrafted` 标记、6 境界等级配方链、炼器房建筑 buff（每级 +10%）。

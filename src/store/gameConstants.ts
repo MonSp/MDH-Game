@@ -200,7 +200,7 @@ export const RECRUIT_SPIRITSTONE_COST: Record<SquadRole, number> = {
 };
 
 // 势力系统
-export type BuildingType = '议事厅' | '练功房' | '丹房' | '藏经阁' | '库房' | '哨塔';
+export type BuildingType = '议事厅' | '练功房' | '丹房' | '藏经阁' | '库房' | '哨塔' | '炼器房';
 export type BuildingLevel = 1 | 2 | 3;
 export type FactionPosition = '家主' | '长老' | '供奉' | '核心成员' | '支脉子弟';
 
@@ -217,6 +217,7 @@ export const BUILDING_EFFECTS: Record<BuildingType, string[]> = {
   '藏经阁': ['队伍战力+5%', '队伍战力+10%', '队伍战力+15%'],
   '库房': ['被动收入+5/ tick', '被动收入+10/ tick', '被动收入+20/ tick'],
   '哨塔': ['视野范围+2格', '视野范围+4格', '视野范围+6格'],
+  '炼器房': ['锻造成功率+10%', '锻造成功率+20%', '锻造成功率+30%'],
 };
 
 export const BUILDING_UPGRADE_COST: Record<BuildingType, number[]> = {
@@ -226,6 +227,7 @@ export const BUILDING_UPGRADE_COST: Record<BuildingType, number[]> = {
   '藏经阁': [5000, 20000, 50000],
   '库房': [2000, 8000, 20000],
   '哨塔': [2000, 8000, 20000],
+  '炼器房': [3000, 10000, 30000],
 };
 
 // Building effect multipliers per level (index 0 = level 1)
@@ -233,6 +235,7 @@ export const BUILDING_SPEED_MULTIPLIERS: Partial<Record<BuildingType, number[]>>
   '练功房': [1.1, 1.2, 1.3],
   '丹房': [1.1, 1.2, 1.3],
   '藏经阁': [1.05, 1.10, 1.15],
+  '炼器房': [1.1, 1.2, 1.3],
 };
 export const BUILDING_TREASURY_CAP_BASE = 10000;
 export const BUILDING_TREASURY_CAP_PER_LEVEL = 5000;
@@ -767,6 +770,9 @@ export interface GameState {
   // Phase 3.3: Inventory management
   addItem: (itemName: string) => void;
   removeItem: (itemName: string) => void;
+
+  // Phase 3.3d: Forge (equipment crafting)
+  forgeCraft: (recipeId: string) => { success: boolean; product?: string; message: string };
 
   // Phase 1.4a: Faction AI with LLM
   enqueueFactionAI: (factionId: string) => void;

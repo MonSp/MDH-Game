@@ -25,6 +25,7 @@ import {
 
 // Re-export all public API from gameConstants
 export * from './gameConstants';
+import { getRecipe, FORGE_RECIPE_META, attemptCraft } from './craftingRecipes';
 let lastMoraleWarningAt: number | undefined;
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -524,6 +525,56 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (inv[itemName] <= 0) delete inv[itemName];
       return { player: { ...s.player, inventory: inv } };
     });
+  },
+
+  forgeCraft: (recipeId) => {
+    const state = get();
+    if (!state.player) return { success: false, message: '玩家不存在' };
+    const recipe = getRecipe(recipeId);
+    if (!recipe || recipe.type !== 'equipment') {
+      return { success: false, message: '未知配方' };
+    }
+    const meta = FORGE_RECIPE_META[recipeId];
+    if (!meta) {
+      return { success: false, message: '配方元数据缺失' };
+    }
+
+    // Calculate forge buff from 炼器房 building level
+    const forgeLevel = getFactionBuildingLevel(state.clans, state.playerFactionId, '炼器房');
+    const buffMultiplier = 1 + forgeLevel * 0.1;
+
+    // Attempt craft
+    const result = attemptCraft(recipe, state.player.inventory, buffMultiplier);
+
+    if (result.success && result.product) {
+      // Consume materials
+      for (const [mat, count] of Object.entries(recipe.materials)) {
+        for (let i = 0; i < count; i++) get().removeItem(mat);
+      }
+      // Generate equipment with proper stats
+      const eq = generateEquipment(
+        `crafted_${recipeId}_${Date.now()}`,
+        meta.slot,
+        meta.targetRarity,
+        meta.realmValue,
+      );
+      eq.name = result.product;
+      (eq as any).isCrafted = true;
+      // Auto-equip
+      get().equipItem(eq);
+      const buffPct = forgeLevel > 0 ? forgeLevel * 10 : 0;
+      const buffMsg = buffPct > 0 ? `（炼器房加成+${buffPct}%）` : '';
+      const msg = `炼制成功！获得 ${result.product}${buffMsg}`;
+      state.addLog({ type: 'event', message: `[炼器] ${msg}` });
+      return { success: true, product: result.product, message: msg };
+    } else {
+      // Consume materials on failure too
+      for (const [mat, count] of Object.entries(recipe.materials)) {
+        for (let i = 0; i < count; i++) get().removeItem(mat);
+      }
+      state.addLog({ type: 'event', message: `[炼器] ${result.message}` });
+      return { success: false, message: result.message };
+    }
   },
 
   cultivate: () => {

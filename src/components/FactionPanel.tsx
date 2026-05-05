@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGameStore, BuildingType, BUILDING_EFFECTS, BUILDING_UPGRADE_COST, FACTION_CREATE_REQUIREMENTS, getReputationTitle } from '../store/gameStore';
-import { X, Building2, Users, Shield, Coins, Sword, Eye, FlaskRound, BookOpen, Warehouse, ChevronRight, ArrowUpCircle } from 'lucide-react';
+import { X, Building2, Users, Shield, Coins, Sword, Eye, FlaskRound, BookOpen, Warehouse, ChevronRight, ArrowUpCircle, Hammer } from 'lucide-react';
 
 const BUILDING_ICONS: Record<BuildingType, React.ReactNode> = {
   '议事厅': <Building2 size={16} />,
@@ -9,6 +9,7 @@ const BUILDING_ICONS: Record<BuildingType, React.ReactNode> = {
   '藏经阁': <BookOpen size={16} />,
   '库房': <Warehouse size={16} />,
   '哨塔': <Eye size={16} />,
+  '炼器房': <Hammer size={16} />,
 };
 
 const BUILDING_COLORS: Record<BuildingType, string> = {
@@ -18,6 +19,7 @@ const BUILDING_COLORS: Record<BuildingType, string> = {
   '藏经阁': 'text-purple-400',
   '库房': 'text-yellow-400',
   '哨塔': 'text-cyan-400',
+  '炼器房': 'text-amber-400',
 };
 
 export const FactionPanel = ({ onClose }: { onClose: () => void }) => {

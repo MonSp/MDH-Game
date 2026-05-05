@@ -677,7 +677,7 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
         const bz = Math.sin(angle) * radius;
         const BUILDING_COLORS_MAP: Record<string, string> = {
           '议事厅': '#fbbf24', '练功房': '#fb7185', '丹房': '#4ade80',
-          '藏经阁': '#c084fc', '库房': '#facc15', '哨塔': '#22d3ee',
+          '藏经阁': '#c084fc', '库房': '#facc15', '哨塔': '#22d3ee', '炼器房': '#f59e0b',
         };
         return (
           <mesh key={b.type} position={[bx, 0.1, bz]} castShadow>

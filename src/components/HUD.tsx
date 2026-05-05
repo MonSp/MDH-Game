@@ -1,7 +1,7 @@
 import { useGameStore, COUNTRIES_DATA, BODY_TYPES_DATA, REALM_BREAKTHROUGH_COST, HEAVEN_INFO, HEAVEN_MAX_REALM, REALM_LIST, getReputationTitle } from '../store/gameStore';
 import { InitiativeService, InitiativeType } from '../store/gameService';
 import type { SaveSlotInfo } from '../store/saveManager';
-import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle, Swords, FlaskRound } from 'lucide-react';
+import { Heart, Zap, Sword, Map, Shield, Sparkles, Store, Cloud, ArrowUp, RefreshCw, BookOpen, Save, Users, Flag, Handshake, MessageCircle, Swords, FlaskRound, Hammer } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { MarketPanel } from './MarketPanel';
 import { SquadPanel } from './SquadPanel';
@@ -10,6 +10,7 @@ import { DiplomacyPanel } from './DiplomacyPanel';
 import { SkillBar } from './SkillBar';
 import { WarPanel } from './WarPanel';
 import { AlchemyPanel } from './AlchemyPanel';
+import { ForgePanel } from './ForgePanel';
 
 interface HUDProps {
   onOpenChronicle?: () => void;
@@ -27,6 +28,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   const [showWarPanel, setShowWarPanel] = useState(false);
   const [showSkillBar, setShowSkillBar] = useState(false);
   const [showAlchemy, setShowAlchemy] = useState(false);
+  const [showForge, setShowForge] = useState(false);
   const [savedFeedback, setSavedFeedback] = useState('');
   const [saveSlots, setSaveSlots] = useState<SaveSlotInfo[]>([]);
   const [cultivateCooldown, setCultivateCooldown] = useState(0);
@@ -387,6 +389,14 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
         </button>
 
         <button
+          onClick={() => setShowForge(true)}
+          className="flex items-center justify-center space-x-2 w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded transition-colors text-amber-300 font-medium"
+        >
+          <Hammer size={16} />
+          <span>炼器</span>
+        </button>
+
+        <button
           className="flex items-center justify-center space-x-2 w-full py-2 bg-zinc-800/60 hover:bg-zinc-700/80 border border-zinc-700/50 rounded transition-colors text-zinc-300 font-medium text-sm"
         >
           <Save size={14} />
@@ -485,6 +495,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {showWarPanel && <WarPanel onClose={() => setShowWarPanel(false)} />}
       {showSkillBar && <SkillBar onClose={() => setShowSkillBar(false)} />}
       {showAlchemy && <AlchemyPanel onClose={() => setShowAlchemy(false)} />}
+      {showForge && <ForgePanel onClose={() => setShowForge(false)} />}
       {showAscension && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
