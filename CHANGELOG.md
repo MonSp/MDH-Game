@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.0.1] - 2026-05-06
+
+### Added
+- `PixelPanel` decorative frame component with golden corner ornaments, inner border glow, scan-line overlay
+- `PixelMinimap` — pixel art minimap rendering terrain and entity positions on Canvas2D
+- `PixelTechniqueIcon` — React component wrapping `getTechniqueIconDataURL` for technique icons
+- `getCharacterPortraitDataURL` — canvas-generated player portrait data URLs for HUD avatar
+
+### Changed
+- All 12 modal panels (Alchemy, Captive, Chronicle, Diplomacy, Faction, Forge, Market, Squad, War, SurveyPopup, HUD menus, SkillBar) wrapped in `PixelPanel` for consistent decorative frame
+- HUD avatar section now uses procedurally-generated pixel portrait instead of CSS placeholder
+
 ## [1.13.0.0] - 2026-05-05
 
 ### Added
