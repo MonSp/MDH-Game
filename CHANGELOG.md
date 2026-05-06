@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.2.1] - 2026-05-06
+
+### Fixed
+- GRASS terrain texture completely redesigned: removed vertical grass blade strokes that caused a dense "grid/mesh" illusion when tiled across the map
+- Grass now uses organic noise patches, dirt spots, tiny flowers, and bright highlights — no directional striping
+- Each terrain type generates 4 randomized variants, distributed via seededRandom per tile coordinate, breaking up repetitive pattern matching
+
 ## [1.13.2.0] - 2026-05-06
 
 ### Added
