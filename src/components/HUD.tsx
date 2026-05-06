@@ -279,16 +279,16 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
 
           {/* Mini pixel-art minimap */}
           <PixelMinimap
-          playerX={player.position.x}
-          playerY={player.position.y}
-          npcs={nearbyNPCs?.map((n: any) => ({ x: n.position.x, y: n.position.y, color: '#22d3ee' })) || []}
-          monsters={wildMonsters?.map((m: any) => ({ x: m.position.x, y: m.position.y, color: '#ef4444' })) || []}
-          resources={resourcePoints?.map((r: any) => ({ x: r.x, y: r.y, color: '#a78bfa' })) || []}
-          points={clans?.map((c: any) => ({ x: c.base?.x || 0, y: c.base?.y || 0, color: c.id === player.clanId ? '#4ade80' : '#fbbf24' })) || []}
-          size={160}
-          scale={20}
-          className="mx-auto"
-        />
+            playerX={player.position.x}
+            playerY={player.position.y}
+            npcs={nearbyNPCs?.map((n: any) => ({ x: n.position.x, y: n.position.y, color: '#22d3ee' })) || []}
+            monsters={wildMonsters?.map((m: any) => ({ x: m.position.x, y: m.position.y, color: '#ef4444' })) || []}
+            resources={resourcePoints?.map((r: any) => ({ x: r.x, y: r.y, color: '#a78bfa' })) || []}
+            points={clans?.map((c: any) => ({ x: c.base?.x || 0, y: c.base?.y || 0, color: c.id === player.clanId ? '#4ade80' : '#fbbf24' })) || []}
+            size={160}
+            scale={1}
+            className="mx-auto"
+          />
         
         {isAtMaxRealm && heavenInfo.ascensionRequired && (
           <div className="p-3 bg-amber-900/30 border border-amber-700/50 rounded">

@@ -108,7 +108,7 @@ const PlayerPulseRing = () => {
   );
 };
 
-// Animated water tile with flowing texture
+// Animated water tile with flowing texture — slightly oversized to prevent shoreline seams
 const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number; yPos: number }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const tex = useMemo(() => {
@@ -130,7 +130,8 @@ const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number
 
   return (
     <mesh ref={meshRef} position={[0, yPos, 0]} receiveShadow>
-      <boxGeometry args={[1, height, 1]} />
+      {/* Slightly oversized (1.05) to overlap neighbors and prevent shoreline stripe artifacts */}
+      <boxGeometry args={[1.05, height, 1.05]} />
       <meshStandardMaterial
         map={tex}
         transparent
@@ -186,29 +187,29 @@ function getDecorationForTile(x: number, y: number, biome: TerrainType): Decorat
   }
 }
 
-// 1. Tree Component
+// 1. Tree Component — real-world scale: ~3m tall (trunk 1m + canopy 2m)
 const Tree = ({ position }: { position: [number, number, number] }) => (
   <group position={position}>
-    {/* Trunk */}
-    <mesh position={[0, 0.4, 0]} castShadow receiveShadow>
-      <cylinderGeometry args={[0.1, 0.15, 0.8, 6]} />
+    {/* Trunk: 0.15 radius, 1.0m tall */}
+    <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
+      <cylinderGeometry args={[0.12, 0.18, 1.0, 6]} />
       <meshStandardMaterial color="#78350f" /> {/* amber-900 */}
     </mesh>
-    {/* Leaves */}
-    <mesh position={[0, 1.2, 0]} castShadow receiveShadow>
-      <coneGeometry args={[0.5, 1.2, 6]} />
+    {/* Canopy: 0.7 radius, 2.0m tall — total height ~3m */}
+    <mesh position={[0, 1.8, 0]} castShadow receiveShadow>
+      <coneGeometry args={[0.7, 2.0, 6]} />
       <meshStandardMaterial color="#065f46" /> {/* emerald-800 */}
     </mesh>
   </group>
 );
 
-// 2. Cultivator Pixel Sprite (replaces old voxel model)
+// 2. Cultivator Pixel Sprite — real-world scale: ~1.8m human height
 const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: { appearance: any, isMoving?: boolean, isFloating?: boolean }) => {
   const { height } = appearance;
   const s = height / 1.0;
 
   return (
-    <group scale={[s * 1.3, s * 1.3, s * 1.3]}>
+    <group scale={[s * 1.0, s * 1.0, s * 1.0]}>
       <PixelCharacterSprite
         realm={appearance.realm || '凡人'}
         bodyType={appearance.bodyType || '凡体'}
@@ -256,7 +257,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
         if (isWaterTile) {
           height = 0.2;
         } else if (isMountain) {
-          height = Math.max(0.5, (tile.elevation + 0.5) * 2.5);
+          height = Math.max(0.5, (tile.elevation + 0.5) * 1.5);
         } else {
           height = Math.max(0.1, tile.elevation + 0.5);
         }
@@ -284,19 +285,19 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
                   map={tex}
                   roughness={0.9}
                   metalness={0.0}
-                  emissive={isMountain ? '#2a2a2a' : tile.biome === TerrainType.GRASS ? '#1a3a1a' : tile.biome === TerrainType.SAND ? '#3a3a1a' : tile.biome === TerrainType.SNOW ? '#2a3a4a' : '#1a1a2a'}
-                  emissiveIntensity={0.08}
+                  emissive={isMountain ? '#3a3530' : tile.biome === TerrainType.GRASS ? '#1a3a1a' : tile.biome === TerrainType.SAND ? '#3a3a1a' : tile.biome === TerrainType.SNOW ? '#2a3a4a' : '#1a1a2a'}
+                  emissiveIntensity={isMountain ? 0.15 : 0.08}
                 />
               </mesh>
             )}
-            {/* Mountain peak extra block */}
+            {/* Mountain peak — taller, wider, more visible */}
             {showPeak && (
-              <mesh position={[0, yPos + height / 2, 0]}>
-                <coneGeometry args={[0.3, 0.4, 4]} />
-                <meshStandardMaterial color={showSnowCap ? '#f8fafc' : '#57534e'} roughness={0.8} />
+              <mesh position={[0, yPos + height / 2 + 0.2, 0]}>
+                <coneGeometry args={[0.45, 0.8, 4]} />
+                <meshStandardMaterial color={showSnowCap ? '#f8fafc' : '#78716c'} roughness={0.7} emissive={showSnowCap ? '#ffffff' : '#4a453f'} emissiveIntensity={0.1} />
               </mesh>
             )}
-            {/* Trees */}
+            {/* Tree baseHeight: tree sits on terrain surface, base of trunk at terrain top */}
             {tile.hasTree && (
               isMountain ? null : <Tree position={[0, yPos + height / 2, 0]} />
             )}
@@ -881,8 +882,8 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
       })}
 
       {/* Faction building sprite */}
-      <group position={[0, 0.45, 0]}>
-        <PixelBuildingSprite type="city" country={country} scale={0.45} />
+      <group position={[0, 1.2, 0]}>
+        <PixelBuildingSprite type="city" country={country} scale={1.2} />
       </group>
       {/* Garrison HP bar */}
       {(garrison ?? 0) > 0 && (
