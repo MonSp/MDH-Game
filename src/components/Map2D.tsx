@@ -272,7 +272,8 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
               <WaterTile biome={tile.biome} height={height} yPos={yPos} />
             ) : (
               <mesh position={[0, yPos, 0]} castShadow receiveShadow>
-                <boxGeometry args={[1, height, 1]} />
+                {/* Oversize 1.002 to prevent sub-pixel seam gaps between adjacent tiles */}
+                <boxGeometry args={[1.002, height, 1.002]} />
                 <meshStandardMaterial
                   map={tex}
                   roughness={0.9}
@@ -964,6 +965,9 @@ const SceneTriggerMarker = ({ marker, playerPos }: { marker: { id: string; x: nu
 };
 
 // --- Global noise overlay to break up tile boundaries ---
+// Random phase offset so noise never aligns with world grid
+const noisePhaseX = Math.random() * 100;
+const noisePhaseY = Math.random() * 100;
 const noiseOverlayTexture = (() => {
   const SIZE = 128;
   const c = document.createElement('canvas');
@@ -976,21 +980,22 @@ const noiseOverlayTexture = (() => {
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
       const fx = x / SIZE, fy = y / SIZE;
-      const n1 = (Math.sin(fx * 6.0 + fy * 8.0) * Math.cos(fy * 5.0 - fx * 7.0) * 0.5 + 0.5) * 0.5;
+      const n1 = (Math.sin(fx * 6.0 + fy * 8.0 + 0.5) * Math.cos(fy * 5.0 - fx * 7.0) * 0.5 + 0.5) * 0.5;
       const n2 = (Math.sin(fx * 13.0 + fy * 11.0 + 1.3) * 0.5 + 0.5) * 0.3;
       const n3 = (Math.sin(fx * 25.0 + fy * 30.0 + 0.7) * Math.cos(fx * 20.0 - fy * 22.0) * 0.5 + 0.5) * 0.2;
       const v = (n1 + n2 + n3) * 255;
       const idx = (y * SIZE + x) * 4;
       imgData.data[idx] = v;
       imgData.data[idx + 1] = v * 0.92;
-      imgData.data[idx + 2] = v * 0.75;
-      imgData.data[idx + 3] = 255;
+      imgData.data[idx + 2] = v * 0.85;
+      imgData.data[idx + 3] = v * 0.5; // alpha channel variation
     }
   }
   ctx.putImageData(imgData, 0, 0);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(5.7, 5.7); // non-integer repeat so noise doesn't align with tile grid
+  t.repeat.set(8.3, 8.3); // non-integer frequency to avoid grid resonance
+  t.offset.set(noisePhaseX, noisePhaseY); // random phase shift per session
   t.magFilter = THREE.LinearFilter;
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true;
@@ -1000,12 +1005,13 @@ const noiseOverlayTexture = (() => {
 const GlobalNoiseOverlay = () => {
   return (
     <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[32, 32]} />
+      <planeGeometry args={[33, 33]} />
       <meshBasicMaterial
         map={noiseOverlayTexture}
         transparent
-        opacity={0.06}
+        opacity={0.18}
         depthWrite={false}
+        blending={THREE.MultiplyBlending}
       />
     </mesh>
   );
