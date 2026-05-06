@@ -28,7 +28,8 @@ function canvasToTexture(c: HTMLCanvasElement): THREE.CanvasTexture {
 
 const charCache = new Map<string, THREE.CanvasTexture>();
 const monsterCache = new Map<string, THREE.CanvasTexture>();
-const terrainCache = new Map<TerrainType, THREE.CanvasTexture>();
+const terrainCache = new Map<string, THREE.CanvasTexture>();
+const TERRAIN_VARIANTS = 4;
 const effectCache = new Map<string, THREE.CanvasTexture>();
 
 // --- 2.3a: Character Sprites (48×48) ---
@@ -352,8 +353,9 @@ function getMonsterPixels(type: MonsterType): [number, number, string][] {
 
 // --- 2.3b: Terrain Tiles (32×32) ---
 
-export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTexture {
-  const cached = terrainCache.get(type);
+export function generateTerrainTileTexture(type: TerrainType, variant: number = 0): THREE.CanvasTexture {
+  const key = `${type}|${variant}`;
+  const cached = terrainCache.get(key);
   if (cached) return cached;
 
   const [c, ctx] = createCanvas(32, 32);
@@ -372,78 +374,101 @@ export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTextu
     case TerrainType.SAND:
       ctx.fillStyle = '#fcd34d';
       ctx.fillRect(0, 0, 32, 32);
-      // speckles
-      for (let i = 0; i < 20; i++) {
+      // Speckles and grain — dense random dots across the tile
+      for (let i = 0; i < 40; i++) {
         drawPixel(ctx, Math.floor(Math.random() * 32), Math.floor(Math.random() * 32),
-          Math.random() > 0.5 ? '#d97706' : '#92400e');
+          ['#d97706', '#92400e', '#b8860b', '#a0762a'][Math.floor(Math.random() * 4)]);
       }
-      // horizontal banding
-      for (let y = 0; y < 32; y += 4) {
+      // Gentle dune ripple bands (subtle, not hard horizontal lines)
+      for (let y = 0; y < 32; y += 4 + Math.floor(Math.random() * 3)) {
+        const bandY = y + Math.floor(Math.random() * 2);
         ctx.fillStyle = '#fbbf24';
-        ctx.globalAlpha = 0.15;
-        ctx.fillRect(0, y, 32, 1);
+        ctx.globalAlpha = 0.08 + Math.random() * 0.07;
+        ctx.fillRect(0, bandY, 32, 1 + Math.floor(Math.random() * 2));
         ctx.globalAlpha = 1;
+      }
+      // Occasional darker patches (damp sand or pebbles)
+      for (let i = 0; i < 6; i++) {
+        const px = Math.floor(Math.random() * 30) + 1;
+        const py = Math.floor(Math.random() * 30) + 1;
+        drawPixel(ctx, px, py, '#a16207');
+        if (Math.random() > 0.6) {
+          drawPixel(ctx, px + 1, py, '#a16207');
+          drawPixel(ctx, px, py + 1, '#a16207');
+        }
       }
       break;
     case TerrainType.GRASS:
       ctx.fillStyle = '#4ade80';
       ctx.fillRect(0, 0, 32, 32);
-      // grass blades
-      for (let i = 0; i < 30; i++) {
-        const gx = Math.floor(Math.random() * 32);
-        const gy = Math.floor(Math.random() * 32);
-        ctx.fillStyle = ['#16a34a', '#22c55e', '#15803d'][Math.floor(Math.random() * 3)];
-        ctx.fillRect(gx, gy, 1, 2 - Math.floor(Math.random() * 1));
-      }
-      // Darker grass clumps (noise patches ~8% density)
-      for (let i = 0; i < 12; i++) {
+      // Organic noise patches — irregular dark green clusters (no vertical strokes)
+      for (let i = 0; i < 18; i++) {
         const cx = Math.floor(Math.random() * 30) + 1;
         const cy = Math.floor(Math.random() * 30) + 1;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (Math.random() > 0.4) {
-              drawPixel(ctx, cx + dx, cy + dy, '#15803d');
+        const radius = 1 + Math.floor(Math.random() * 2);
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            if (dx * dx + dy * dy <= radius * radius + 1 && Math.random() > 0.45) {
+              drawPixel(ctx, cx + dx, cy + dy,
+                ['#15803d', '#16a34a', '#166534'][Math.floor(Math.random() * 3)]);
             }
           }
         }
       }
-      // Light dirt patches (~3% density)
-      for (let i = 0; i < 6; i++) {
-        const dx = Math.floor(Math.random() * 30) + 1;
-        const dy = Math.floor(Math.random() * 30) + 1;
-        drawPixel(ctx, dx, dy, '#8a7a4a');
-        if (Math.random() > 0.5) drawPixel(ctx, dx + 1, dy, '#7a6a3a');
+      // Scattered dirt/pebble spots (brown hues, 0-1 pixel blobs)
+      for (let i = 0; i < 10; i++) {
+        const dx = Math.floor(Math.random() * 31) + 1;
+        const dy = Math.floor(Math.random() * 31) + 1;
+        const dirtColor = ['#8a7a4a', '#7a6a3a', '#a08050', '#6b5a30'][Math.floor(Math.random() * 4)];
+        drawPixel(ctx, dx, dy, dirtColor);
+        if (Math.random() > 0.6) drawPixel(ctx, dx + (Math.random() > 0.5 ? 1 : -1), dy, dirtColor);
       }
-      // occasional flower
-      for (let i = 0; i < 3; i++) {
-        const fx = Math.floor(Math.random() * 32);
-        const fy = Math.floor(Math.random() * 32);
-        drawPixel(ctx, fx, fy, '#ffffff');
-        drawPixel(ctx, fx, fy - 1, '#fef08a');
+      // Tiny flowers (random colors, non-directional)
+      for (let i = 0; i < 4; i++) {
+        const fx = Math.floor(Math.random() * 30) + 1;
+        const fy = Math.floor(Math.random() * 30) + 1;
+        const petalColor = ['#ffffff', '#fef08a', '#fca5a5', '#c084fc', '#fcd34d'][Math.floor(Math.random() * 5)];
+        drawPixel(ctx, fx, fy, petalColor);
+        if (Math.random() > 0.5) drawPixel(ctx, fx + 1, fy, petalColor);
+      }
+      // Subtle bright highlight pixels (simulates light catching grass tips)
+      for (let i = 0; i < 8; i++) {
+        drawPixel(ctx, Math.floor(Math.random() * 32), Math.floor(Math.random() * 32), '#86efac');
       }
       break;
     case TerrainType.FOREST:
       ctx.fillStyle = '#15803d';
       ctx.fillRect(0, 0, 32, 32);
-      // dark canopy clusters
-      for (let i = 0; i < 6; i++) {
+      // Dark canopy clusters — larger, overlapping circles of varied green
+      for (let i = 0; i < 8; i++) {
         const cx = Math.floor(Math.random() * 28) + 2;
         const cy = Math.floor(Math.random() * 28) + 2;
-        for (let dy = -3; dy <= 3; dy++) {
-          for (let dx = -3; dx <= 3; dx++) {
-            if (dx * dx + dy * dy <= 9 && Math.random() > 0.3) {
+        const r = 2 + Math.floor(Math.random() * 3);
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (dx * dx + dy * dy <= r * r + 1 && Math.random() > 0.2) {
               drawPixel(ctx, cx + dx, cy + dy,
-                ['#065f46', '#166534', '#14532d'][Math.floor(Math.random() * 3)]);
+                ['#065f46', '#166534', '#14532d', '#0f6b3a'][Math.floor(Math.random() * 4)]);
             }
           }
         }
       }
-      // trunk hints
-      for (let i = 0; i < 3; i++) {
+      // Lighter flecks — sunlit leaves or gaps
+      for (let i = 0; i < 6; i++) {
+        drawPixel(ctx, Math.floor(Math.random() * 32), Math.floor(Math.random() * 32), '#22c55e');
+      }
+      // Trunk hints — short vertical dashes at varied positions
+      for (let i = 0; i < 5; i++) {
         const tx = Math.floor(Math.random() * 32);
-        drawPixel(ctx, tx, 28, '#78350f');
-        drawPixel(ctx, tx, 29, '#78350f');
-        drawPixel(ctx, tx, 30, '#78350f');
+        const ty = 26 + Math.floor(Math.random() * 4);
+        drawPixel(ctx, tx, ty, '#78350f');
+        drawPixel(ctx, tx, ty - 1, '#78350f');
+      }
+      // Fallen leaves / undergrowth color variation
+      for (let i = 0; i < 4; i++) {
+        const lx = Math.floor(Math.random() * 32);
+        const ly = 28 + Math.floor(Math.random() * 3);
+        drawPixel(ctx, lx, ly, '#854d0e');
       }
       break;
     case TerrainType.ROCK:
@@ -579,8 +604,12 @@ export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTextu
   }
 
   const tex = canvasToTexture(c);
-  terrainCache.set(type, tex);
+  terrainCache.set(key, tex);
   return tex;
+}
+
+export function clearTerrainCache() {
+  terrainCache.clear();
 }
 
 function drawWater(ctx: CanvasRenderingContext2D, baseColor: string, waveColor: string, waveCount: number) {

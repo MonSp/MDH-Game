@@ -210,12 +210,17 @@ const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: {
 };
 
 // 3. Terrain Component with pixel art textures
-const terrainTextureCache = new Map<TerrainType, THREE.CanvasTexture>();
-function getTerrainTexture(biome: TerrainType): THREE.CanvasTexture {
-  if (!terrainTextureCache.has(biome)) {
-    terrainTextureCache.set(biome, generateTerrainTileTexture(biome));
+const TERRAIN_VARIANTS = 4;
+const terrainTextureCache = new Map<string, THREE.CanvasTexture>();
+function getTerrainTexture(biome: TerrainType, tileX?: number, tileY?: number): THREE.CanvasTexture {
+  const variant = (tileX !== undefined && tileY !== undefined)
+    ? Math.floor(seededRandom(tileX * 7.1, tileY * 3.7) * TERRAIN_VARIANTS)
+    : 0;
+  const key = `${biome}|${variant}`;
+  if (!terrainTextureCache.has(key)) {
+    terrainTextureCache.set(key, generateTerrainTileTexture(biome, variant));
   }
-  return terrainTextureCache.get(biome)!;
+  return terrainTextureCache.get(key)!;
 }
 
 const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
@@ -257,8 +262,8 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
         // Snow cap on high mountains
         const showSnowCap = isMountain && height > 1.8;
 
-        // Pixel terrain texture
-        const tex = getTerrainTexture(tile.biome);
+        // Pixel terrain texture (per-tile variant via seededRandom)
+        const tex = getTerrainTexture(tile.biome, tile.x, tile.y);
 
         return (
           <group key={`${tile.x},${tile.y}`} position={[tile.dx, 0, tile.dy]}>
