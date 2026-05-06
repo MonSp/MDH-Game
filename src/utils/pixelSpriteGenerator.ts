@@ -395,6 +395,25 @@ export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTextu
         ctx.fillStyle = ['#16a34a', '#22c55e', '#15803d'][Math.floor(Math.random() * 3)];
         ctx.fillRect(gx, gy, 1, 2 - Math.floor(Math.random() * 1));
       }
+      // Darker grass clumps (noise patches ~8% density)
+      for (let i = 0; i < 12; i++) {
+        const cx = Math.floor(Math.random() * 30) + 1;
+        const cy = Math.floor(Math.random() * 30) + 1;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (Math.random() > 0.4) {
+              drawPixel(ctx, cx + dx, cy + dy, '#15803d');
+            }
+          }
+        }
+      }
+      // Light dirt patches (~3% density)
+      for (let i = 0; i < 6; i++) {
+        const dx = Math.floor(Math.random() * 30) + 1;
+        const dy = Math.floor(Math.random() * 30) + 1;
+        drawPixel(ctx, dx, dy, '#8a7a4a');
+        if (Math.random() > 0.5) drawPixel(ctx, dx + 1, dy, '#7a6a3a');
+      }
       // occasional flower
       for (let i = 0; i < 3; i++) {
         const fx = Math.floor(Math.random() * 32);
@@ -448,18 +467,51 @@ export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTextu
       }
       break;
     case TerrainType.MOUNTAIN:
-      // stepped diagonal shading
+      // Layered terrain: elevation-based bands with rock texture and moss
       for (let y = 0; y < 32; y++) {
         for (let x = 0; x < 32; x++) {
           const distFromCenter = Math.abs(x - 16);
           const heightAtX = 16 - distFromCenter * 0.8;
-          if (y < 32 - heightAtX * 2) {
-            drawPixel(ctx, x, y, '#f8fafc'); // snow cap
-          } else if (y < 32 - heightAtX * 1.5) {
-            drawPixel(ctx, x, y, '#78716c'); // rock
+          // Add noise to elevation boundary for natural look
+          const noise = (Math.sin(x * 0.7 + y * 1.3) * 0.5 + Math.sin(x * 0.3 + y * 0.9) * 0.3);
+          const effectiveHeight = heightAtX + noise;
+          if (y < 32 - effectiveHeight * 2.2) {
+            // Snow cap
+            drawPixel(ctx, x, y, Math.random() > 0.15 ? '#f8fafc' : '#e2e8f0');
+          } else if (y < 32 - effectiveHeight * 1.7) {
+            // Light rock with snow flecks
+            const baseRock = Math.random() > 0.2 ? '#a8a29e' : '#94a39a';
+            drawPixel(ctx, x, y, baseRock);
+            // Occasional snow fleck
+            if (Math.random() < 0.08) drawPixel(ctx, x, y, '#f8fafc');
+          } else if (y < 32 - effectiveHeight * 1.2) {
+            // Mid rock with cracks
+            const rockColor = ['#78716c', '#8a7a70', '#6b6360'][Math.floor(Math.random() * 3)];
+            drawPixel(ctx, x, y, rockColor);
+            // Crack lines
+            if (Math.random() < 0.03) drawPixel(ctx, x, y, '#52525b');
+          } else if (y < 32 - effectiveHeight * 0.6) {
+            // Lower rock — mix with moss
+            if (Math.random() < 0.2) {
+              drawPixel(ctx, x, y, '#4a6a3a'); // Moss patches
+            } else {
+              drawPixel(ctx, x, y, '#6b6360');
+            }
           } else {
-            drawPixel(ctx, x, y, '#57534e'); // base
+            // Base — mossy rock / scree
+            const baseColors = ['#57534e', '#4a6a3a', '#5a7a4a', '#6b6360'];
+            drawPixel(ctx, x, y, baseColors[Math.floor(Math.random() * baseColors.length)]);
           }
+        }
+      }
+      // Scattered small tree dots on lower slopes
+      for (let i = 0; i < 4; i++) {
+        const tx = Math.floor(Math.random() * 28) + 2;
+        const ty = Math.floor(Math.random() * 28) + 2;
+        if (ty > 20) {
+          drawPixel(ctx, tx, ty, '#145a24');
+          drawPixel(ctx, tx, ty - 1, '#2d8a4a');
+          drawPixel(ctx, tx - 1, ty, '#5d3a1a');
         }
       }
       break;
@@ -495,6 +547,37 @@ export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTextu
       break;
   }
 
+  // Seamless tiling: copy edge pixels for terrain types that tile
+  const tilingTypes = [TerrainType.GRASS, TerrainType.SAND, TerrainType.DEEP_WATER, TerrainType.SHALLOW_WATER, TerrainType.FOREST, TerrainType.SNOW];
+  if (tilingTypes.includes(type)) {
+    for (let y = 0; y < 32; y++) {
+      // Copy first column to last column
+      const leftPixel = ctx.getImageData(0, y, 1, 1).data;
+      ctx.fillStyle = `rgb(${leftPixel[0]},${leftPixel[1]},${leftPixel[2]})`;
+      ctx.fillRect(31, y, 1, 1);
+      // Copy last column to first column (symmetry)
+      const rightPixel = ctx.getImageData(31, y, 1, 1).data;
+      ctx.fillStyle = `rgb(${rightPixel[0]},${rightPixel[1]},${rightPixel[2]})`;
+      ctx.fillRect(0, y, 1, 1);
+    }
+    for (let x = 0; x < 32; x++) {
+      // Copy first row to last row
+      const topPixel = ctx.getImageData(x, 0, 1, 1).data;
+      ctx.fillStyle = `rgb(${topPixel[0]},${topPixel[1]},${topPixel[2]})`;
+      ctx.fillRect(x, 31, 1, 1);
+      // Copy last row to first row
+      const bottomPixel = ctx.getImageData(x, 31, 1, 1).data;
+      ctx.fillStyle = `rgb(${bottomPixel[0]},${bottomPixel[1]},${bottomPixel[2]})`;
+      ctx.fillRect(x, 0, 1, 1);
+    }
+    // Ensure corners match (top-left = top-right = bottom-left = bottom-right)
+    const cornerPixel = ctx.getImageData(0, 0, 1, 1).data;
+    ctx.fillStyle = `rgb(${cornerPixel[0]},${cornerPixel[1]},${cornerPixel[2]})`;
+    ctx.fillRect(31, 0, 1, 1);
+    ctx.fillRect(0, 31, 1, 1);
+    ctx.fillRect(31, 31, 1, 1);
+  }
+
   const tex = canvasToTexture(c);
   terrainCache.set(type, tex);
   return tex;
@@ -503,15 +586,34 @@ export function generateTerrainTileTexture(type: TerrainType): THREE.CanvasTextu
 function drawWater(ctx: CanvasRenderingContext2D, baseColor: string, waveColor: string, waveCount: number) {
   ctx.fillStyle = baseColor;
   ctx.fillRect(0, 0, 32, 32);
-  // wave lines
+  // Wave bands with noise-based irregularity for natural look
   ctx.strokeStyle = waveColor;
-  ctx.globalAlpha = 0.3;
   ctx.lineWidth = 1;
   for (let w = 0; w < waveCount; w++) {
     ctx.beginPath();
-    const wy = 8 + w * 10 + Math.random() * 2;
+    const baseY = 7 + w * 11 + Math.sin(w * 2.7) * 2;
+    ctx.globalAlpha = 0.2 + Math.sin(w * 1.3) * 0.08;
     for (let x = 0; x <= 32; x++) {
-      ctx.lineTo(x, wy + Math.sin(x * 0.4 + w * 2) * 2);
+      // Use frequencies that match at x=0 and x=32 for seamless tiling
+      // sin(x * PI/8) completes exactly 2 full cycles over 32px
+      const wave = Math.sin(x * Math.PI / 8 + w * 1.8) * 2.5;
+      // Noise perturbation: use sin with incommensurate frequencies for irregularity
+      const noise = Math.sin(x * 0.9 + w * 3.1) * 0.8 + Math.sin(x * 1.7 + w * 0.7) * 0.5;
+      ctx.lineTo(x, baseY + wave + noise);
+    }
+    ctx.stroke();
+  }
+  // Second set of fainter waves at different phase for depth
+  ctx.strokeStyle = '#ffffff';
+  ctx.globalAlpha = 0.08;
+  ctx.lineWidth = 0.5;
+  for (let w = 0; w < waveCount - 1; w++) {
+    ctx.beginPath();
+    const baseY = 4 + w * 13 + Math.cos(w * 1.1) * 1.5;
+    for (let x = 0; x <= 32; x++) {
+      const wave = Math.sin(x * Math.PI / 8 + w * 2.3 + 0.5) * 1.8;
+      const noise = Math.sin(x * 1.3 + w * 2.9) * 0.6;
+      ctx.lineTo(x, baseY + wave + noise);
     }
     ctx.stroke();
   }
@@ -678,7 +780,8 @@ export type DecorationType =
   | 'snow_mound' | 'ice_shard'
   | 'lilypad' | 'reed'
   | 'alpine_grass' | 'crystal_small'
-  | 'gravel';
+  | 'gravel'
+  | 'tree_pine' | 'tree_broad' | 'tree_tall';
 
 export function generateDecorationSprite(type: DecorationType): THREE.CanvasTexture {
   const cached = decorCache.get(type);
@@ -837,6 +940,81 @@ export function generateDecorationSprite(type: DecorationType): THREE.CanvasText
         drawPixel(ctx, gx + 1, gy, '#57534e');
       }
       break;
+    case 'tree_pine': {
+      // Conical pine tree: brown trunk + green triangle crown
+      // Trunk
+      drawRect(ctx, 7, 11, 2, 4, '#5d3a1a');
+      drawRect(ctx, 7, 12, 2, 3, '#4a2c12');
+      // Canopy — layered triangles
+      // Bottom layer
+      for (let dx = -4; dx <= 4; dx++) {
+        const color = Math.random() > 0.3 ? '#1a6b30' : '#145a24';
+        drawPixel(ctx, 8 + dx, 7, color);
+      }
+      // Middle layer
+      for (let dx = -3; dx <= 3; dx++) {
+        const color = ['#1a6b30', '#22773a', '#145a24'][Math.floor(Math.random() * 3)];
+        drawPixel(ctx, 8 + dx, 6, color);
+        drawPixel(ctx, 8 + dx, 5, color);
+      }
+      // Top layer
+      for (let dx = -2; dx <= 2; dx++) {
+        drawPixel(ctx, 8 + dx, 4, '#2d8a4a');
+      }
+      // Apex
+      drawPixel(ctx, 8, 3, '#3aa55a');
+      // Snow/highlight on left side
+      drawPixel(ctx, 5, 7, '#3aa55a');
+      drawPixel(ctx, 6, 6, '#3aa55a');
+      drawPixel(ctx, 7, 4, '#4abf6a');
+      break;
+    }
+    case 'tree_broad': {
+      // Broadleaf tree: round/oval crown + trunk
+      // Trunk
+      drawRect(ctx, 7, 11, 2, 4, '#5d3a1a');
+      drawRect(ctx, 7, 12, 2, 3, '#4a2c12');
+      // Canopy — round shape
+      const leafColors = ['#2d8a4a', '#3a9a55', '#22773a', '#4aad3a'];
+      for (let dy = 3; dy <= 9; dy++) {
+        const rowWidth = dy < 5 ? dy - 2 : dy < 7 ? 4 : 7 - dy;
+        if (rowWidth < 0) continue;
+        for (let dx = -rowWidth; dx <= rowWidth; dx++) {
+          const color = leafColors[Math.floor(Math.random() * leafColors.length)];
+          drawPixel(ctx, 8 + dx, dy, color);
+        }
+      }
+      // Dark shade on bottom
+      for (let dx = -3; dx <= 3; dx++) {
+        if (Math.random() > 0.5) drawPixel(ctx, 8 + dx, 9, '#145a24');
+      }
+      // Light highlight on top-left
+      drawPixel(ctx, 5, 4, '#4abf6a');
+      drawPixel(ctx, 6, 3, '#4abf6a');
+      drawPixel(ctx, 7, 3, '#5acc7a');
+      break;
+    }
+    case 'tree_tall': {
+      // Tall narrow tree: columnar shape
+      // Trunk (taller)
+      drawRect(ctx, 7, 11, 2, 5, '#5d3a1a');
+      drawRect(ctx, 7, 12, 2, 4, '#4a2c12');
+      // Canopy — tall narrow
+      for (let dy = 2; dy <= 10; dy++) {
+        const width = dy < 4 ? 1 : dy < 6 ? 2 : dy < 8 ? 3 : 2;
+        for (let dx = -width; dx <= width; dx++) {
+          const color = dy < 5 ? '#3aa55a' : dy < 7 ? '#2d8a4a' : '#1a6b30';
+          drawPixel(ctx, 8 + dx, dy, color);
+        }
+      }
+      // Highlight
+      drawPixel(ctx, 6, 4, '#4abf6a');
+      drawPixel(ctx, 6, 5, '#3aa55a');
+      // Yellow-green tips
+      drawPixel(ctx, 8, 2, '#6bae2e');
+      drawPixel(ctx, 7, 3, '#5a9d2a');
+      break;
+    }
   }
 
   const tex = canvasToTexture(c);
@@ -877,13 +1055,13 @@ export function generateBuildingSprite(type: BuildingSpriteType, country?: strin
       // Ground base
       drawRect(ctx, 4, 34, 40, 12, '#57534e');
       drawRect(ctx, 2, 36, 44, 4, '#44403c');
-      // Outer walls
+      // Outer walls — country colored
       drawRect(ctx, 4, 24, 40, 12, darkAccent);
       // Wall top crenellations
       for (let x = 4; x < 44; x += 5) {
         drawRect(ctx, x, 22, 3, 2, accent);
       }
-      // Gate
+      // City gate (large)
       drawRect(ctx, 18, 30, 12, 16, '#451a03');
       drawRect(ctx, 20, 32, 8, 14, '#27272a');
       // Gate arch
@@ -891,6 +1069,11 @@ export function generateBuildingSprite(type: BuildingSpriteType, country?: strin
       ctx.beginPath();
       ctx.arc(24, 32, 6, Math.PI, 0);
       ctx.fill();
+      // Door panels
+      drawRect(ctx, 21, 34, 3, 10, '#5d3a1a');
+      drawRect(ctx, 24, 34, 3, 10, '#5d3a1a');
+      drawPixel(ctx, 23, 38, '#fbbf24'); // handle
+      drawPixel(ctx, 25, 38, '#fbbf24');
       // Inner palace building
       drawRect(ctx, 14, 12, 20, 14, accent);
       // Roof
@@ -906,9 +1089,20 @@ export function generateBuildingSprite(type: BuildingSpriteType, country?: strin
       // Palace pillars
       drawRect(ctx, 16, 16, 2, 10, '#78350f');
       drawRect(ctx, 30, 16, 2, 10, '#78350f');
-      // Windows
-      drawPixel(ctx, 20, 18, lightAccent);
-      drawPixel(ctx, 28, 18, lightAccent);
+      // Palace windows (larger)
+      drawRect(ctx, 19, 18, 3, 4, lightAccent);
+      drawRect(ctx, 26, 18, 3, 4, lightAccent);
+      drawRect(ctx, 19, 18, 3, 1, '#78350f'); // window frame top
+      drawRect(ctx, 19, 21, 3, 1, '#78350f'); // window frame bottom
+      drawRect(ctx, 26, 18, 3, 1, '#78350f');
+      drawRect(ctx, 26, 21, 3, 1, '#78350f');
+      // Upper windows
+      drawRect(ctx, 20, 14, 2, 2, lightAccent);
+      drawRect(ctx, 26, 14, 2, 2, lightAccent);
+      // Palace door
+      drawRect(ctx, 22, 20, 4, 6, '#451a03');
+      drawRect(ctx, 23, 21, 2, 5, '#5d3a1a');
+      drawPixel(ctx, 24, 23, '#fbbf24'); // door handle
       // Corner towers
       drawRect(ctx, 2, 16, 6, 8, darkAccent);
       drawRect(ctx, 40, 16, 6, 8, darkAccent);
@@ -926,23 +1120,60 @@ export function generateBuildingSprite(type: BuildingSpriteType, country?: strin
       ctx.lineTo(47, 16);
       ctx.closePath();
       ctx.fill();
+      // Tower windows (arrow slits)
+      drawPixel(ctx, 5, 19, lightAccent);
+      drawPixel(ctx, 5, 21, lightAccent);
+      drawPixel(ctx, 43, 19, lightAccent);
+      drawPixel(ctx, 43, 21, lightAccent);
       // Country flag
-      drawRect(ctx, 22, 0, 4, 3, accent);
-      drawPixel(ctx, 22, 0, lightAccent);
+      drawRect(ctx, 22, -1, 4, 4, accent);
+      drawPixel(ctx, 22, -1, lightAccent);
+      drawPixel(ctx, 25, -1, lightAccent);
       break;
     }
     case 'city': {
       // Ground
       drawRect(ctx, 4, 36, 40, 10, '#57534e');
-      // Walls
+      // Walls — color varies by country via darkAccent
       drawRect(ctx, 4, 28, 40, 10, darkAccent);
       // Wall crenellations
       for (let x = 4; x < 44; x += 6) {
         drawRect(ctx, x, 26, 4, 2, accent);
       }
-      // Gate
+      // Gate with arch
       drawRect(ctx, 18, 32, 12, 14, '#451a03');
       drawRect(ctx, 20, 34, 8, 12, '#27272a');
+      // Gate arch highlight
+      ctx.fillStyle = '#78350f';
+      ctx.beginPath();
+      ctx.arc(24, 33, 5, Math.PI, 0);
+      ctx.fill();
+      // Door panels (two vertical)
+      drawRect(ctx, 21, 35, 3, 8, '#5d3a1a');
+      drawRect(ctx, 24, 35, 3, 8, '#5d3a1a');
+      drawPixel(ctx, 23, 38, '#fbbf24'); // left handle
+      drawPixel(ctx, 25, 38, '#fbbf24'); // right handle
+      // Windows — left side (2)
+      drawRect(ctx, 7, 32, 4, 4, '#fef08a');
+      drawRect(ctx, 7, 32, 4, 4, lightAccent);
+      drawRect(ctx, 7, 38, 4, 4, lightAccent);
+      // Window frames
+      drawPixel(ctx, 7, 32, '#451a03');
+      drawPixel(ctx, 10, 32, '#451a03');
+      drawPixel(ctx, 7, 35, '#451a03');
+      drawPixel(ctx, 7, 38, '#451a03');
+      drawPixel(ctx, 10, 38, '#451a03');
+      // Windows — right side (2)
+      drawRect(ctx, 37, 32, 4, 4, lightAccent);
+      drawRect(ctx, 37, 38, 4, 4, lightAccent);
+      drawPixel(ctx, 37, 32, '#451a03');
+      drawPixel(ctx, 40, 32, '#451a03');
+      drawPixel(ctx, 37, 35, '#451a03');
+      drawPixel(ctx, 37, 38, '#451a03');
+      drawPixel(ctx, 40, 38, '#451a03');
+      // Upper floor windows
+      drawRect(ctx, 10, 17, 3, 3, lightAccent);
+      drawRect(ctx, 35, 17, 3, 3, lightAccent);
       // Main building
       drawRect(ctx, 16, 16, 16, 12, accent);
       // Roof
@@ -955,10 +1186,12 @@ export function generateBuildingSprite(type: BuildingSpriteType, country?: strin
       ctx.fill();
       // Roof detail
       drawRect(ctx, 22, 5, 4, 2, lightAccent);
-      // Windows
-      drawPixel(ctx, 20, 20, lightAccent);
-      drawPixel(ctx, 28, 20, lightAccent);
-      drawPixel(ctx, 24, 20, lightAccent);
+      // Second floor windows in building
+      drawRect(ctx, 19, 19, 3, 3, lightAccent);
+      drawRect(ctx, 26, 19, 3, 3, lightAccent);
+      // Banner/flag
+      drawRect(ctx, 23, 4, 2, 6, accent);
+      drawPixel(ctx, 24, 3, lightAccent);
       break;
     }
     case 'fortress': {
@@ -979,16 +1212,38 @@ export function generateBuildingSprite(type: BuildingSpriteType, country?: strin
       ctx.lineTo(38, 12);
       ctx.closePath();
       ctx.fill();
-      // Gate
+      // Gate with reinforced arch
       drawRect(ctx, 20, 30, 8, 14, '#18181b');
       drawRect(ctx, 22, 32, 4, 12, '#27272a');
-      // Arrow slits
-      drawPixel(ctx, 16, 18, lightAccent);
-      drawPixel(ctx, 32, 18, lightAccent);
-      drawPixel(ctx, 24, 18, lightAccent);
+      ctx.fillStyle = '#451a03';
+      ctx.beginPath();
+      ctx.arc(24, 31, 4, Math.PI, 0);
+      ctx.fill();
+      // Door panels
+      drawRect(ctx, 22, 33, 2, 9, '#5d3a1a');
+      drawRect(ctx, 24, 33, 2, 9, '#5d3a1a');
+      drawPixel(ctx, 23, 36, '#fbbf24'); // handle
+      // Gate reinforcement bars (horizontal)
+      drawPixel(ctx, 20, 35, '#78350f');
+      drawPixel(ctx, 28, 35, '#78350f');
+      drawPixel(ctx, 20, 38, '#78350f');
+      drawPixel(ctx, 28, 38, '#78350f');
+      // Arrow slits (more visible)
+      drawRect(ctx, 16, 17, 1, 3, lightAccent);
+      drawRect(ctx, 31, 17, 1, 3, lightAccent);
+      drawRect(ctx, 24, 17, 1, 3, lightAccent);
+      // Lower wall arrow slits
+      drawRect(ctx, 8, 28, 1, 3, accent);
+      drawRect(ctx, 39, 28, 1, 3, accent);
       // Corner bastions
       drawRect(ctx, 0, 30, 6, 8, '#52525b');
       drawRect(ctx, 42, 30, 6, 8, '#52525b');
+      // Bastion windows
+      drawPixel(ctx, 3, 32, lightAccent);
+      drawPixel(ctx, 45, 32, lightAccent);
+      // Flag on keep
+      drawRect(ctx, 23, 0, 2, 4, accent);
+      drawPixel(ctx, 24, 0, lightAccent);
       break;
     }
     case 'watchtower': {

@@ -187,21 +187,8 @@ function getDecorationForTile(x: number, y: number, biome: TerrainType): Decorat
   }
 }
 
-// 1. Tree Component — real-world scale: ~3m tall (trunk 1m + canopy 2m)
-const Tree = ({ position }: { position: [number, number, number] }) => (
-  <group position={position}>
-    {/* Trunk: 0.15 radius, 1.0m tall */}
-    <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-      <cylinderGeometry args={[0.12, 0.18, 1.0, 6]} />
-      <meshStandardMaterial color="#78350f" /> {/* amber-900 */}
-    </mesh>
-    {/* Canopy: 0.7 radius, 2.0m tall — total height ~3m */}
-    <mesh position={[0, 1.8, 0]} castShadow receiveShadow>
-      <coneGeometry args={[0.7, 2.0, 6]} />
-      <meshStandardMaterial color="#065f46" /> {/* emerald-800 */}
-    </mesh>
-  </group>
-);
+// Tree types for varied pixel art trees — pick based on seeded position
+const TREE_TYPES: DecorationType[] = ['tree_pine', 'tree_broad', 'tree_tall'];
 
 // 2. Cultivator Pixel Sprite — real-world scale: ~1.8m human height
 const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: { appearance: any, isMoving?: boolean, isFloating?: boolean }) => {
@@ -285,6 +272,11 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
                   map={tex}
                   roughness={0.9}
                   metalness={0.0}
+                  color={(() => {
+                    // Per-tile color variation (±8%) to break up texture repetition
+                    const v = seededRandom(tile.x * 5.1, tile.y * 9.3) * 0.16 + 0.92;
+                    return new THREE.Color(v, v, v);
+                  })()}
                   emissive={isMountain ? '#3a3530' : tile.biome === TerrainType.GRASS ? '#1a3a1a' : tile.biome === TerrainType.SAND ? '#3a3a1a' : tile.biome === TerrainType.SNOW ? '#2a3a4a' : '#1a1a2a'}
                   emissiveIntensity={isMountain ? 0.15 : 0.08}
                 />
@@ -298,9 +290,20 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
               </mesh>
             )}
             {/* Tree baseHeight: tree sits on terrain surface, base of trunk at terrain top */}
-            {tile.hasTree && (
-              isMountain ? null : <Tree position={[0, yPos + height / 2, 0]} />
-            )}
+            {/* Tree — pixel art sprite with per-position variation */}
+            {tile.hasTree && !isMountain && (() => {
+              const treeIdx = Math.floor(seededRandom(tile.x * 3.7, tile.y * 7.1) * 3);
+              const treeType = TREE_TYPES[treeIdx];
+              const treeScale = 1.0 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 0.6;
+              return (
+                <PixelDecoration
+                  type={treeType}
+                  position={[0, yPos + height / 2 + treeScale * 0.5, 0]}
+                  scale={treeScale}
+                  sway={true}
+                />
+              );
+            })()}
             {/* Terrain decorations */}
             {(() => {
               const decor = getDecorationForTile(tile.x, tile.y, tile.biome);
@@ -425,7 +428,7 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
 };
 
 // 5. NPC Mesh
-const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true }: { npc: NPC, dx: number, dy: number, onClick: () => void, showNameTag?: boolean }) => {
+const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true, compact = false }: { npc: NPC, dx: number, dy: number, onClick: () => void, showNameTag?: boolean; compact?: boolean }) => {
   const [hovered, setHovered] = useState(false);
   useCursor(hovered);
   const appearance = useMemo(() => generateCharacterStyle(npc.realm, '凡体', npc.role), [npc]);
@@ -476,13 +479,21 @@ const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true }: { npc: NPC, dx: n
         />
       )}
 
-      {/* Tags — only show activity label for nearby NPCs (≤8 tiles) */}
+      {/* Tags — LOD: compact = name only at low opacity, full = activity + name + hover */}
       <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center">
-          {showNameTag && (
-            <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] text-white/80 whitespace-nowrap shadow-sm mb-1">
-              {npc.activity}
+          {compact ? (
+            <div className="bg-black/40 px-1 py-0.5 rounded text-[9px] text-white/50 whitespace-nowrap">
+              {npc.name}
             </div>
+          ) : (
+            <>
+              {showNameTag && (
+                <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] text-white/80 whitespace-nowrap shadow-sm mb-1">
+                  {npc.activity}
+                </div>
+              )}
+            </>
           )}
           {hovered && (
             <div className="bg-black/70 border border-zinc-700 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
@@ -1219,10 +1230,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           const showAllTags = nearbyCount <= 15;
 
           return npcsInRange.map(({ npc, dx, dy, dist }) => {
+            const isClose = dist <= 5;
+            const isMid = dist <= 12;
+            if (!isMid) return <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} showNameTag={false} onClick={() => setSelectedNPC(npc)} />;
             const isImportant = dist <= tagThreshold;
             const showTag = showAllTags ? isImportant : (isImportant && (npc.clanId === player.clanId || dist <= 4));
             return (
-              <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} showNameTag={showTag} onClick={() => setSelectedNPC(npc)} />
+              <NPCMesh key={npc.id} npc={npc} dx={dx} dy={dy} showNameTag={showTag} compact={!isClose} onClick={() => setSelectedNPC(npc)} />
             );
           });
         })()}
@@ -1272,12 +1286,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         )}
       </Canvas>
 
-      {/* 坐标 + 控制提示 */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-zinc-500 text-sm flex space-x-4 bg-zinc-900/50 px-4 py-2 rounded-full backdrop-blur pointer-events-none">
+      {/* 坐标 + 控制提示 — 左下角 */}
+      <div className="absolute bottom-4 left-4 text-zinc-500 text-xs flex space-x-3 bg-zinc-900/60 px-3 py-1.5 rounded-md backdrop-blur pointer-events-none">
         <span className="text-emerald-400 font-mono font-bold">({player.position.x}, {player.position.y})</span>
-        <span className="text-zinc-500">|</span>
-        <span>[W A S D] 或 [方向键] 移动</span>
-        <span>点击 NPC/资源点 交互</span>
+        <span className="text-zinc-600">|</span>
+        <span>WASD/方向键 移动</span>
+        <span className="text-zinc-600">|</span>
+        <span>点击交互</span>
       </div>
 
       {/* 指南针 — 指向视口外的场景触发点和都城 */}
