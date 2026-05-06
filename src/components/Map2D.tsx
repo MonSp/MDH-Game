@@ -272,8 +272,8 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
               <WaterTile biome={tile.biome} height={height} yPos={yPos} />
             ) : (
               <mesh position={[0, yPos, 0]} castShadow receiveShadow>
-                {/* Oversize 1.002 to prevent sub-pixel seam gaps between adjacent tiles */}
-                <boxGeometry args={[1.002, height, 1.002]} />
+                {/* Oversize 1.005 to overlap adjacent tiles and prevent sub-pixel seam gaps */}
+                <boxGeometry args={[1.005, height, 1.005]} />
                 <meshStandardMaterial
                   map={tex}
                   roughness={0.9}
@@ -1241,6 +1241,12 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           shadow-camera-bottom={-30}
           shadow-bias={-0.001}
         />
+
+        {/* Ground fill plane — prevents black seam lines between tiles from showing through */}
+        <mesh position={[0, -0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[64, 64]} />
+          <meshBasicMaterial color="#2a2a2e" depthWrite={false} />
+        </mesh>
 
         <Terrain playerPos={player.position} />
         <GlobalNoiseOverlay />
