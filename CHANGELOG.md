@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.13.2.0] - 2026-05-06
+
+### Added
+- Trees now render as pixel art sprites with trunks and 3 canopy variants (pine, broadleaf, tall)
+- Ground noise patches added to GRASS terrain to break repetition
+- Building sprites enhanced with doors, window frames, banners, and arrow slits
+- Mountain terrain improved with rock textures, elevation bands, moss patches, and tree dots
+- Per-tile color variation via seededRandom for visual diversity
+
+### Changed
+- Wave animation now uses noise-based irregularity with semi-transparent rendering
+- Terrain textures are seamlessly tiled via edge-pixel mirroring for 6 terrain types
+
+### Fixed
+- Terrain seam artifacts eliminated — all 6 tiling types have edge-copy seam fixing
+- Meditation button color changed from emerald to amber (dark gold) for better visual consistency
+
 ## [1.13.1.0] - 2026-05-06
 
 ### Added
