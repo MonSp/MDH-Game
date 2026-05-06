@@ -278,8 +278,8 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
                   roughness={0.9}
                   metalness={0.0}
                   color={(() => {
-                    // Per-tile color variation (±8%) to break up texture repetition
-                    const v = seededRandom(tile.x * 5.1, tile.y * 9.3) * 0.16 + 0.92;
+                    // Per-tile color variation (±4%) — reduced from ±8% to minimize tile-edge contrast
+                    const v = seededRandom(tile.x * 5.1, tile.y * 9.3) * 0.08 + 0.96;
                     return new THREE.Color(v, v, v);
                   })()}
                   emissive={isMountain ? '#3a3530' : tile.biome === TerrainType.GRASS ? '#1a3a1a' : tile.biome === TerrainType.SAND ? '#3a3a1a' : tile.biome === TerrainType.SNOW ? '#2a3a4a' : '#1a1a2a'}
@@ -963,6 +963,54 @@ const SceneTriggerMarker = ({ marker, playerPos }: { marker: { id: string; x: nu
   );
 };
 
+// --- Global noise overlay to break up tile boundaries ---
+const noiseOverlayTexture = (() => {
+  const SIZE = 128;
+  const c = document.createElement('canvas');
+  c.width = SIZE;
+  c.height = SIZE;
+  const ctx = c.getContext('2d')!;
+  // Generate smooth tileable noise using sine-based value noise at 3 octaves
+  // Using sin/cos ensures seamless tiling at any repeat
+  const imgData = ctx.createImageData(SIZE, SIZE);
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const fx = x / SIZE, fy = y / SIZE;
+      const n1 = (Math.sin(fx * 6.0 + fy * 8.0) * Math.cos(fy * 5.0 - fx * 7.0) * 0.5 + 0.5) * 0.5;
+      const n2 = (Math.sin(fx * 13.0 + fy * 11.0 + 1.3) * 0.5 + 0.5) * 0.3;
+      const n3 = (Math.sin(fx * 25.0 + fy * 30.0 + 0.7) * Math.cos(fx * 20.0 - fy * 22.0) * 0.5 + 0.5) * 0.2;
+      const v = (n1 + n2 + n3) * 255;
+      const idx = (y * SIZE + x) * 4;
+      imgData.data[idx] = v;
+      imgData.data[idx + 1] = v * 0.92;
+      imgData.data[idx + 2] = v * 0.75;
+      imgData.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(5.7, 5.7); // non-integer repeat so noise doesn't align with tile grid
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  return t;
+})();
+
+const GlobalNoiseOverlay = () => {
+  return (
+    <mesh position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[32, 32]} />
+      <meshBasicMaterial
+        map={noiseOverlayTexture}
+        transparent
+        opacity={0.06}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+};
+
 interface Map2DProps {
   onProximityTrigger?: (sceneId: string) => void;
   triggerVersion?: number;
@@ -1189,6 +1237,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         />
 
         <Terrain playerPos={player.position} />
+        <GlobalNoiseOverlay />
         <FogOfWar playerPos={player.position} exploredTiles={exploredTiles} visionRadius={visionRadius} />
         <WeatherEffect playerPos={player.position} />
         <CameraShake />
