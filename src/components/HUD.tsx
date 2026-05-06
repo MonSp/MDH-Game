@@ -358,7 +358,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
               }, 1000);
             }}
             disabled={cultivateCooldown > 0}
-            className="flex items-center justify-center space-x-2 w-full py-2 bg-emerald-900/40 hover:bg-emerald-800/60 border border-emerald-700/50 rounded transition-colors text-emerald-300 font-medium shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center space-x-2 w-full py-2 bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/50 rounded transition-colors text-amber-400 font-medium shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Sparkles size={16} />
             <span>{cultivateCooldown > 0 ? `打坐修炼 (${cultivateCooldown}s)` : '打坐修炼'}</span>
