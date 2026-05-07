@@ -614,7 +614,7 @@ function initializeGame(): void {
 
   CountryService.getInstance();
   FamilyService.getInstance().initializeFamilies();
-  ResourceManager.getInstance().initialize(1000, 1000, 50);
+  ResourceManager.getInstance().initialize(GAME_CONFIG.MAP_WIDTH, GAME_CONFIG.MAP_HEIGHT, 50);
 
   // Start NPC simulation world
   const npcWorld = NPCWorldService.getInstance();

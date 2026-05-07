@@ -26,8 +26,8 @@ const BIOMES = [
 ] as const;
 
 export function getTerrainTile(x: number, y: number): TerrainTile {
-  const macroNoise = noise2D(x * 0.02, y * 0.02);
-  const microNoise = noise2D(x * 0.08, y * 0.08) * 0.3;
+  const macroNoise = noise2D(x * 0.001, y * 0.001);
+  const microNoise = noise2D(x * 0.005, y * 0.005) * 0.3;
   const value = macroNoise + microNoise;
 
   let biome: TerrainType = TerrainType.SNOW;

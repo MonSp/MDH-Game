@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from './saveManager';
 import { isPositionPassable, getMovementCost } from '../utils/terrain';
+import { GAME_CONFIG } from '../shared/constants';
 
 // Import everything needed for the store body's local scope
 import {
@@ -186,7 +187,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const targetY = state.player.position.y + dy;
 
     // Map bounds check
-    if (targetX < 0 || targetX >= 1000 || targetY < 0 || targetY >= 1000) {
+    if (targetX < 0 || targetX >= GAME_CONFIG.MAP_WIDTH || targetY < 0 || targetY >= GAME_CONFIG.MAP_HEIGHT) {
       return state;
     }
 
@@ -218,7 +219,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       for (let vy = -visionRadius; vy <= visionRadius; vy++) {
         const tileX = targetX + vx;
         const tileY = targetY + vy;
-        if (tileX >= 0 && tileX < 1000 && tileY >= 0 && tileY < 1000) {
+        if (tileX >= 0 && tileX < GAME_CONFIG.MAP_WIDTH && tileY >= 0 && tileY < GAME_CONFIG.MAP_HEIGHT) {
           const key = `${tileX},${tileY}`;
           if (!newExplored.includes(key)) {
             newExplored.push(key);

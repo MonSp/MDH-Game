@@ -615,38 +615,7 @@ export function clearTerrainCache() {
 function drawWater(ctx: CanvasRenderingContext2D, baseColor: string, waveColor: string, waveCount: number) {
   ctx.fillStyle = baseColor;
   ctx.fillRect(0, 0, 32, 32);
-  // Wave bands with noise-based irregularity for natural look
-  ctx.strokeStyle = waveColor;
-  ctx.lineWidth = 1;
-  for (let w = 0; w < waveCount; w++) {
-    ctx.beginPath();
-    const baseY = 7 + w * 11 + Math.sin(w * 2.7) * 2;
-    ctx.globalAlpha = 0.2 + Math.sin(w * 1.3) * 0.08;
-    for (let x = 0; x <= 32; x++) {
-      // Use frequencies that match at x=0 and x=32 for seamless tiling
-      // sin(x * PI/8) completes exactly 2 full cycles over 32px
-      const wave = Math.sin(x * Math.PI / 8 + w * 1.8) * 2.5;
-      // Noise perturbation: use sin with incommensurate frequencies for irregularity
-      const noise = Math.sin(x * 0.9 + w * 3.1) * 0.8 + Math.sin(x * 1.7 + w * 0.7) * 0.5;
-      ctx.lineTo(x, baseY + wave + noise);
-    }
-    ctx.stroke();
-  }
-  // Second set of fainter waves at different phase for depth
-  ctx.strokeStyle = '#ffffff';
-  ctx.globalAlpha = 0.08;
-  ctx.lineWidth = 0.5;
-  for (let w = 0; w < waveCount - 1; w++) {
-    ctx.beginPath();
-    const baseY = 4 + w * 13 + Math.cos(w * 1.1) * 1.5;
-    for (let x = 0; x <= 32; x++) {
-      const wave = Math.sin(x * Math.PI / 8 + w * 2.3 + 0.5) * 1.8;
-      const noise = Math.sin(x * 1.3 + w * 2.9) * 0.6;
-      ctx.lineTo(x, baseY + wave + noise);
-    }
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
+  // No wave bands — solid color with emissive provides water depth
 }
 
 // --- 2.3c: Effect Textures (16×16) ---

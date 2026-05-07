@@ -1,9 +1,12 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrthographicCamera, Html, useCursor, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS, getClanTerritoryCenter } from '../store/gameStore';
 import { generateCharacterStyle, getRealmAura } from '../utils/appearance';
+import { BuildingWorld } from '../buildings/BuildingWorld';
+import { useBuildingStore, makeBuildingId } from '../buildings/BuildingStore';
+import { getBuildingDef, BuildingKind } from '../buildings/BuildingTypes';
 import { getTerrainTile, getVisionRadius, SCOUT_VISION_MULTIPLIER } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
@@ -13,10 +16,11 @@ import { PixelResourceSprite } from './PixelResourceSprite';
 import { CombatParticles, BloodParticles, CameraShake, triggerScreenShake, GatheringEffect, BreakthroughEffect, SkillParticles, DebrisParticles } from './PixelParticleEffects';
 import { generateTerrainTileTexture, generateEffectTexture, generateDecorationSprite, type DecorationType } from '../utils/pixelSpriteGenerator';
 import { PixelDecoration } from './PixelDecoration';
-import { PixelBuildingSprite } from './PixelBuildingSprite';
 
 // Constants
 const VIEW_RADIUS = 15;
+const TERRAIN_BORDER = 3; // Extra tile rings beyond VIEW_RADIUS to hide exposed side faces
+const TERRAIN_RADIUS = VIEW_RADIUS + TERRAIN_BORDER;
 
 // Weather effect — rain or snow based on player biome
 const WeatherEffect = ({ playerPos }: { playerPos: { x: number; y: number } }) => {
@@ -108,8 +112,8 @@ const PlayerPulseRing = () => {
   );
 };
 
-// Animated water tile with flowing texture — slightly oversized to prevent shoreline seams
-const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number; yPos: number }) => {
+// Animated water tile with flowing texture — plane to avoid black side-face stripes
+const WaterTile = ({ biome, yPos }: { biome: TerrainType; yPos: number }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const tex = useMemo(() => {
     const t = getTerrainTexture(biome).clone();
@@ -118,20 +122,9 @@ const WaterTile = ({ biome, height, yPos }: { biome: TerrainType; height: number
     return t;
   }, [biome]);
 
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      const mat = meshRef.current.material as THREE.MeshStandardMaterial;
-      if (mat.map) {
-        mat.map.offset.x += delta * 0.08;
-        mat.map.offset.y += delta * 0.03;
-      }
-    }
-  });
-
   return (
-    <mesh ref={meshRef} position={[0, yPos, 0]} receiveShadow>
-      {/* Slightly oversized (1.05) to overlap neighbors and prevent shoreline stripe artifacts */}
-      <boxGeometry args={[1.05, height, 1.05]} />
+    <mesh ref={meshRef} position={[0, yPos, 0]}>
+      <planeGeometry args={[1.0, 1.0]} />
       <meshStandardMaterial
         map={tex}
         transparent
@@ -193,7 +186,7 @@ const TREE_TYPES: DecorationType[] = ['tree_pine', 'tree_broad', 'tree_tall'];
 // 2. Cultivator Pixel Sprite — real-world scale: ~1.8m human height
 const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: { appearance: any, isMoving?: boolean, isFloating?: boolean }) => {
   const { height } = appearance;
-  const s = height / 1.0;
+  const s = height * 0.6;
 
   return (
     <group scale={[s * 1.0, s * 1.0, s * 1.0]}>
@@ -223,160 +216,149 @@ function getTerrainTexture(biome: TerrainType, tileX?: number, tileY?: number): 
   return terrainTextureCache.get(key)!;
 }
 
+// Build a single large terrain atlas texture covering the visible area
+const TerrainTileMesh = React.memo(({ x, y, dx, dy, biome }: { x: number; y: number; dx: number; dy: number; biome: TerrainType }) => {
+  const texture = useMemo(() => getTerrainTexture(biome, x, y), [biome, x, y]);
+  return (
+    <mesh position={[dx, 0, dy]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[1.01, 1.01]} />
+      <meshBasicMaterial map={texture} />
+    </mesh>
+  );
+});
+
 const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
-  const tiles = useMemo(() => {
-    const t = [];
-    for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
-      for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
+  const tileData = useMemo(() => {
+    const tiles: Array<{ x: number; y: number; dx: number; dy: number; biome: TerrainType; hasTree: boolean; isWaterTile: boolean; isMountain: boolean; showPeak: boolean; showSnowCap: boolean }> = [];
+    for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
+      for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
         const x = playerPos.x + dx;
         const y = playerPos.y + dy;
-
         const tile = getTerrainTile(x, y);
-        t.push({ ...tile, dx, dy });
+        const isWaterTile = isWater(tile.biome);
+        const isMountain = tile.biome === TerrainType.ROCK || tile.biome === TerrainType.MOUNTAIN;
+        tiles.push({
+          x, y, dx, dy,
+          biome: tile.biome,
+          hasTree: tile.hasTree,
+          isWaterTile,
+          isMountain,
+          showPeak: isMountain && tile.elevation > 0.6,
+          showSnowCap: isMountain && tile.elevation > 0.8,
+        });
       }
     }
-    return t;
+    return tiles;
   }, [playerPos.x, playerPos.y]);
 
   return (
     <group>
-      {tiles.map(tile => {
-        const isWaterTile = isWater(tile.biome);
-        const isMountain = tile.biome === TerrainType.ROCK || tile.biome === TerrainType.MOUNTAIN;
+      {tileData.map(tile => (
+        <TerrainTileMesh key={`${tile.x},${tile.y}`} x={tile.x} y={tile.y} dx={tile.dx} dy={tile.dy} biome={tile.biome} />
+      ))}
 
-        // Dramatic height for mountains, flat for water, varied for others
-        let height: number;
-        if (isWaterTile) {
-          height = 0.2;
-        } else if (isMountain) {
-          height = Math.max(0.5, (tile.elevation + 0.5) * 1.5);
-        } else {
-          height = Math.max(0.1, tile.elevation + 0.5);
-        }
+      {tileData.filter(t => t.showPeak).map(tile => (
+        <mesh key={`peak-${tile.x},${tile.y}`} position={[tile.dx, 10, tile.dy]}>
+          <coneGeometry args={[8, 20, 8]} />
+          <meshStandardMaterial color={tile.showSnowCap ? '#f8fafc' : '#78716c'} roughness={0.7} emissive={tile.showSnowCap ? '#ffffff' : '#4a453f'} emissiveIntensity={0.1} />
+        </mesh>
+      ))}
 
-        const yPos = isWaterTile ? -0.15 : (height / 2 - 0.5);
-
-        // Mountain peak cap for dramatic effect
-        const showPeak = isMountain && height > 1.5;
-
-        // Snow cap on high mountains
-        const showSnowCap = isMountain && height > 1.8;
-
-        // Pixel terrain texture (per-tile variant via seededRandom)
-        const tex = getTerrainTexture(tile.biome, tile.x, tile.y);
-
+      {tileData.filter(t => t.hasTree && !t.isMountain && !t.isWaterTile).map(tile => {
+        const density = seededRandom(tile.x * 13.7, tile.y * 17.1);
+        if (density > 0.35) return null;
+        const treeIdx = Math.floor(seededRandom(tile.x * 3.7, tile.y * 7.1) * 3);
+        const treeType = TREE_TYPES[treeIdx];
+        const treeScale = 2.5 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 2.0;
         return (
-          <group key={`${tile.x},${tile.y}`} position={[tile.dx, 0, tile.dy]}>
-            {/* Main terrain block with pixel texture */}
-            {isWaterTile ? (
-              <WaterTile biome={tile.biome} height={height} yPos={yPos} />
-            ) : (
-              <mesh position={[0, yPos, 0]} castShadow receiveShadow>
-                {/* No oversize — exact 1.0 prevents resampling moiré from isometric overlap */}
-                <boxGeometry args={[1, height, 1]} />
-                <meshStandardMaterial
-                  map={tex}
-                  roughness={0.9}
-                  metalness={0.0}
-                  color={(() => {
-                    // Per-tile color variation (±4%) — reduced from ±8% to minimize tile-edge contrast
-                    const v = seededRandom(tile.x * 5.1, tile.y * 9.3) * 0.08 + 0.96;
-                    return new THREE.Color(v, v, v);
-                  })()}
-                  emissive={isMountain ? '#3a3530' : tile.biome === TerrainType.GRASS ? '#1a3a1a' : tile.biome === TerrainType.SAND ? '#3a3a1a' : tile.biome === TerrainType.SNOW ? '#2a3a4a' : '#1a1a2a'}
-                  emissiveIntensity={isMountain ? 0.15 : 0.08}
-                />
-              </mesh>
-            )}
-            {/* Mountain peak — taller, wider, more visible */}
-            {showPeak && (
-              <mesh position={[0, yPos + height / 2 + 0.2, 0]}>
-                <coneGeometry args={[0.45, 0.8, 4]} />
-                <meshStandardMaterial color={showSnowCap ? '#f8fafc' : '#78716c'} roughness={0.7} emissive={showSnowCap ? '#ffffff' : '#4a453f'} emissiveIntensity={0.1} />
-              </mesh>
-            )}
-            {/* Tree baseHeight: tree sits on terrain surface, base of trunk at terrain top */}
-            {/* Tree — pixel art sprite with per-position variation */}
-            {tile.hasTree && !isMountain && (() => {
-              const treeIdx = Math.floor(seededRandom(tile.x * 3.7, tile.y * 7.1) * 3);
-              const treeType = TREE_TYPES[treeIdx];
-              const treeScale = 1.0 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 0.6;
-              return (
-                <PixelDecoration
-                  type={treeType}
-                  position={[0, yPos + height / 2 + treeScale * 0.5, 0]}
-                  scale={treeScale}
-                  sway={true}
-                />
-              );
-            })()}
-            {/* Terrain decorations */}
-            {(() => {
-              const decor = getDecorationForTile(tile.x, tile.y, tile.biome);
-              if (!decor) return null;
-              const topY = isWaterTile ? 0.05 : yPos + height / 2;
-              const decorScale = (decor === 'bush' || decor === 'cactus') ? 0.35 : 0.25;
-              const swayTypes: DecorationType[] = ['grass_tuft', 'flower_white', 'flower_red', 'flower_yellow', 'reed', 'alpine_grass', 'dry_grass'];
-              return (
-                <PixelDecoration
-                  type={decor}
-                  position={[0, topY, 0]}
-                  scale={decorScale}
-                  sway={swayTypes.includes(decor)}
-                />
-              );
-            })()}
-          </group>
+          <PixelDecoration
+            key={`tree-${tile.x},${tile.y}`}
+            type={treeType}
+            position={[tile.dx, treeScale * 0.45, tile.dy]}
+            scale={treeScale}
+            sway={true}
+          />
+        );
+      })}
+
+      {tileData.map(tile => {
+        const decor = getDecorationForTile(tile.x, tile.y, tile.biome);
+        if (!decor) return null;
+        const topY = tile.isWaterTile ? 0.05 : 0;
+        const decorScale = (decor === 'bush' || decor === 'cactus') ? 0.8 : 0.5;
+        const swayTypes: DecorationType[] = ['grass_tuft', 'flower_white', 'flower_red', 'flower_yellow', 'reed', 'alpine_grass', 'dry_grass'];
+        return (
+          <PixelDecoration
+            key={`decor-${tile.x},${tile.y}-${decor}`}
+            type={decor}
+            position={[tile.dx, topY, tile.dy]}
+            scale={decorScale}
+            sway={swayTypes.includes(decor)}
+          />
         );
       })}
     </group>
   );
 };
 
-// 3b. Fog of War overlay
+// 3b. Fog of War overlay — 圆形视野 + 边缘羽化精灵遮罩
 const FogOfWar = ({ playerPos, exploredTiles, visionRadius }: { playerPos: { x: number, y: number }; exploredTiles: string[]; visionRadius: number }) => {
-  const tiles = useMemo(() => {
-    const t = [];
-    for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
-      for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
-        const x = playerPos.x + dx;
-        const y = playerPos.y + dy;
-        const explored = exploredTiles.includes(`${x},${y}`);
-        // Currently in sight (within realm-based vision radius)
-        const inSight = Math.abs(dx) <= visionRadius && Math.abs(dy) <= visionRadius;
-        t.push({ dx, dy, explored, inSight, x, y });
-      }
-    }
-    return t;
-  }, [playerPos.x, playerPos.y, exploredTiles]);
+
+  const circleMaskTexture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    const size = 1024;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const spriteWorldSize = TERRAIN_RADIUS * 4;
+    const spriteRadius = spriteWorldSize / 2;
+    const clearEdge = visionRadius / spriteRadius;
+    const fadeEnd = Math.min(1, clearEdge + 0.08);
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(Math.max(0.01, clearEdge - 0.01), 'rgba(0,0,0,0)');
+    gradient.addColorStop(clearEdge, 'rgba(0,0,0,0.25)');
+    gradient.addColorStop(fadeEnd, 'rgba(0,0,0,0.85)');
+    gradient.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }, [visionRadius]);
 
   return (
-    <group>
-      {tiles.map(tile => {
-        // Unexplored: full dark fog | Explored but out of sight: light fog | In sight: clear
-        let opacity: number;
-        if (tile.inSight) {
-          opacity = 0;
-        } else if (tile.explored) {
-          opacity = 0.35;
-        } else {
-          opacity = 0.88;
-        }
-        return (
-          <mesh key={`fog-${tile.x},${tile.y}`} position={[tile.dx, 0.01, tile.dy]}>
-            <planeGeometry args={[1.02, 1.02]} />
-            <meshBasicMaterial
-              color="#0f0f11"
-              transparent
-              opacity={opacity}
-              depthWrite={false}
-            />
-          </mesh>
-        );
-      })}
-    </group>
+    <sprite position={[0, 1.60, 0]} scale={[TERRAIN_RADIUS * 4, TERRAIN_RADIUS * 4, 1]}>
+      <spriteMaterial
+        map={circleMaskTexture}
+        transparent
+        opacity={1.0}
+        depthWrite={false}
+        depthTest={false}
+      />
+    </sprite>
   );
-};// 4. Resource Point with pixel art sprite
+};
+
+// 3c: Camera zoom controller for building interiors
+const BuildingCamera = () => {
+  const camera = useThree(s => s.camera) as THREE.OrthographicCamera;
+  const isInside = useBuildingStore(s => s.isInside);
+  const baseZoom = 80;
+  const interiorZoom = 180;
+  const zoomRef = useRef(baseZoom);
+
+  useFrame((_, delta) => {
+    const target = isInside ? interiorZoom : baseZoom;
+    zoomRef.current += (target - zoomRef.current) * Math.min(1, delta * 4);
+    camera.zoom = zoomRef.current;
+    camera.updateProjectionMatrix();
+  });
+
+  return null;
+};
+
+// 4. Resource Point with pixel art sprite
 const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => {
   const interactWithResource = useGameStore(state => state.interactWithResource);
   const clans = useGameStore(state => state.clans);
@@ -486,7 +468,7 @@ const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true, compact = false }: 
       )}
 
       {/* Tags — LOD: compact = name only at low opacity, full = activity + name + hover */}
-      <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, appearance.height * 0.6 + 0.15, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center">
           {compact ? (
             <div className="bg-black/40 px-1 py-0.5 rounded text-[9px] text-white/50 whitespace-nowrap">
@@ -535,7 +517,7 @@ const SquadMemberMesh = ({ member, dx, dy }: { member: SquadMember; dx: number; 
         <CultivatorModel appearance={appearance} isMoving={false} isFloating={tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER'} />
       </group>
       {/* Tags */}
-      <Html position={[0, appearance.height + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, appearance.height * 0.6 + 0.15, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center">
           <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] text-amber-300 whitespace-nowrap shadow-sm mb-1">
             {member.role}
@@ -809,7 +791,7 @@ const PlayerMesh = ({ player }: { player: any }) => {
         opacity={0.5}
       />
 
-      <Html position={[0, appearance.height + 0.5, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, appearance.height * 0.6 + 0.3, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="bg-zinc-900 border border-emerald-500 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg flex flex-col items-center">
           <div className="text-emerald-400 font-bold">{player.name}</div>
           <div className="text-zinc-400">[{player.realm}] · {player.bodyType}</div>
@@ -855,35 +837,35 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
     <group position={[0, baseHeight, 0]}>
       {/* Phase 1.4b: Territory overlay — colored disc sized by territory value */}
       <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[1 + territory * 0.6, 48]} />
+        <circleGeometry args={[4 + territory * 2.5, 48]} />
         <meshBasicMaterial color={COUNTRY_COLORS[country] || '#787878'} transparent opacity={0.12} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
       {/* Territory border ring */}
       <mesh position={[0, 0.008, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1 + territory * 0.6 - 0.08, 1 + territory * 0.6, 48]} />
+        <ringGeometry args={[4 + territory * 2.5 - 0.15, 4 + territory * 2.5, 48]} />
         <meshBasicMaterial color={COUNTRY_COLORS[country] || '#787878'} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
 
       {/* Territory ring */}
       <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.5, 2.5, 32]} />
+        <ringGeometry args={[6.5, 9.5, 32]} />
         <meshBasicMaterial color="#f59e0b" transparent opacity={0.2} side={THREE.DoubleSide} />
       </mesh>
 
       {/* War indicator: pulsing red ring */}
       {isAtWar && (
         <mesh ref={warRingRef} position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.0, 2.8, 32]} />
+          <ringGeometry args={[8, 10.5, 32]} />
           <meshBasicMaterial color="#ef4444" transparent opacity={0.5} side={THREE.DoubleSide} />
         </mesh>
       )}
       {/* P2: Siege debris particles when at war */}
-      {showDebris && <DebrisParticles key={debrisKey} position={[0, 0.5, 0]} count={8} duration={700} />}
+      {showDebris && <DebrisParticles key={debrisKey} position={[0, 2.0, 0]} count={8} duration={700} />}
 
       {/* Small building indicators */}
       {(faction.buildings || []).map((b, i) => {
         const angle = (i / 6) * Math.PI * 2;
-        const radius = 1.2;
+        const radius = 5.5;
         const bx = Math.cos(angle) * radius;
         const bz = Math.sin(angle) * radius;
         const BUILDING_COLORS_MAP: Record<string, string> = {
@@ -891,20 +873,16 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
           '藏经阁': '#c084fc', '库房': '#facc15', '哨塔': '#22d3ee', '炼器房': '#f59e0b',
         };
         return (
-          <mesh key={b.type} position={[bx, 0.1, bz]} castShadow>
-            <boxGeometry args={[0.2, 0.1 + b.level * 0.05, 0.2]} />
+          <mesh key={b.type} position={[bx, 0.15, bz]} castShadow>
+            <boxGeometry args={[0.8, 0.3 + b.level * 0.15, 0.8]} />
             <meshStandardMaterial color={BUILDING_COLORS_MAP[b.type] || '#f59e0b'} />
           </mesh>
         );
       })}
 
-      {/* Faction building sprite */}
-      <group position={[0, 1.2, 0]}>
-        <PixelBuildingSprite type="city" country={country} scale={1.2} />
-      </group>
       {/* Garrison HP bar */}
       {(garrison ?? 0) > 0 && (
-        <Html position={[0, 1.2, 0]} center style={{ pointerEvents: 'none' }}>
+        <Html position={[0, 6.3, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="flex items-center gap-1">
             <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-600">
               <div className="h-full bg-cyan-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, garrison || 0)}%` }} />
@@ -915,7 +893,7 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
       )}
       {/* Fortification HP bar */}
       {(fortification ?? 0) > 0 && (
-        <Html position={[0, 1.0, 0]} center style={{ pointerEvents: 'none' }}>
+        <Html position={[0, 5.9, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="flex items-center gap-1">
             <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-600">
               <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, fortification || 0)}%` }} />
@@ -925,7 +903,7 @@ const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garr
         </Html>
       )}
       {/* Faction name label */}
-      <Html position={[0, 1.3, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, 6.7, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="text-amber-300 text-[11px] font-bold whitespace-nowrap drop-shadow-lg">
           {faction.name}
         </div>
@@ -1030,6 +1008,47 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
   const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent, exploredTiles } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
+  const isBlockedByBuildingWall = useCallback((targetX: number, targetY: number): boolean => {
+    const blds = useBuildingStore.getState().buildings;
+    for (const b of blds) {
+      const hw = b.def.width / 2;
+      const hd = b.def.depth / 2;
+      const lx = targetX - b.worldX;
+      const ly = targetY - b.worldY;
+      if (lx < -hw - 0.5 || lx > hw + 0.5 || ly < -hd - 0.5 || ly > hd + 0.5) continue;
+
+      // Check if near entrance
+      const IGNORE_RANGE = 1.2;
+      for (const door of b.def.interior.doors) {
+        const doorWX = b.worldX + door.x - b.def.width / 2 + 1;
+        const doorWY = b.worldY + door.y - b.def.depth / 2 + 1;
+        if (Math.abs(targetX - doorWX) < IGNORE_RANGE && Math.abs(targetY - doorWY) < IGNORE_RANGE) {
+          return false;
+        }
+      }
+
+      if (lx >= -hw && lx <= hw && ly >= -hd && ly <= hd) {
+        // Inside building - check inner walls
+        for (const wall of b.def.interior.inner) {
+          if (lx >= wall.x - 0.5 && lx <= wall.x + wall.w - 0.5 && ly >= wall.y - 0.5 && ly <= wall.y + wall.h - 0.5) {
+            return true;
+          }
+        }
+        // Also check outer walls (but not doors)
+        for (const wall of b.def.interior.outer) {
+          const inDoorGap = b.def.interior.doors.some(d =>
+            d.y === wall.y && Math.abs(targetX - (b.worldX + d.x - b.def.width / 2 + 1)) < 1.2
+          );
+          if (inDoorGap) continue;
+          if (lx >= wall.x - 0.3 && lx <= wall.x + wall.w - 0.7 && ly >= wall.y - 0.3 && ly <= wall.y + wall.h - 0.7) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }, []);
+
   // Breakthrough effect
   const prevRealmRef = useRef(player?.realm);
   const [breakthroughEffect, setBreakthroughEffect] = useState<{ pos: [number, number, number]; ts: number } | null>(null);
@@ -1043,6 +1062,50 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     }
     prevRealmRef.current = player.realm;
   }, [player?.realm]);
+
+  // Register buildings: capitals + faction bases
+  useEffect(() => {
+    if (!player) return;
+    const { registerBuilding, removeBuilding } = useBuildingStore.getState();
+    const registered = new Set<string>();
+
+    for (const country of COUNTRIES) {
+      const capital = COUNTRIES_DATA[country].capital;
+      const id = makeBuildingId('capital', capital.x, capital.y);
+      registered.add(id);
+      registerBuilding({
+        id,
+        def: getBuildingDef('capital', country),
+        worldX: capital.x,
+        worldY: capital.y,
+        country,
+        label: `${country}都`,
+      });
+    }
+
+    for (const clan of clans) {
+      const center = getClanTerritoryCenter(clan, clans);
+      const kind: BuildingKind = clan.isAscendingFamily ? 'manor' : 'city';
+      const id = makeBuildingId(kind, center.x, center.y);
+      registered.add(id);
+      registerBuilding({
+        id,
+        def: getBuildingDef(kind, clan.country),
+        worldX: center.x,
+        worldY: center.y,
+        country: clan.country,
+        label: clan.name,
+      });
+    }
+
+    // Remove stale buildings
+    const all = useBuildingStore.getState().buildings;
+    for (const b of all) {
+      if (!registered.has(b.id)) {
+        removeBuilding(b.id);
+      }
+    }
+  }, [player, clans]);
 
   // Phase 1.3: NPC interaction visual effects
   const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);
@@ -1132,19 +1195,31 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
   const hasScout = squadMembers.some(m => m.isAlive && m.role === '斥候型');
   const visionRadius = hasScout ? Math.round(baseVision * SCOUT_VISION_MULTIPLIER) : baseVision;
 
-  // Keyboard Movement + proximity trigger
+  // Keyboard Movement + proximity trigger + building wall collision
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      let dx = 0, dy = 0;
       switch(e.key) {
         case 'ArrowUp':
-        case 'w': movePlayer(0, -1); break;
+        case 'w': dx = 0; dy = -1; break;
         case 'ArrowDown':
-        case 's': movePlayer(0, 1); break;
+        case 's': dx = 0; dy = 1; break;
         case 'ArrowLeft':
-        case 'a': movePlayer(-1, 0); break;
+        case 'a': dx = -1; dy = 0; break;
         case 'ArrowRight':
-        case 'd': movePlayer(1, 0); break;
+        case 'd': dx = 1; dy = 0; break;
+        default: return;
       }
+      const store = useGameStore.getState();
+      const p = store.player;
+      if (!p) return;
+      const targetX = p.position.x + dx;
+      const targetY = p.position.y + dy;
+      // Check building wall collision
+      if (isBlockedByBuildingWall(targetX, targetY)) {
+        return;
+      }
+      movePlayer(dx, dy);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -1181,30 +1256,18 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
 
   if (!player) return null;
 
-  // Render Capitals
-  const capitals = COUNTRIES.map(country => {
+  // Render city/nation labels (buildings are 3D via BuildingWorld)
+  const cityLabels = COUNTRIES.map(country => {
     const capital = COUNTRIES_DATA[country].capital;
     const dx = capital.x - player.position.x;
     const dy = capital.y - player.position.y;
     if (Math.abs(dx) <= VIEW_RADIUS && Math.abs(dy) <= VIEW_RADIUS) {
-      const tile = getTerrainTile(capital.x, capital.y);
-      const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
-      
       return (
-        <group key={`capital-${country}`} position={[dx, baseHeight, dy]}>
-          {/* Capital building sprite */}
-          <PixelBuildingSprite type="capital" country={country} scale={1.1} />
-          {/* Capital glow ring */}
-          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[1.0, 1.3, 32]} />
-            <meshBasicMaterial color={COUNTRY_COLORS[country] || '#b45309'} transparent opacity={0.4} side={THREE.DoubleSide} />
-          </mesh>
-          <Html position={[0, 0.9, 0]} center style={{ pointerEvents: 'none' }}>
-            <div className="text-amber-400 text-[10px] font-bold whitespace-nowrap drop-shadow-lg">
-              {country}都
-            </div>
-          </Html>
-        </group>
+        <Html key={`capital-label-${country}`} position={[dx, 7, dy]} center style={{ pointerEvents: 'none' }}>
+          <div className="text-amber-400 text-xs font-bold whitespace-nowrap drop-shadow-lg bg-black/50 px-2 py-1 rounded">
+            {country}都
+          </div>
+        </Html>
       );
     }
     return null;
@@ -1212,19 +1275,17 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
 
   return (
     <div className="w-full h-full bg-zinc-950 relative overflow-hidden" style={{ width: '100vw', height: '100vh' }}>
-      <Canvas shadows style={{ width: '100%', height: '100%' }} gl={{ antialias: false, powerPreference: 'high-performance' }}>
-        {/* 迷雾调亮，范围缩短 — 减少压抑感 */}
-        <fog attach="fog" args={['#2a2a35', 20, 55]} />
+      <Canvas style={{ width: '100%', height: '100%' }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
 
         <OrthographicCamera
           makeDefault
-          position={[25, 25, 25]}
-          zoom={35 - visionBonus * 1.5}
+          position={[80, 55, 80]}
+          zoom={80}
           near={-100}
-          far={200}
+          far={300}
           onUpdate={c => c.lookAt(0, 0, 0)}
         />
-        
+
         {/* 环境光提升，冷白明亮 */}
         <ambientLight intensity={2.5} color="#f0f4ff" />
 
@@ -1233,23 +1294,24 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           position={[15, 25, 10]}
           intensity={2.2}
           color="#e8e8e8"
-          castShadow 
-          shadow-mapSize={[2048, 2048]} 
-          shadow-camera-left={-30}
-          shadow-camera-right={30}
-          shadow-camera-top={30}
-          shadow-camera-bottom={-30}
-          shadow-bias={-0.001}
         />
 
+        {/* Ground plane — fills sub-pixel gaps between edge tiles at bottom. */}
+        <mesh position={[0, -0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[2000, 2000]} />
+          <meshBasicMaterial color="#2a2a35" depthWrite={false} />
+        </mesh>
+        {/* Terrain — single heightfield plane with atlas texture */}
         <Terrain playerPos={player.position} />
+        <BuildingWorld playerX={player.position.x} playerY={player.position.y} />
         {/* GlobalNoiseOverlay — disabled; was creating moiré standing wave with tile grid */}
         {/* <GlobalNoiseOverlay /> */}
         <FogOfWar playerPos={player.position} exploredTiles={exploredTiles} visionRadius={visionRadius} />
         <WeatherEffect playerPos={player.position} />
         <CameraShake />
+        <BuildingCamera />
 
-        {capitals}
+        {cityLabels}
 
         {/* Scene trigger zone markers (points of interest) */}
         {Object.entries(SCENE_REGISTRY)
