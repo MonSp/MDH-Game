@@ -333,9 +333,8 @@ export const CameraShake = () => {
   useFrame(() => {
     if (shakeRef.current > 0.01) {
       const intensity = shakeRef.current;
-      camera.position.x = 25 + (Math.random() - 0.5) * intensity * 0.2;
-      camera.position.z = 25 + (Math.random() - 0.5) * intensity * 0.2;
-      camera.lookAt(0, 0, 0);
+      camera.position.x += (Math.random() - 0.5) * intensity * 0.2;
+      camera.position.z += (Math.random() - 0.5) * intensity * 0.2;
       shakeRef.current *= 0.85;
     }
   });

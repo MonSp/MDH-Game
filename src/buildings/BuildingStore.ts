@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { BuildingDef, BuildingKind, getBuildingDef } from './BuildingTypes';
+import { BuildingDef, BuildingKind } from './BuildingTypes';
+import { getBuildingDef } from './CityRegistry';
 
 export interface BuildingInstance {
   id: string;

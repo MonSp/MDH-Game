@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrthographicCamera, Html, useCursor, Sparkles } from '@react-three/drei';
+import { PerspectiveCamera, Html, useCursor, Sparkles } from '@react-three/drei';
+import { CameraControls } from '../utils/CameraControls';
 import * as THREE from 'three';
-import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, BUILDING_VISION_BONUS, getClanTerritoryCenter } from '../store/gameStore';
+import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, getClanTerritoryCenter } from '../store/gameStore';
 import { generateCharacterStyle, getRealmAura } from '../utils/appearance';
 import { BuildingWorld } from '../buildings/BuildingWorld';
 import { useBuildingStore, makeBuildingId } from '../buildings/BuildingStore';
-import { getBuildingDef, BuildingKind } from '../buildings/BuildingTypes';
-import { getTerrainTile, getVisionRadius, SCOUT_VISION_MULTIPLIER } from '../utils/terrain';
+import { getBuildingDef, BuildingKind } from '../buildings/CityRegistry';
+import { getTerrainTile } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
 import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneRegistry';
 import { PixelCharacterSprite } from './PixelCharacterSprite';
@@ -18,7 +19,7 @@ import { generateTerrainTileTexture, generateEffectTexture, generateDecorationSp
 import { PixelDecoration } from './PixelDecoration';
 
 // Constants
-const VIEW_RADIUS = 15;
+const VIEW_RADIUS = 12;
 const TERRAIN_BORDER = 3; // Extra tile rings beyond VIEW_RADIUS to hide exposed side faces
 const TERRAIN_RADIUS = VIEW_RADIUS + TERRAIN_BORDER;
 
@@ -217,19 +218,64 @@ function getTerrainTexture(biome: TerrainType, tileX?: number, tileY?: number): 
 }
 
 // Build a single large terrain atlas texture covering the visible area
-const TerrainTileMesh = React.memo(({ x, y, dx, dy, biome }: { x: number; y: number; dx: number; dy: number; biome: TerrainType }) => {
-  const texture = useMemo(() => getTerrainTexture(biome, x, y), [biome, x, y]);
+function tileElevationOffset(biome: TerrainType, elevation: number): number {
+  if (isWater(biome)) return 0;
+  return Math.max(0, elevation) * 0.25;
+}
+
+// Renders all tiles sharing the same texture as a single InstancedMesh
+const TerrainPlaneGroup = React.memo(({ tiles, biome, variant }: { tiles: Array<{ dx: number; dy: number; elevation: number }>; biome: TerrainType; variant: number }) => {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const texture = useMemo(() => getTerrainTexture(biome, variant), [biome, variant]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const dummy = new THREE.Object3D();
+    tiles.forEach((t, i) => {
+      const yOff = tileElevationOffset(biome, t.elevation);
+      dummy.position.set(t.dx, yOff, t.dy);
+      dummy.updateMatrix();
+      ref.current!.setMatrixAt(i, dummy.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [tiles, biome]);
+
   return (
-    <mesh position={[dx, 0, dy]} rotation={[-Math.PI / 2, 0, 0]}>
+    <instancedMesh ref={ref} args={[undefined, undefined, tiles.length]}>
       <planeGeometry args={[1.01, 1.01]} />
       <meshBasicMaterial map={texture} />
-    </mesh>
+    </instancedMesh>
+  );
+});
+
+// Renders all terrain box sides (elevation walls) as one InstancedMesh
+const TerrainBoxGroup = React.memo(({ tiles }: { tiles: Array<{ dx: number; dy: number; elevation: number; biome: TerrainType }> }) => {
+  const ref = useRef<THREE.InstancedMesh>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const dummy = new THREE.Object3D();
+    tiles.forEach((t, i) => {
+      const yOff = tileElevationOffset(t.biome, t.elevation);
+      dummy.position.set(t.dx, yOff * 0.5, t.dy);
+      dummy.scale.set(1.01, yOff, 1.01);
+      dummy.updateMatrix();
+      ref.current!.setMatrixAt(i, dummy.matrix);
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  }, [tiles]);
+
+  return (
+    <instancedMesh ref={ref} args={[undefined, undefined, tiles.length]}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshBasicMaterial color="#3a3a45" />
+    </instancedMesh>
   );
 });
 
 const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
   const tileData = useMemo(() => {
-    const tiles: Array<{ x: number; y: number; dx: number; dy: number; biome: TerrainType; hasTree: boolean; isWaterTile: boolean; isMountain: boolean; showPeak: boolean; showSnowCap: boolean }> = [];
+    const tiles: Array<{ x: number; y: number; dx: number; dy: number; biome: TerrainType; elevation: number; textureVariant: number; hasTree: boolean; isWaterTile: boolean; isMountain: boolean; showPeak: boolean; showSnowCap: boolean }> = [];
     for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
       for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
         const x = playerPos.x + dx;
@@ -240,6 +286,8 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
         tiles.push({
           x, y, dx, dy,
           biome: tile.biome,
+          elevation: tile.elevation,
+          textureVariant: Math.floor(seededRandom(x * 7.1, y * 3.7) * TERRAIN_VARIANTS),
           hasTree: tile.hasTree,
           isWaterTile,
           isMountain,
@@ -251,30 +299,58 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
     return tiles;
   }, [playerPos.x, playerPos.y]);
 
+  const planeGroups = useMemo(() => {
+    const groups = new Map<string, Array<{ dx: number; dy: number; elevation: number }>>();
+    for (const t of tileData) {
+      const key = `${t.biome}|${t.textureVariant}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push({ dx: t.dx, dy: t.dy, elevation: t.elevation });
+    }
+    return groups;
+  }, [tileData]);
+
+  const boxTiles = useMemo(() =>
+    tileData.filter(t => !t.isWaterTile && tileElevationOffset(t.biome, t.elevation) > 0.05),
+  [tileData]);
+
   return (
     <group>
-      {tileData.map(tile => (
-        <TerrainTileMesh key={`${tile.x},${tile.y}`} x={tile.x} y={tile.y} dx={tile.dx} dy={tile.dy} biome={tile.biome} />
-      ))}
+      {Array.from(planeGroups.entries()).map(([key, tiles]) => {
+        const [biomeStr, variantStr] = key.split('|');
+        return (
+          <TerrainPlaneGroup
+            key={key}
+            tiles={tiles}
+            biome={Number(biomeStr) as unknown as TerrainType}
+            variant={Number(variantStr)}
+          />
+        );
+      })}
 
-      {tileData.filter(t => t.showPeak).map(tile => (
-        <mesh key={`peak-${tile.x},${tile.y}`} position={[tile.dx, 10, tile.dy]}>
-          <coneGeometry args={[8, 20, 8]} />
-          <meshStandardMaterial color={tile.showSnowCap ? '#f8fafc' : '#78716c'} roughness={0.7} emissive={tile.showSnowCap ? '#ffffff' : '#4a453f'} emissiveIntensity={0.1} />
-        </mesh>
-      ))}
+      {boxTiles.length > 0 && <TerrainBoxGroup tiles={boxTiles} />}
+
+      {tileData.filter(t => t.showPeak).map(tile => {
+        const yOff = tileElevationOffset(tile.biome, tile.elevation);
+        return (
+          <mesh key={`peak-${tile.x},${tile.y}`} position={[tile.dx, 10 + yOff, tile.dy]}>
+            <coneGeometry args={[8, 20, 8]} />
+            <meshStandardMaterial color={tile.showSnowCap ? '#f8fafc' : '#78716c'} roughness={0.7} emissive={tile.showSnowCap ? '#ffffff' : '#4a453f'} emissiveIntensity={0.1} />
+          </mesh>
+        );
+      })}
 
       {tileData.filter(t => t.hasTree && !t.isMountain && !t.isWaterTile).map(tile => {
         const density = seededRandom(tile.x * 13.7, tile.y * 17.1);
-        if (density > 0.35) return null;
+        if (density > 0.5) return null;
         const treeIdx = Math.floor(seededRandom(tile.x * 3.7, tile.y * 7.1) * 3);
         const treeType = TREE_TYPES[treeIdx];
         const treeScale = 2.5 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 2.0;
+        const yOff = tileElevationOffset(tile.biome, tile.elevation);
         return (
           <PixelDecoration
             key={`tree-${tile.x},${tile.y}`}
             type={treeType}
-            position={[tile.dx, treeScale * 0.45, tile.dy]}
+            position={[tile.dx, treeScale * 0.45 + yOff, tile.dy]}
             scale={treeScale}
             sway={true}
           />
@@ -284,7 +360,10 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
       {tileData.map(tile => {
         const decor = getDecorationForTile(tile.x, tile.y, tile.biome);
         if (!decor) return null;
-        const topY = tile.isWaterTile ? 0.05 : 0;
+        const decorDensity = seededRandom(tile.x * 23.1, tile.y * 29.7);
+        if (decorDensity > 0.55) return null;
+        const yOff = tileElevationOffset(tile.biome, tile.elevation);
+        const topY = tile.isWaterTile ? 0.05 : yOff;
         const decorScale = (decor === 'bush' || decor === 'cactus') ? 0.8 : 0.5;
         const swayTypes: DecorationType[] = ['grass_tuft', 'flower_white', 'flower_red', 'flower_yellow', 'reed', 'alpine_grass', 'dry_grass'];
         return (
@@ -301,58 +380,89 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
   );
 };
 
-// 3b. Fog of War overlay — 圆形视野 + 边缘羽化精灵遮罩
-const FogOfWar = ({ playerPos, exploredTiles, visionRadius }: { playerPos: { x: number, y: number }; exploredTiles: string[]; visionRadius: number }) => {
+// 3c: Camera orbit controller — scroll zoom, middle-drag rotate, Q/E rotate
+let _oc: CameraControls | null = null;
+const keyRotate = { active: false, dir: 0 };
 
-  const circleMaskTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    const size = 1024;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d')!;
-    const spriteWorldSize = TERRAIN_RADIUS * 4;
-    const spriteRadius = spriteWorldSize / 2;
-    const clearEdge = visionRadius / spriteRadius;
-    const fadeEnd = Math.min(1, clearEdge + 0.08);
-    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    gradient.addColorStop(0, 'rgba(0,0,0,0)');
-    gradient.addColorStop(Math.max(0.01, clearEdge - 0.01), 'rgba(0,0,0,0)');
-    gradient.addColorStop(clearEdge, 'rgba(0,0,0,0.25)');
-    gradient.addColorStop(fadeEnd, 'rgba(0,0,0,0.85)');
-    gradient.addColorStop(1, 'rgba(0,0,0,1)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, size, size);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.needsUpdate = true;
-    return tex;
-  }, [visionRadius]);
-
-  return (
-    <sprite position={[0, 1.60, 0]} scale={[TERRAIN_RADIUS * 4, TERRAIN_RADIUS * 4, 1]}>
-      <spriteMaterial
-        map={circleMaskTexture}
-        transparent
-        opacity={1.0}
-        depthWrite={false}
-        depthTest={false}
-      />
-    </sprite>
-  );
-};
-
-// 3c: Camera zoom controller for building interiors
-const BuildingCamera = () => {
-  const camera = useThree(s => s.camera) as THREE.OrthographicCamera;
+const CameraController = () => {
+  const { camera, gl } = useThree();
   const isInside = useBuildingStore(s => s.isInside);
-  const baseZoom = 80;
-  const interiorZoom = 180;
-  const zoomRef = useRef(baseZoom);
+  const interiorDistance = 8;
+  const baseDistance = 18;
+  const prevInside = useRef<boolean | null>(null);
+  const distTarget = useRef<number | null>(null);
+  const initDone = useRef(false);
+
+  useEffect(() => {
+    if (_oc) {
+      _oc.dispose();
+      _oc = null;
+    }
+    _oc = new CameraControls(camera, gl.domElement, {
+      enableDamping: true,
+      dampingFactor: 0.08,
+      rotateSpeed: 0.8,
+      zoomSpeed: 1.0,
+      minDistance: 6,
+      maxDistance: 50,
+      minPolarAngle: 0.1,
+      maxPolarAngle: Math.PI / 2.2,
+      mouseButtons: { LEFT: 0, MIDDLE: 0, RIGHT: 1 },
+    });
+    _oc.setTarget(0, 0, 0);
+    initDone.current = true;
+    return () => {
+      _oc?.dispose();
+      _oc = null;
+      initDone.current = false;
+    };
+  }, [camera, gl]);
+
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key === 'q' || e.key === 'Q') { keyRotate.dir = -1; keyRotate.active = true; }
+      if (e.key === 'e' || e.key === 'E') { keyRotate.dir = 1; keyRotate.active = true; }
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === 'q' || e.key === 'Q' || e.key === 'e' || e.key === 'E') { keyRotate.active = false; keyRotate.dir = 0; }
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp); };
+  }, []);
+
+  useEffect(() => {
+    if (prevInside.current !== null && prevInside.current !== isInside) {
+      distTarget.current = isInside ? interiorDistance : baseDistance;
+    }
+    prevInside.current = isInside;
+  }, [isInside]);
 
   useFrame((_, delta) => {
-    const target = isInside ? interiorZoom : baseZoom;
-    zoomRef.current += (target - zoomRef.current) * Math.min(1, delta * 4);
-    camera.zoom = zoomRef.current;
-    camera.updateProjectionMatrix();
+    const ctrl = _oc;
+    if (!ctrl) {
+      camera.lookAt(0, 0, 0);
+      return;
+    }
+
+    if (keyRotate.active) {
+      const angle = keyRotate.dir * delta * 2.5;
+      const { x, y, z } = camera.position;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      camera.position.set(x * cos - z * sin, y, x * sin + z * cos);
+    }
+
+    if (distTarget.current !== null) {
+      const dist = camera.position.distanceTo(ctrl.target);
+      const diff = distTarget.current - dist;
+      if (Math.abs(diff) < 0.05) {
+        distTarget.current = null;
+      } else {
+        ctrl.spherical.radius += diff * Math.min(1, delta * 5) * 0.08;
+      }
+    }
+
+    ctrl.update();
   });
 
   return null;
@@ -1005,45 +1115,31 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent, exploredTiles } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
   const isBlockedByBuildingWall = useCallback((targetX: number, targetY: number): boolean => {
     const blds = useBuildingStore.getState().buildings;
     for (const b of blds) {
-      const hw = b.def.width / 2;
-      const hd = b.def.depth / 2;
+      const hw = b.def.compoundWidth / 2;
+      const hd = b.def.compoundDepth / 2;
       const lx = targetX - b.worldX;
       const ly = targetY - b.worldY;
       if (lx < -hw - 0.5 || lx > hw + 0.5 || ly < -hd - 0.5 || ly > hd + 0.5) continue;
 
-      // Check if near entrance
-      const IGNORE_RANGE = 1.2;
-      for (const door of b.def.interior.doors) {
-        const doorWX = b.worldX + door.x - b.def.width / 2 + 1;
-        const doorWY = b.worldY + door.y - b.def.depth / 2 + 1;
-        if (Math.abs(targetX - doorWX) < IGNORE_RANGE && Math.abs(targetY - doorWY) < IGNORE_RANGE) {
+      // Check if near any gate
+      const IGNORE_RANGE = 2.5;
+      for (const gate of b.def.gates) {
+        const gateWX = b.worldX + gate.x - hw + 1.5;
+        const gateWY = b.worldY + gate.y - hd + 1.5;
+        if (Math.abs(targetX - gateWX) < IGNORE_RANGE && Math.abs(targetY - gateWY) < IGNORE_RANGE) {
           return false;
         }
       }
 
+      // Block if inside compound bounds but not at a gate
       if (lx >= -hw && lx <= hw && ly >= -hd && ly <= hd) {
-        // Inside building - check inner walls
-        for (const wall of b.def.interior.inner) {
-          if (lx >= wall.x - 0.5 && lx <= wall.x + wall.w - 0.5 && ly >= wall.y - 0.5 && ly <= wall.y + wall.h - 0.5) {
-            return true;
-          }
-        }
-        // Also check outer walls (but not doors)
-        for (const wall of b.def.interior.outer) {
-          const inDoorGap = b.def.interior.doors.some(d =>
-            d.y === wall.y && Math.abs(targetX - (b.worldX + d.x - b.def.width / 2 + 1)) < 1.2
-          );
-          if (inDoorGap) continue;
-          if (lx >= wall.x - 0.3 && lx <= wall.x + wall.w - 0.7 && ly >= wall.y - 0.3 && ly <= wall.y + wall.h - 0.7) {
-            return true;
-          }
-        }
+        return true;
       }
     }
     return false;
@@ -1185,16 +1281,6 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     return () => clearInterval(timer);
   }, [activeEffects.length > 0]);
 
-  // 哨塔 vision bonus for fog and zoom
-  const watchtowerLevel = playerFactionId
-    ? (clans.find(c => c.id === playerFactionId)?.buildings?.find(b => b.type === '哨塔')?.level || 0)
-    : 0;
-  const visionBonus = watchtowerLevel > 0 ? BUILDING_VISION_BONUS[watchtowerLevel] || 0 : 0;
-  // Realm-based vision radius for fog of war
-  const baseVision = player ? getVisionRadius(player.realm, visionBonus) : 12;
-  const hasScout = squadMembers.some(m => m.isAlive && m.role === '斥候型');
-  const visionRadius = hasScout ? Math.round(baseVision * SCOUT_VISION_MULTIPLIER) : baseVision;
-
   // Keyboard Movement + proximity trigger + building wall collision
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1263,7 +1349,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     const dy = capital.y - player.position.y;
     if (Math.abs(dx) <= VIEW_RADIUS && Math.abs(dy) <= VIEW_RADIUS) {
       return (
-        <Html key={`capital-label-${country}`} position={[dx, 7, dy]} center style={{ pointerEvents: 'none' }}>
+        <Html key={`capital-label-${country}`} position={[dx, 14, dy]} center style={{ pointerEvents: 'none' }}>
           <div className="text-amber-400 text-xs font-bold whitespace-nowrap drop-shadow-lg bg-black/50 px-2 py-1 rounded">
             {country}都
           </div>
@@ -1274,27 +1360,33 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
   });
 
   return (
-    <div className="w-full h-full bg-zinc-950 relative overflow-hidden" style={{ width: '100vw', height: '100vh' }}>
+    <div
+      className="w-full h-full bg-zinc-950 relative overflow-hidden"
+      style={{ width: '100vw', height: '100vh', userSelect: 'none', WebkitUserSelect: 'none' as any }}
+    >
       <Canvas style={{ width: '100%', height: '100%' }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
 
-        <OrthographicCamera
+        <PerspectiveCamera
           makeDefault
-          position={[80, 55, 80]}
-          zoom={80}
-          near={-100}
-          far={300}
-          onUpdate={c => c.lookAt(0, 0, 0)}
+          position={[25, 18, 25]}
+          fov={45}
+          near={0.1}
+          far={200}
         />
+
+        {/* Orbit camera controller: right-drag rotate, scroll zoom */}
+        <CameraController />
 
         {/* 环境光提升，冷白明亮 */}
-        <ambientLight intensity={2.5} color="#f0f4ff" />
+        <ambientLight intensity={2.0} color="#f0f4ff" />
 
-        {/* 主平行光冷白，模拟天光 */}
+        {/* 主平行光冷白，模拟天光 — repositioned for 3D perspective */}
         <directionalLight
-          position={[15, 25, 10]}
-          intensity={2.2}
+          position={[20, 30, 15]}
+          intensity={1.8}
           color="#e8e8e8"
         />
+        <hemisphereLight args={['#b0c4ff', '#3a3a50', 0.4]} />
 
         {/* Ground plane — fills sub-pixel gaps between edge tiles at bottom. */}
         <mesh position={[0, -0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -1303,13 +1395,11 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         </mesh>
         {/* Terrain — single heightfield plane with atlas texture */}
         <Terrain playerPos={player.position} />
-        <BuildingWorld playerX={player.position.x} playerY={player.position.y} />
+        <BuildingWorld playerX={player.position.x} playerY={player.position.y} viewRadius={VIEW_RADIUS} />
         {/* GlobalNoiseOverlay — disabled; was creating moiré standing wave with tile grid */}
         {/* <GlobalNoiseOverlay /> */}
-        <FogOfWar playerPos={player.position} exploredTiles={exploredTiles} visionRadius={visionRadius} />
         <WeatherEffect playerPos={player.position} />
         <CameraShake />
-        <BuildingCamera />
 
         {cityLabels}
 
@@ -1415,7 +1505,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         <span className="text-zinc-600">|</span>
         <span>WASD/方向键 移动</span>
         <span className="text-zinc-600">|</span>
-        <span>点击交互</span>
+        <span>Q/E 旋转视角</span>
+        <span className="text-zinc-600">|</span>
+        <span>中键旋转</span>
+        <span className="text-zinc-600">|</span>
+        <span>滚轮缩放</span>
+        <span className="text-zinc-600">|</span>
+        <span>左键交互</span>
       </div>
 
       {/* 指南针 — 指向视口外的场景触发点和都城 */}

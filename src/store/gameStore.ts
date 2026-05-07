@@ -89,7 +89,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const randomClan = clans[Math.floor(Math.random() * clans.length)];
     const spiritMultiplier = HEAVEN_INFO[heavenLevel].spiritMultiplier;
     
-    const initialPos = { x: 50, y: 50 };
+    const initialPos = { x: 300, y: 300 };
     const defaultTalent = { spiritualRoot: 25, boneConstitution: 30, comprehension: 40, fortune: 20 };
     const player: Player = {
       id: 'p1',
@@ -1504,8 +1504,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           skillCooldowns: {},
         },
         clans: generateClans(9),
-        resourcePoints: generateResourcePoints(50, 50, 9),
-        nearbyNPCs: generateNearbyNPCs('9-秦-1级-1', 50, 50, '秦', 9),
+        resourcePoints: generateResourcePoints(300, 300, 9),
+        nearbyNPCs: generateNearbyNPCs('9-秦-1级-1', 300, 300, '秦', 9),
         squadMembers: [],
         playerFactionId: null,
         exploredTiles: [],

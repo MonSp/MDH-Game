@@ -78,9 +78,9 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
   );
 
   return (
-    <div className="w-full h-full p-4 pointer-events-auto flex justify-between">
+    <div className="w-full h-full p-4 pointer-events-none flex justify-between">
       {/* 玩家状态 */}
-      <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-lg backdrop-blur shadow-2xl w-72">
+      <div className="bg-zinc-900/90 border border-zinc-800 p-4 rounded-lg backdrop-blur shadow-2xl w-72 pointer-events-auto">
         <div className="flex items-center space-x-3 mb-4">
           <div className="w-12 h-12 bg-zinc-800 rounded-full border border-zinc-700 flex items-center justify-center overflow-hidden">
             {(() => {
@@ -231,7 +231,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       </div>
 
       {/* 家族与地图信息 — 可折叠 */}
-      <div className={`bg-zinc-900/90 border border-zinc-800 rounded-lg backdrop-blur shadow-2xl h-fit flex flex-col ${panelCollapsed ? 'p-2' : 'p-4 space-y-4'}`}>
+      <div className={`bg-zinc-900/90 border border-zinc-800 rounded-lg backdrop-blur shadow-2xl h-fit flex flex-col pointer-events-auto ${panelCollapsed ? 'p-2' : 'p-4 space-y-4'}`}>
         {/* Collapse toggle */}
         <button
           onClick={() => setPanelCollapsed(v => !v)}
@@ -504,7 +504,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       </div>
 
       {showBreakthrough && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 pointer-events-auto">
           <PixelPanel className="p-6 w-96">
             <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center">
               <Sparkles size={20} className="mr-2" />渡劫突破
@@ -576,7 +576,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       {showForge && <ForgePanel onClose={() => setShowForge(false)} />}
       {showCaptives && <CaptivePanel onClose={() => setShowCaptives(false)} />}
       {showAscension && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 pointer-events-auto">
           <PixelPanel className="p-6 w-96 max-h-[80vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center">
               <ArrowUp size={20} className="mr-2" />九重天劫·飞升台
@@ -658,7 +658,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       )}
       
       {showCycle && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 pointer-events-auto">
           <PixelPanel className="p-6 w-96">
             <h3 className="text-xl font-bold text-cyan-400 mb-4 flex items-center">
               <RefreshCw size={20} className="mr-2" />轮回转生
@@ -692,7 +692,7 @@ export const HUD = ({ onOpenChronicle }: HUDProps) => {
       )}
 
       {showSaveDialog && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 pointer-events-auto">
           <PixelPanel className="p-6 w-96">
             <h3 className="text-xl font-bold text-zinc-100 mb-4 flex items-center">
               <Save size={18} className="mr-2 text-emerald-400" />保存游戏

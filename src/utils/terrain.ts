@@ -26,6 +26,33 @@ const BIOMES = [
 ] as const;
 
 export function getTerrainTile(x: number, y: number): TerrainTile {
+  // Test island override: small grassy island surrounded by shallow water
+  const distToIsland = Math.sqrt((x - TEST_ISLAND.x) ** 2 + (y - TEST_ISLAND.y) ** 2);
+  if (distToIsland < TEST_ISLAND.radius + TEST_ISLAND.waterRing) {
+    if (distToIsland <= TEST_ISLAND.radius) {
+      const edgeFactor = 1 - distToIsland / TEST_ISLAND.radius;
+      const innerNoise = noise2D(x * 0.3, y * 0.3);
+      const isSand = edgeFactor < 0.15;
+      const hasTree = distToIsland > 2 && innerNoise > 0.55 && !isSand;
+      return {
+        x, y,
+        elevation: 0.3 + edgeFactor * 0.15 + innerNoise * 0.05,
+        biome: isSand ? TerrainType.SAND : TerrainType.GRASS,
+        color: isSand ? '#fcd34d' : '#4ade80',
+        hasTree,
+        isRoad: false,
+      };
+    }
+    return {
+      x, y,
+      elevation: -0.3 - (distToIsland - TEST_ISLAND.radius) * 0.04,
+      biome: TerrainType.SHALLOW_WATER,
+      color: '#0ea5e9',
+      hasTree: false,
+      isRoad: false,
+    };
+  }
+
   const macroNoise = noise2D(x * 0.001, y * 0.001);
   const microNoise = noise2D(x * 0.005, y * 0.005) * 0.3;
   const value = macroNoise + microNoise;
@@ -86,3 +113,11 @@ export function getVisionRadius(realm: string, watchtowerBonus: number = 0): num
 
 // Re-export TerrainType for backwards compatibility
 export { TerrainType };
+
+/** Test island: circular land surrounded by water, far from all buildings */
+export const TEST_ISLAND = { x: 300, y: 300, radius: 20, waterRing: 5 };
+
+export function isOnTestIsland(x: number, y: number): boolean {
+  const dist = Math.sqrt((x - TEST_ISLAND.x) ** 2 + (y - TEST_ISLAND.y) ** 2);
+  return dist < TEST_ISLAND.radius + TEST_ISLAND.waterRing;
+}
