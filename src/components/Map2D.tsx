@@ -303,6 +303,46 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
     return tiles;
   }, [Math.round(playerPos.x), Math.round(playerPos.y)]);
 
+  // Tree occlusion: track which tree tiles block camera→player line
+  const [ghostedTreeKeys, setGhostedTreeKeys] = useState<Set<string>>(new Set());
+  const occlPrevStr = useRef('');
+
+  useFrame(() => {
+    if (!_camera) return;
+    const cx = _camera.position.x;
+    const cz = _camera.position.z;
+    const ghosts = new Set<string>();
+    for (const t of tileData) {
+      if (!t.hasTree || t.isMountain || t.isWaterTile) continue;
+      // Tree bounding box ~2x2 centered on tile position
+      const minX = t.dx - 1; const maxX = t.dx + 1;
+      const minZ = t.dy - 1; const maxZ = t.dy + 1;
+      // Slab test: camera→(0,0) ray vs AABB
+      const dx = -cx; const dz = -cz;
+      if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) continue;
+      let tMin = 0, tMax = 1;
+      let hit = true;
+      if (Math.abs(dx) > 0.001) {
+        const t1 = (minX - cx) / dx, t2 = (maxX - cx) / dx;
+        tMin = Math.max(tMin, Math.min(t1, t2));
+        tMax = Math.min(tMax, Math.max(t1, t2));
+      } else if (cx < minX || cx > maxX) hit = false;
+      if (hit && Math.abs(dz) > 0.001) {
+        const t1 = (minZ - cz) / dz, t2 = (maxZ - cz) / dz;
+        tMin = Math.max(tMin, Math.min(t1, t2));
+        tMax = Math.min(tMax, Math.max(t1, t2));
+      } else if (hit && (cz < minZ || cz > maxZ)) hit = false;
+      if (hit && tMin <= tMax && tMax >= 0) {
+        ghosts.add(`tree-${t.x},${t.y}`);
+      }
+    }
+    const key = [...ghosts].sort().join(',');
+    if (key !== occlPrevStr.current) {
+      occlPrevStr.current = key;
+      setGhostedTreeKeys(ghosts);
+    }
+  });
+
   const planeGroups = useMemo(() => {
     const groups = new Map<string, Array<{ dx: number; dy: number; elevation: number }>>();
     for (const t of tileData) {
@@ -348,12 +388,14 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
         const treeType = TREE_TYPES[treeIdx];
         const treeScale = 2.5 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 2.0;
         const yOff = tileElevationOffset(tile.biome, tile.elevation);
+        const treeKey = `tree-${tile.x},${tile.y}`;
         return (
           <TreeModel
-            key={`tree-${tile.x},${tile.y}`}
+            key={treeKey}
             type={treeType as any}
             position={[tile.dx, yOff, tile.dy]}
             scale={treeScale}
+            ghostMode={ghostedTreeKeys.has(treeKey)}
           />
         );
       })}
