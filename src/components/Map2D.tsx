@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PerspectiveCamera, Html, useCursor, Sparkles } from '@react-three/drei';
 import { CameraControls } from '../utils/CameraControls';
@@ -14,6 +14,7 @@ import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneR
 import { PixelCharacterSprite } from './PixelCharacterSprite';
 import { PixelMonsterSprite } from './PixelMonsterSprite';
 import { PixelResourceSprite } from './PixelResourceSprite';
+import { TreeModel } from './TreeModel';
 import { CombatParticles, BloodParticles, CameraShake, triggerScreenShake, GatheringEffect, BreakthroughEffect, SkillParticles, DebrisParticles } from './PixelParticleEffects';
 import { generateTerrainTileTexture, generateEffectTexture, generateDecorationSprite, type DecorationType } from '../utils/pixelSpriteGenerator';
 import { PixelDecoration } from './PixelDecoration';
@@ -277,18 +278,20 @@ const TerrainBoxGroup = React.memo(({ tiles }: { tiles: Array<{ dx: number; dy: 
 const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
   const tileData = useMemo(() => {
     const tiles: Array<{ x: number; y: number; dx: number; dy: number; biome: TerrainType; elevation: number; textureVariant: number; hasTree: boolean; isWaterTile: boolean; isMountain: boolean; showPeak: boolean; showSnowCap: boolean }> = [];
+    const gridCenterX = Math.round(playerPos.x);
+    const gridCenterY = Math.round(playerPos.y);
     for (let dy = -VIEW_RADIUS; dy <= VIEW_RADIUS; dy++) {
       for (let dx = -VIEW_RADIUS; dx <= VIEW_RADIUS; dx++) {
-        const x = playerPos.x + dx;
-        const y = playerPos.y + dy;
-        const tile = getTerrainTile(x, y);
+        const gx = gridCenterX + dx;
+        const gy = gridCenterY + dy;
+        const tile = getTerrainTile(gx, gy);
         const isWaterTile = isWater(tile.biome);
         const isMountain = tile.biome === TerrainType.ROCK || tile.biome === TerrainType.MOUNTAIN;
         tiles.push({
-          x, y, dx, dy,
+          x: gx, y: gy, dx, dy,
           biome: tile.biome,
           elevation: tile.elevation,
-          textureVariant: Math.floor(seededRandom(x * 7.1, y * 3.7) * TERRAIN_VARIANTS),
+          textureVariant: Math.floor(seededRandom(gx * 7.1, gy * 3.7) * TERRAIN_VARIANTS),
           hasTree: tile.hasTree,
           isWaterTile,
           isMountain,
@@ -298,7 +301,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
       }
     }
     return tiles;
-  }, [playerPos.x, playerPos.y]);
+  }, [Math.round(playerPos.x), Math.round(playerPos.y)]);
 
   const planeGroups = useMemo(() => {
     const groups = new Map<string, Array<{ dx: number; dy: number; elevation: number }>>();
@@ -341,19 +344,16 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
       })}
 
       {tileData.filter(t => t.hasTree && !t.isMountain && !t.isWaterTile).map(tile => {
-        const density = seededRandom(tile.x * 13.7, tile.y * 17.1);
-        if (density > 0.5) return null;
         const treeIdx = Math.floor(seededRandom(tile.x * 3.7, tile.y * 7.1) * 3);
         const treeType = TREE_TYPES[treeIdx];
         const treeScale = 2.5 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 2.0;
         const yOff = tileElevationOffset(tile.biome, tile.elevation);
         return (
-          <PixelDecoration
+          <TreeModel
             key={`tree-${tile.x},${tile.y}`}
-            type={treeType}
-            position={[tile.dx, treeScale * 0.45 + yOff, tile.dy]}
+            type={treeType as any}
+            position={[tile.dx, yOff, tile.dy]}
             scale={treeScale}
-            sway={true}
           />
         );
       })}
@@ -384,6 +384,40 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
 // 3c: Camera orbit controller — scroll zoom, middle-drag rotate, Q/E rotate
 let _oc: CameraControls | null = null;
 const keyRotate = { active: false, dir: 0 };
+let _camera: THREE.Camera | null = null;
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _upVec = new THREE.Vector3(0, 1, 0);
+
+const _keysDown = new Set<string>();
+let _moveLoopId: number | null = null;
+let _moveLastTime = 0;
+const MOVEMENT_SPEED = 5;
+
+function _isBlockedByBuildingWall(targetX: number, targetY: number): boolean {
+  const blds = useBuildingStore.getState().buildings;
+  for (const b of blds) {
+    const hw = b.def.compoundWidth / 2;
+    const hd = b.def.compoundDepth / 2;
+    const lx = targetX - b.worldX;
+    const ly = targetY - b.worldY;
+    if (lx < -hw - 0.5 || lx > hw + 0.5 || ly < -hd - 0.5 || ly > hd + 0.5) continue;
+
+    const IGNORE_RANGE = 2.5;
+    for (const gate of b.def.gates) {
+      const gateWX = b.worldX + gate.x - hw + 1.5;
+      const gateWY = b.worldY + gate.y - hd + 1.5;
+      if (Math.abs(targetX - gateWX) < IGNORE_RANGE && Math.abs(targetY - gateWY) < IGNORE_RANGE) {
+        return false;
+      }
+    }
+
+    if (lx >= -hw && lx <= hw && ly >= -hd && ly <= hd) {
+      return true;
+    }
+  }
+  return false;
+}
 
 const CameraController = ({ playerPos }: { playerPos: { x: number; y: number } }) => {
   const { camera, gl } = useThree();
@@ -409,9 +443,11 @@ const CameraController = ({ playerPos }: { playerPos: { x: number; y: number } }
       mouseButtons: { LEFT: 0, MIDDLE: 0, RIGHT: 1 },
     });
     _oc.setTarget(0, 0, 0);
+    _camera = camera;
     return () => {
       _oc?.dispose();
       _oc = null;
+      _camera = null;
     };
   }, [camera, gl]);
 
@@ -474,7 +510,7 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
   useCursor(hovered);
 
   const tile = getTerrainTile(res.position.x, res.position.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
   const owner = res.ownerClanId ? clans.find(c => c.id === res.ownerClanId) : null;
   const ownerColor = '#fbbf24';
@@ -529,7 +565,7 @@ const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true, compact = false }: 
   const appearance = useMemo(() => generateCharacterStyle(npc.realm, '凡体', npc.role), [npc]);
 
   const tile = getTerrainTile(npc.position.x, npc.position.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
   const [isMoving, setIsMoving] = useState(false);
   const prevPos = useRef(npc.position);
@@ -610,7 +646,7 @@ const SquadMemberMesh = ({ member, dx, dy }: { member: SquadMember; dx: number; 
   const appearance = useMemo(() => generateCharacterStyle(member.realm, '凡体', '核心子弟'), [member]);
 
   const tile = getTerrainTile(member.position.x, member.position.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
   return (
     <group position={[dx, baseHeight, dy]}>
@@ -743,7 +779,7 @@ const InteractionEffectParticles = ({ effect }: { effect: ActiveEffect }) => {
 // 4. Monster Mesh with pixel art sprite
 const MonsterMesh = ({ monster, dx, dy }: { monster: WildMonster; dx: number; dy: number }) => {
   const tile = getTerrainTile(monster.position.x, monster.position.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
   // Realm-based aura
   const realmAura = useMemo(() => getRealmAura(monster.realm), [monster.realm]);
@@ -860,7 +896,7 @@ const PlayerMesh = ({ player }: { player: any }) => {
   const appearance = useMemo(() => generateCharacterStyle(player.realm, player.bodyType, '玩家'), [player]);
 
   const tile = getTerrainTile(player.position.x, player.position.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
   const [isMoving, setIsMoving] = useState(false);
   const prevPos = useRef(player.position);
@@ -916,7 +952,7 @@ const COUNTRY_COLORS: Record<string, string> = {
 
 const FactionBaseMesh = ({ faction, country, territory, playerPos, isAtWar, garrison, fortification }: { faction: { name: string; buildings?: Array<{ type: BuildingType; level: number }> }; country: string; territory: number; playerPos: { x: number; y: number }; isAtWar?: boolean; garrison?: number; fortification?: number; }) => {
   const tile = getTerrainTile(playerPos.x, playerPos.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
   const warRingRef = useRef<THREE.Mesh>(null);
   // P2: Siege debris — periodic debris bursts when at war
   const [showDebris, setShowDebris] = useState(false);
@@ -1026,7 +1062,7 @@ const SceneTriggerMarker = ({ marker, playerPos }: { marker: { id: string; x: nu
   if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
 
   const tile = getTerrainTile(marker.x, marker.y);
-  const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+  const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
   return (
     <group position={[dx, baseHeight + 0.05, dy]}>
@@ -1114,33 +1150,6 @@ const TRIGGER_COOLDOWN_MS = 30000;
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
   const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
-
-  const isBlockedByBuildingWall = useCallback((targetX: number, targetY: number): boolean => {
-    const blds = useBuildingStore.getState().buildings;
-    for (const b of blds) {
-      const hw = b.def.compoundWidth / 2;
-      const hd = b.def.compoundDepth / 2;
-      const lx = targetX - b.worldX;
-      const ly = targetY - b.worldY;
-      if (lx < -hw - 0.5 || lx > hw + 0.5 || ly < -hd - 0.5 || ly > hd + 0.5) continue;
-
-      // Check if near any gate
-      const IGNORE_RANGE = 2.5;
-      for (const gate of b.def.gates) {
-        const gateWX = b.worldX + gate.x - hw + 1.5;
-        const gateWY = b.worldY + gate.y - hd + 1.5;
-        if (Math.abs(targetX - gateWX) < IGNORE_RANGE && Math.abs(targetY - gateWY) < IGNORE_RANGE) {
-          return false;
-        }
-      }
-
-      // Block if inside compound bounds but not at a gate
-      if (lx >= -hw && lx <= hw && ly >= -hd && ly <= hd) {
-        return true;
-      }
-    }
-    return false;
-  }, []);
 
   // Breakthrough effect
   const prevRealmRef = useRef(player?.realm);
@@ -1249,7 +1258,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         const midX = (a.position.x + b.position.x) / 2 - player.position.x;
         const midZ = (a.position.y + b.position.y) / 2 - player.position.y;
         const tile = getTerrainTile(Math.round((a.position.x + b.position.x) / 2), Math.round((a.position.y + b.position.y) / 2));
-        const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+        const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
 
         newEffects.push({
           id: `fx-${effectIdCounter.current++}`,
@@ -1290,34 +1299,118 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     return () => clearInterval(timer);
   }, [activeEffects.length > 0]);
 
-  // Keyboard Movement + proximity trigger + building wall collision
+  // Keyboard Movement — continuous 360° smooth movement
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      let dx = 0, dy = 0;
-      switch(e.key) {
+      const key = e.key;
+      switch(key) {
         case 'ArrowUp':
-        case 'w': dx = 0; dy = -1; break;
         case 'ArrowDown':
-        case 's': dx = 0; dy = 1; break;
         case 'ArrowLeft':
-        case 'a': dx = -1; dy = 0; break;
         case 'ArrowRight':
-        case 'd': dx = 1; dy = 0; break;
+        case 'w': case 'W':
+        case 's': case 'S':
+        case 'a': case 'A':
+        case 'd': case 'D':
+          break;
         default: return;
       }
-      const store = useGameStore.getState();
-      const p = store.player;
-      if (!p) return;
-      const targetX = p.position.x + dx;
-      const targetY = p.position.y + dy;
-      // Check building wall collision
-      if (isBlockedByBuildingWall(targetX, targetY)) {
-        return;
+      e.preventDefault();
+      const k = key.toLowerCase();
+      if (!_keysDown.has(k)) {
+        _keysDown.add(k);
+        if (_moveLoopId === null) {
+          _moveLastTime = performance.now();
+          _moveLoopId = requestAnimationFrame(moveLoop);
+        }
       }
-      movePlayer(dx, dy);
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      _keysDown.delete(k);
+      if (e.key === 'ArrowUp') _keysDown.delete('arrowup');
+      if (e.key === 'ArrowDown') _keysDown.delete('arrowdown');
+      if (e.key === 'ArrowLeft') _keysDown.delete('arrowleft');
+      if (e.key === 'ArrowRight') _keysDown.delete('arrowright');
+    };
+
+    function moveLoop(time: number) {
+      const rawDelta = (time - _moveLastTime) / 1000;
+      _moveLastTime = time;
+      const delta = Math.min(rawDelta, 0.05);
+
+      let rawDx = 0, rawDy = 0;
+      if (_keysDown.has('w') || _keysDown.has('arrowup')) rawDy = -1;
+      if (_keysDown.has('s') || _keysDown.has('arrowdown')) rawDy = 1;
+      if (_keysDown.has('a') || _keysDown.has('arrowleft')) rawDx = -1;
+      if (_keysDown.has('d') || _keysDown.has('arrowright')) rawDx = 1;
+
+      if (rawDx !== 0 || rawDy !== 0) {
+        const len = Math.sqrt(rawDx * rawDx + rawDy * rawDy);
+        rawDx /= len;
+        rawDy /= len;
+
+        if (_camera) {
+          _camera.getWorldDirection(_forward);
+          _forward.y = 0;
+          if (_forward.lengthSq() > 0.0001) {
+            _forward.normalize();
+          } else {
+            _forward.set(0, 0, -1);
+          }
+          _right.crossVectors(_forward, _upVec).normalize();
+          const moveX = rawDx * _right.x + (-rawDy) * _forward.x;
+          const moveZ = rawDx * _right.z + (-rawDy) * _forward.z;
+          rawDx = moveX;
+          rawDy = moveZ;
+        }
+
+        const speed = MOVEMENT_SPEED;
+        const dx = rawDx * speed * delta;
+        const dy = rawDy * speed * delta;
+
+        const p = useGameStore.getState().player;
+        if (p) {
+          const gridCheckX = Math.round(p.position.x + dx);
+          const gridCheckY = Math.round(p.position.y + dy);
+          if (_isBlockedByBuildingWall(gridCheckX, gridCheckY)) {
+            if (_keysDown.size > 0) {
+              _moveLoopId = requestAnimationFrame(moveLoop);
+            } else {
+              _moveLoopId = null;
+            }
+            return;
+          }
+        }
+
+        useGameStore.getState().movePlayer(dx, dy);
+      }
+
+      if (_keysDown.size > 0) {
+        _moveLoopId = requestAnimationFrame(moveLoop);
+      } else {
+        _moveLoopId = null;
+      }
+    }
+
+    const handleBlur = () => {
+      _keysDown.clear();
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+      if (_moveLoopId !== null) {
+        cancelAnimationFrame(_moveLoopId);
+        _moveLoopId = null;
+      }
+      _keysDown.clear();
+    };
   }, [movePlayer]);
 
   // Proximity trigger with anti-spam: requires player to leave the zone AND wait 30s
@@ -1488,7 +1581,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
           const dy = center.y - player.position.y;
           if (Math.abs(dx) > VIEW_RADIUS || Math.abs(dy) > VIEW_RADIUS) return null;
           const tile = getTerrainTile(center.x, center.y);
-          const baseHeight = tile.biome === 'DEEP_WATER' || tile.biome === 'SHALLOW_WATER' ? 0 : Math.max(0.1, tile.elevation + 0.5) - 0.5;
+          const baseHeight = tileElevationOffset(tile.biome, tile.elevation);
           const atWar = faction.diplomacy
             ? Object.values(faction.diplomacy).some(d => d.status === '战争')
             : false;

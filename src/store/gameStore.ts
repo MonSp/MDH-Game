@@ -182,43 +182,40 @@ export const useGameStore = create<GameState>((set, get) => ({
   movePlayer: (dx, dy) => set(state => {
     if (!state.player) return state;
 
-    // Phase 2.1c+2.1d: Terrain collision + movement cost
-    const targetX = state.player.position.x + dx;
-    const targetY = state.player.position.y + dy;
-
-    // Map bounds check
-    if (targetX < 0 || targetX >= GAME_CONFIG.MAP_WIDTH || targetY < 0 || targetY >= GAME_CONFIG.MAP_HEIGHT) {
-      return state;
-    }
-
-    // Terrain passability check
-    if (!isPositionPassable(targetX, targetY)) {
-      get().addLog({ type: 'system', message: '前方地形无法通行。' });
-      return state;
-    }
-
-    // Movement cost (reduced effective speed on rough terrain)
-    const cost = getMovementCost(targetX, targetY);
-    const canMove = Math.random() < (1 / cost);
-
-    // 赵国特质：移动速度/距离影响
     let moveMultiplier = 1;
     if (state.player.country === '赵' && Math.random() < 0.2) {
       moveMultiplier = 2;
     }
 
+    const finalDx = dx * moveMultiplier;
+    const finalDy = dy * moveMultiplier;
+    const newX = state.player.position.x + finalDx;
+    const newY = state.player.position.y + finalDy;
+    const gridX = Math.round(newX);
+    const gridY = Math.round(newY);
+
+    if (gridX < 0 || gridX >= GAME_CONFIG.MAP_WIDTH || gridY < 0 || gridY >= GAME_CONFIG.MAP_HEIGHT) {
+      return state;
+    }
+
+    if (!isPositionPassable(gridX, gridY)) {
+      get().addLog({ type: 'system', message: '前方地形无法通行。' });
+      return state;
+    }
+
+    const cost = getMovementCost(gridX, gridY);
+    const canMove = Math.random() < (1 / cost);
+
     if (!canMove && cost > 1.0) {
-      // Rough terrain slows — still move but log it occasionally
       get().addLog({ type: 'system', message: '地形崎岖，行进困难。' });
     }
 
-    // Phase 2.2: Mark tiles within vision as explored
     const visionRadius = 12;
     const newExplored = [...state.exploredTiles];
     for (let vx = -visionRadius; vx <= visionRadius; vx++) {
       for (let vy = -visionRadius; vy <= visionRadius; vy++) {
-        const tileX = targetX + vx;
-        const tileY = targetY + vy;
+        const tileX = gridX + vx;
+        const tileY = gridY + vy;
         if (tileX >= 0 && tileX < GAME_CONFIG.MAP_WIDTH && tileY >= 0 && tileY < GAME_CONFIG.MAP_HEIGHT) {
           const key = `${tileX},${tileY}`;
           if (!newExplored.includes(key)) {
@@ -231,7 +228,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     return {
       player: {
         ...state.player,
-        position: { x: targetX, y: targetY },
+        position: { x: newX, y: newY },
       },
       exploredTiles: newExplored,
     };
