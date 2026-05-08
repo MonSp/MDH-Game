@@ -234,6 +234,7 @@ const TerrainPlaneGroup = React.memo(({ tiles, biome, variant }: { tiles: Array<
     tiles.forEach((t, i) => {
       const yOff = tileElevationOffset(biome, t.elevation);
       dummy.position.set(t.dx, yOff, t.dy);
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
       dummy.updateMatrix();
       ref.current!.setMatrixAt(i, dummy.matrix);
     });
@@ -242,8 +243,8 @@ const TerrainPlaneGroup = React.memo(({ tiles, biome, variant }: { tiles: Array<
 
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, tiles.length]}>
-      <planeGeometry args={[1.01, 1.01]} />
-      <meshBasicMaterial map={texture} />
+      <planeGeometry args={[1.05, 1.05]} />
+      <meshBasicMaterial map={texture} side={THREE.DoubleSide} />
     </instancedMesh>
   );
 });
@@ -321,13 +322,13 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
           <TerrainPlaneGroup
             key={key}
             tiles={tiles}
-            biome={Number(biomeStr) as unknown as TerrainType}
+            biome={biomeStr as TerrainType}
             variant={Number(variantStr)}
           />
         );
       })}
 
-      {boxTiles.length > 0 && <TerrainBoxGroup tiles={boxTiles} />}
+
 
       {tileData.filter(t => t.showPeak).map(tile => {
         const yOff = tileElevationOffset(tile.biome, tile.elevation);
@@ -384,14 +385,15 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
 let _oc: CameraControls | null = null;
 const keyRotate = { active: false, dir: 0 };
 
-const CameraController = () => {
+const CameraController = ({ playerPos }: { playerPos: { x: number; y: number } }) => {
   const { camera, gl } = useThree();
   const isInside = useBuildingStore(s => s.isInside);
   const interiorDistance = 8;
   const baseDistance = 18;
   const prevInside = useRef<boolean | null>(null);
   const distTarget = useRef<number | null>(null);
-  const initDone = useRef(false);
+  const prevPX = useRef(playerPos.x);
+  const prevPY = useRef(playerPos.y);
 
   useEffect(() => {
     if (_oc) {
@@ -410,11 +412,9 @@ const CameraController = () => {
       mouseButtons: { LEFT: 0, MIDDLE: 0, RIGHT: 1 },
     });
     _oc.setTarget(0, 0, 0);
-    initDone.current = true;
     return () => {
       _oc?.dispose();
       _oc = null;
-      initDone.current = false;
     };
   }, [camera, gl]);
 
@@ -443,6 +443,16 @@ const CameraController = () => {
     if (!ctrl) {
       camera.lookAt(0, 0, 0);
       return;
+    }
+
+    // Follow player: offset camera target when player moves so world appears still
+    const px = playerPos.x;
+    const py = playerPos.y;
+    if (prevPX.current !== px || prevPY.current !== py) {
+      ctrl.target.x += (prevPX.current - px);
+      ctrl.target.z += (prevPY.current - py);
+      prevPX.current = px;
+      prevPY.current = py;
     }
 
     if (keyRotate.active) {
@@ -1375,7 +1385,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         />
 
         {/* Orbit camera controller: right-drag rotate, scroll zoom */}
-        <CameraController />
+        <CameraController playerPos={player.position} />
 
         {/* 环境光提升，冷白明亮 */}
         <ambientLight intensity={2.0} color="#f0f4ff" />
