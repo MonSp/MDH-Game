@@ -14,11 +14,13 @@ export const PixelDecoration = ({ type, position = [0, 0, 0], scale = 0.3, sway 
   const texture = useMemo(() => generateDecorationSprite(type), [type]);
   const spriteRef = useRef<THREE.Sprite>(null);
   const offset = useMemo(() => Math.random() * Math.PI * 2, []);
+  const baseXRef = useRef(position[0]);
+  baseXRef.current = position[0];
 
   useFrame((state) => {
     if (!spriteRef.current || !sway) return;
     const t = state.clock.getElapsedTime();
-    spriteRef.current.position.x = Math.sin(t * 2 + offset) * 0.03;
+    spriteRef.current.position.x = baseXRef.current + Math.sin(t * 2 + offset) * 0.03;
   });
 
   return (

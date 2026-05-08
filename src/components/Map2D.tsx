@@ -392,9 +392,6 @@ const CameraController = ({ playerPos }: { playerPos: { x: number; y: number } }
   const baseDistance = 18;
   const prevInside = useRef<boolean | null>(null);
   const distTarget = useRef<number | null>(null);
-  const prevPX = useRef(playerPos.x);
-  const prevPY = useRef(playerPos.y);
-
   useEffect(() => {
     if (_oc) {
       _oc.dispose();
@@ -443,16 +440,6 @@ const CameraController = ({ playerPos }: { playerPos: { x: number; y: number } }
     if (!ctrl) {
       camera.lookAt(0, 0, 0);
       return;
-    }
-
-    // Follow player: offset camera target when player moves so world appears still
-    const px = playerPos.x;
-    const py = playerPos.y;
-    if (prevPX.current !== px || prevPY.current !== py) {
-      ctrl.target.x += (prevPX.current - px);
-      ctrl.target.z += (prevPY.current - py);
-      prevPX.current = px;
-      prevPY.current = py;
     }
 
     if (keyRotate.active) {
@@ -1203,6 +1190,18 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         label: clan.name,
       });
     }
+
+    // Test island building
+    const testBuildingId = makeBuildingId('manor', 315, 300);
+    registered.add(testBuildingId);
+    registerBuilding({
+      id: testBuildingId,
+      def: getBuildingDef('manor', '齐'),
+      worldX: 315,
+      worldY: 300,
+      country: '齐',
+      label: '测试岛·别院',
+    });
 
     // Remove stale buildings
     const all = useBuildingStore.getState().buildings;
