@@ -711,7 +711,12 @@ export interface GameState {
   /** Phase 1.4a: cached LLM decisions for factions */
   _factionLLMResults: Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>;
 
-  joinServer: (serverId: string, playerName: string) => void;
+  /** C++ ECS Phase 1: world buildings data from server addon */
+  _worldBuildings: { id: string; kind: string; clanId: string; country: string; worldX: number; worldY: number; compoundWidth: number; compoundDepth: number; label: string; level: number }[];
+  /** C++ ECS Phase 1: world trees data from server addon */
+  _worldTrees: { x: number; y: number; scale: number; variant: number }[];
+
+  joinServer: (serverId: string, playerName: string) => Promise<void>;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;
   addWorldEvent: (event: Omit<WorldEvent, 'id'>) => void;
   movePlayer: (dx: number, dy: number) => void;

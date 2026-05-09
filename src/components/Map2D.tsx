@@ -1190,7 +1190,7 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, movePlayer, addWorldEvent } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, _worldBuildings, movePlayer, addWorldEvent } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
   // Breakthrough effect
@@ -1213,46 +1213,61 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
     const { registerBuilding, removeBuilding } = useBuildingStore.getState();
     const registered = new Set<string>();
 
-    for (const country of COUNTRIES) {
-      const capital = COUNTRIES_DATA[country].capital;
-      const id = makeBuildingId('capital', capital.x, capital.y);
-      registered.add(id);
+    // Use C++ generated buildings if available
+    if (_worldBuildings.length > 0) {
+      for (const b of _worldBuildings) {
+        registered.add(b.id);
+        registerBuilding({
+          id: b.id,
+          def: getBuildingDef(b.kind as BuildingKind, b.country),
+          worldX: b.worldX,
+          worldY: b.worldY,
+          country: b.country,
+          label: b.label,
+        });
+      }
+    } else {
+      for (const country of COUNTRIES) {
+        const capital = COUNTRIES_DATA[country].capital;
+        const id = makeBuildingId('capital', capital.x, capital.y);
+        registered.add(id);
+        registerBuilding({
+          id,
+          def: getBuildingDef('capital', country),
+          worldX: capital.x,
+          worldY: capital.y,
+          country,
+          label: `${country}都`,
+        });
+      }
+
+      for (const clan of clans) {
+        const center = getClanTerritoryCenter(clan, clans);
+        const kind: BuildingKind = clan.isAscendingFamily ? 'manor' : 'city';
+        const id = makeBuildingId(kind, center.x, center.y);
+        registered.add(id);
+        registerBuilding({
+          id,
+          def: getBuildingDef(kind, clan.country),
+          worldX: center.x,
+          worldY: center.y,
+          country: clan.country,
+          label: clan.name,
+        });
+      }
+
+      // Test island building
+      const testBuildingId = makeBuildingId('manor', 315, 300);
+      registered.add(testBuildingId);
       registerBuilding({
-        id,
-        def: getBuildingDef('capital', country),
-        worldX: capital.x,
-        worldY: capital.y,
-        country,
-        label: `${country}都`,
+        id: testBuildingId,
+        def: getBuildingDef('manor', '齐'),
+        worldX: 315,
+        worldY: 300,
+        country: '齐',
+        label: '测试岛·别院',
       });
     }
-
-    for (const clan of clans) {
-      const center = getClanTerritoryCenter(clan, clans);
-      const kind: BuildingKind = clan.isAscendingFamily ? 'manor' : 'city';
-      const id = makeBuildingId(kind, center.x, center.y);
-      registered.add(id);
-      registerBuilding({
-        id,
-        def: getBuildingDef(kind, clan.country),
-        worldX: center.x,
-        worldY: center.y,
-        country: clan.country,
-        label: clan.name,
-      });
-    }
-
-    // Test island building
-    const testBuildingId = makeBuildingId('manor', 315, 300);
-    registered.add(testBuildingId);
-    registerBuilding({
-      id: testBuildingId,
-      def: getBuildingDef('manor', '齐'),
-      worldX: 315,
-      worldY: 300,
-      country: '齐',
-      label: '测试岛·别院',
-    });
 
     // Remove stale buildings
     const all = useBuildingStore.getState().buildings;
@@ -1261,7 +1276,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         removeBuilding(b.id);
       }
     }
-  }, [player, clans]);
+  }, [player, clans, _worldBuildings]);
 
   // Phase 1.3: NPC interaction visual effects
   const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);

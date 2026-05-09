@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from './saveManager';
 import { isPositionPassable, getMovementCost } from '../utils/terrain';
 import { GAME_CONFIG } from '../shared/constants';
+import { connectSocketAsync } from '../shared/socket';
 
 // Import everything needed for the store body's local scope
 import {
@@ -51,6 +52,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   logs: [],
   /** Phase 1.3: structured world events for EventLog display */
   worldEvents: [] as WorldEvent[],
+  /** C++ ECS Phase 1: world buildings data from server */
+  _worldBuildings: [] as { id: string; kind: string; clanId: string; country: string; worldX: number; worldY: number; compoundWidth: number; compoundDepth: number; label: string; level: number }[],
+  /** C++ ECS Phase 1: world trees data from server */
+  _worldTrees: [] as { x: number; y: number; scale: number; variant: number }[],
   /** Phase 1.4: faction AI tick counter */
   _factionTickCount: 0,
   /** Phase 2.2: explored tiles for fog of war */
@@ -83,14 +88,57 @@ export const useGameStore = create<GameState>((set, get) => ({
   /** Phase 1.4a: cached LLM decisions for factions */
   _factionLLMResults: {} as Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>,
 
-  joinServer: (serverId, playerName) => {
+  joinServer: async (serverId, playerName) => {
     const heavenLevel: HeavenLevel = 9;
-    const clans = generateClans(heavenLevel);
-    const randomClan = clans[Math.floor(Math.random() * clans.length)];
     const spiritMultiplier = HEAVEN_INFO[heavenLevel].spiritMultiplier;
-    
     const initialPos = { x: 300, y: 300 };
     const defaultTalent = { spiritualRoot: 25, boneConstitution: 30, comprehension: 40, fortune: 20 };
+
+    let clans: Clan[];
+    let worldBuildings: any[] = [];
+    let worldTrees: any[] = [];
+    let worldResources: any[] = [];
+
+    try {
+      console.log('[WorldGen] Connecting to server...');
+      const socket = await connectSocketAsync();
+      console.log('[WorldGen] Socket connected, requesting world data...');
+      const world = await new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          console.log('[WorldGen] Request timeout (2s)');
+          reject(new Error('timeout'));
+        }, 2000);
+        socket.emit('world:generate', { seed: 42, width: 600, height: 600, heavenLevel }, (response: any) => {
+          clearTimeout(timeout);
+          console.log('[WorldGen] Server response:', response?.success);
+          if (response.success) resolve(response.world);
+          else reject(new Error(response.error || 'unknown error'));
+        });
+      });
+      console.log('[WorldGen] World data received:', world.clans.length, 'clans,', world.buildings.length, 'buildings');
+      clans = world.clans.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          country: c.country,
+          type: c.type,
+          reputation: c.reputation,
+          treasury: c.treasury,
+          heavenLevel: c.heavenLevel,
+          isAscendingFamily: false,
+          territory: c.territory,
+          garrison: c.garrison,
+          fortification: c.fortification,
+        }));
+        worldBuildings = world.buildings || [];
+        worldTrees = world.trees || [];
+        worldResources = world.resources || [];
+    } catch (e) {
+      console.warn('[WorldGen] Server world gen unavailable, using client-side:', e);
+      clans = generateClans(heavenLevel);
+    }
+
+    const randomClan = clans[Math.floor(Math.random() * clans.length)];
+    
     const player: Player = {
       id: 'p1',
       name: playerName || '无名修士',
@@ -127,8 +175,18 @@ export const useGameStore = create<GameState>((set, get) => ({
       currentServer: serverId,
       clans,
       player,
+      _worldBuildings: worldBuildings,
+      _worldTrees: worldTrees,
       nearbyNPCs: generateNearbyNPCs(randomClan.id, initialPos.x, initialPos.y, randomClan.country, heavenLevel),
-      resourcePoints: generateResourcePoints(initialPos.x, initialPos.y, heavenLevel),
+      resourcePoints: worldResources.length > 0
+        ? worldResources.map((r: any) => ({
+            id: r.id,
+            type: r.type,
+            amount: r.amount,
+            position: { x: r.posX, y: r.posY },
+            heavenLevel,
+          }))
+        : generateResourcePoints(initialPos.x, initialPos.y, heavenLevel),
       logs: [
         { id: Date.now().toString(), time: new Date().toLocaleTimeString(), type: 'system', message: `欢迎来到【${HEAVEN_INFO[heavenLevel].name}】，你出生在${randomClan.country}国 ${randomClan.name} 的支脉。` },
         { id: Date.now().toString() + '2', time: new Date().toLocaleTimeString(), type: 'system', message: `【国家特质】${randomClan.country}国属${COUNTRIES_DATA[randomClan.country].culture}，${COUNTRIES_DATA[randomClan.country].feature}。你获得了专属增益：${COUNTRIES_DATA[randomClan.country].buff}！` },

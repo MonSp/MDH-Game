@@ -19,14 +19,14 @@ export const Login = () => {
     setHasAutoSave(loadGameDirect(0) !== null);
   }, []);
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!selectedServer) return;
     const server = servers.find(s => s.id === selectedServer);
     if (server && server.playerCount >= 100) {
       alert('该区已满，请选择其他服务器或等待开新区！');
       return;
     }
-    joinServer(selectedServer, playerName || '无名修士');
+    await joinServer(selectedServer, playerName || '无名修士');
     navigate('/game');
   };
 

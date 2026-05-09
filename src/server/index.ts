@@ -11,7 +11,8 @@ import {
   CultivationService,
   ResourceManager,
   EconomyService,
-  ItemService
+  ItemService,
+  WorldGenService
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
 import { MapGeneratorService } from './services/MapGeneratorService';
@@ -29,7 +30,8 @@ const io = new SocketIOServer(httpServer, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  }
+  },
+  transports: ['polling', 'websocket']
 });
 
 app.use(express.json());
@@ -179,6 +181,26 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('Error creating player:', error);
       socket.emit('error', { message: '创建角色失败' });
+    }
+  });
+
+  socket.on('world:generate', (data: { seed?: number; width?: number; height?: number; heavenLevel?: number }, callback?: Function) => {
+    try {
+      const wgen = WorldGenService.getInstance();
+      const world = wgen.generateWorld(data?.seed, data?.width, data?.height, data?.heavenLevel);
+      if (typeof callback === 'function') {
+        callback({ success: true, world });
+      } else {
+        socket.emit('world:generated', { success: true, world });
+      }
+    } catch (error) {
+      console.error('[WorldGen] Error generating world:', error);
+      const errMsg = { success: false, error: String(error) };
+      if (typeof callback === 'function') {
+        callback(errMsg);
+      } else {
+        socket.emit('world:generated', errMsg);
+      }
     }
   });
 
@@ -615,6 +637,7 @@ function initializeGame(): void {
   CountryService.getInstance();
   FamilyService.getInstance().initializeFamilies();
   ResourceManager.getInstance().initialize(GAME_CONFIG.MAP_WIDTH, GAME_CONFIG.MAP_HEIGHT, 50);
+  WorldGenService.getInstance().initialize();
 
   // Start NPC simulation world
   const npcWorld = NPCWorldService.getInstance();

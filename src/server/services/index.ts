@@ -1,3 +1,4 @@
+export { WorldGenService } from './WorldGenService';
 export { DataService } from './DataService';
 export { CountryService } from './CountryService';
 export { FamilyService, FavorabilitySystem } from './FamilyService';

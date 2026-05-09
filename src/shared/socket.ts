@@ -11,8 +11,24 @@ export function getSocket(): Socket {
     socket = io(SERVER_URL, {
       reconnectionAttempts: SOCKET_RECONNECT_ATTEMPTS,
       reconnectionDelay: SOCKET_RECONNECT_DELAY_MS,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
     });
   }
   return socket;
+}
+
+export function connectSocketAsync(timeoutMs: number = 15000): Promise<Socket> {
+  const s = getSocket();
+  if (s.connected) return Promise.resolve(s);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      s.off('connect', onConnect);
+      reject(new Error('socket connect timeout'));
+    }, timeoutMs);
+    const onConnect = () => {
+      clearTimeout(timer);
+      resolve(s);
+    };
+    s.once('connect', onConnect);
+  });
 }
