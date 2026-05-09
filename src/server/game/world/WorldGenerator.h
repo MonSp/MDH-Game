@@ -371,6 +371,20 @@ private:
                 out.buildings.push_back(b);
             }
         }
+
+        // Test building for occlusion testing (on test island, aligned with camera→player diagonal)
+        BuildingInfo testBld;
+        testBld.id = "test-building-occlusion";
+        testBld.kind = "faction_hall";
+        testBld.clanId = "";
+        testBld.country = "齐";
+        testBld.label = "遮挡测试塔";
+        testBld.compoundWidth = 6.0f;
+        testBld.compoundDepth = 6.0f;
+        testBld.level = 1;
+        testBld.worldX = 310;
+        testBld.worldY = 310;
+        out.buildings.push_back(testBld);
     }
 
     void generateTrees(WorldOutput& out) {

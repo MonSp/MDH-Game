@@ -204,6 +204,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('occlusion:compute', (data: { camX: number; camZ: number; playerX: number; playerY: number; viewRadius: number }, callback?: Function) => {
+    if (typeof callback !== 'function') return;
+    try {
+      const wgen = WorldGenService.getInstance();
+      console.log('[Occlusion] Received:', JSON.stringify(data));
+      const result = wgen.computeOcclusion(data.camX, data.camZ, data.playerX, data.playerY, data.viewRadius ?? 30);
+      console.log('[Occlusion] Result:', JSON.stringify(result));
+      callback(result);
+    } catch (error) {
+      console.error('[Occlusion] Error:', error);
+      callback({ buildingIds: [], treeKeys: [] });
+    }
+  });
+
   socket.on('player:login', async (data: { playerId: string }) => {
     try {
       const player = PlayerService.getInstance().getPlayer(data.playerId);

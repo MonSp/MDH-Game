@@ -169,15 +169,177 @@ static napi_value GetTerrainTile(napi_env env, napi_callback_info info) {
     return result;
 }
 
+// ============ computeOcclusion() ============
+// JS signature: computeOcclusion(camX, camZ, playerX, playerY, viewRadius, buildings, trees)
+// buildings: [{id, worldX, worldY, hw, hd}]   trees: [{worldX, worldY}]
+// Returns: { buildingIds: string[], treeKeys: string[] }
+static bool rayHitsAABB(float ox, float oz, float minX, float maxX, float minZ, float maxZ) {
+    float dx = -ox;
+    float dz = -oz;
+    if (std::abs(dx) < 0.0001f && std::abs(dz) < 0.0001f) return false;
+
+    float tMin = 0.0f, tMax = 1.0f;
+
+    if (std::abs(dx) > 0.0001f) {
+        float t1 = (minX - ox) / dx;
+        float t2 = (maxX - ox) / dx;
+        tMin = std::max(tMin, std::min(t1, t2));
+        tMax = std::min(tMax, std::max(t1, t2));
+    } else if (ox < minX || ox > maxX) {
+        return false;
+    }
+
+    if (std::abs(dz) > 0.0001f) {
+        float t1 = (minZ - oz) / dz;
+        float t2 = (maxZ - oz) / dz;
+        tMin = std::max(tMin, std::min(t1, t2));
+        tMax = std::min(tMax, std::max(t1, t2));
+    } else if (oz < minZ || oz > maxZ) {
+        return false;
+    }
+
+    return tMin <= tMax && tMax >= 0;
+}
+
+static napi_value ComputeOcclusion(napi_env env, napi_callback_info info) {
+    size_t argc = 7;
+    napi_value args[7];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    double camX = 0, camZ = 0, playerX = 0, playerY = 0, viewRadius = 30.0;
+    if (argc >= 1) napi_get_value_double(env, args[0], &camX);
+    if (argc >= 2) napi_get_value_double(env, args[1], &camZ);
+    if (argc >= 3) napi_get_value_double(env, args[2], &playerX);
+    if (argc >= 4) napi_get_value_double(env, args[3], &playerY);
+    if (argc >= 5) napi_get_value_double(env, args[4], &viewRadius);
+
+    float relPlayerX = static_cast<float>(playerX);
+    float relPlayerY = static_cast<float>(playerY);
+    // Camera position is already in player-relative Three.js coordinates (player at 0,0 in scene)
+    float relCamX = static_cast<float>(camX);
+    float relCamZ = static_cast<float>(camZ);
+    float rad = static_cast<float>(viewRadius);
+
+    // Buildings
+    std::vector<std::string> occludedBuildingIds;
+    if (argc >= 6) {
+        uint32_t bldCount = 0;
+        napi_get_array_length(env, args[5], &bldCount);
+        for (uint32_t i = 0; i < bldCount; i++) {
+            napi_value bld;
+            napi_get_element(env, args[5], i, &bld);
+
+            napi_value jsId, jsWX, jsWY, jsHW, jsHD;
+            napi_get_named_property(env, bld, "id", &jsId);
+            char idBuf[128];
+            size_t idLen;
+            napi_get_value_string_utf8(env, jsId, idBuf, sizeof(idBuf), &idLen);
+            idBuf[idLen] = '\0';
+
+            napi_get_named_property(env, bld, "worldX", &jsWX);
+            napi_get_named_property(env, bld, "worldY", &jsWY);
+            napi_get_named_property(env, bld, "hw", &jsHW);
+            napi_get_named_property(env, bld, "hd", &jsHD);
+
+            double wX, wY, hw, hd;
+            napi_get_value_double(env, jsWX, &wX);
+            napi_get_value_double(env, jsWY, &wY);
+            napi_get_value_double(env, jsHW, &hw);
+            napi_get_value_double(env, jsHD, &hd);
+
+            float relX = static_cast<float>(wX) - relPlayerX;
+            float relZ = static_cast<float>(wY) - relPlayerY;
+            float dist = std::sqrt(relX * relX + relZ * relZ);
+            if (dist > rad + static_cast<float>(hw)) {
+                fprintf(stderr, "[CppOcclusion] BLD SKIP %s dist=%.1f > rad+hw=%.1f\n", idBuf, dist, rad + static_cast<float>(hw));
+                continue;
+            }
+            fprintf(stderr, "[CppOcclusion] BLD TEST %s rel=(%.1f,%.1f) AABB=[%.0f..%.0f,%.0f..%.0f] cam=(%.1f,%.1f)\n",
+                idBuf, relX, relZ,
+                relX - static_cast<float>(hw), relX + static_cast<float>(hw),
+                relZ - static_cast<float>(hd), relZ + static_cast<float>(hd),
+                relCamX, relCamZ);
+
+            if (rayHitsAABB(relCamX, relCamZ,
+                            relX - static_cast<float>(hw), relX + static_cast<float>(hw),
+                            relZ - static_cast<float>(hd), relZ + static_cast<float>(hd))) {
+                fprintf(stderr, "[CppOcclusion] BLD HIT %s at (%.0f,%.0f)\n", idBuf, wX, wY);
+                occludedBuildingIds.push_back(std::string(idBuf, idLen));
+            } else {
+                fprintf(stderr, "[CppOcclusion] BLD MISS %s\n", idBuf);
+            }
+        }
+    }
+
+    // Trees
+    std::vector<std::string> occludedTreeKeys;
+    if (argc >= 7) {
+        uint32_t treeCount = 0;
+        napi_get_array_length(env, args[6], &treeCount);
+        for (uint32_t i = 0; i < treeCount; i++) {
+            napi_value tree;
+            napi_get_element(env, args[6], i, &tree);
+
+            napi_value jsTWX, jsTWY;
+            napi_get_named_property(env, tree, "worldX", &jsTWX);
+            napi_get_named_property(env, tree, "worldY", &jsTWY);
+
+            double wX, wY;
+            napi_get_value_double(env, jsTWX, &wX);
+            napi_get_value_double(env, jsTWY, &wY);
+
+            float relX = static_cast<float>(wX) - relPlayerX;
+            float relZ = static_cast<float>(wY) - relPlayerY;
+            float dist = std::sqrt(relX * relX + relZ * relZ);
+            if (dist > rad + 1.0f) continue;
+
+            if (rayHitsAABB(relCamX, relCamZ, relX - 1.0f, relX + 1.0f, relZ - 1.0f, relZ + 1.0f)) {
+                int tileX = static_cast<int>(std::round(static_cast<float>(wX)));
+                int tileY = static_cast<int>(std::round(static_cast<float>(wY)));
+                occludedTreeKeys.push_back("tree-" + std::to_string(tileX) + "," + std::to_string(tileY));
+            }
+        }
+    }
+
+    // Build result
+    napi_value result;
+    napi_create_object(env, &result);
+
+    // buildingIds array
+    napi_value bldIdArr;
+    napi_create_array_with_length(env, occludedBuildingIds.size(), &bldIdArr);
+    for (size_t i = 0; i < occludedBuildingIds.size(); i++) {
+        napi_value jsStr;
+        napi_create_string_utf8(env, occludedBuildingIds[i].c_str(), occludedBuildingIds[i].length(), &jsStr);
+        napi_set_element(env, bldIdArr, i, jsStr);
+    }
+    napi_set_named_property(env, result, "buildingIds", bldIdArr);
+
+    // treeKeys array
+    napi_value treeKeyArr;
+    napi_create_array_with_length(env, occludedTreeKeys.size(), &treeKeyArr);
+    for (size_t i = 0; i < occludedTreeKeys.size(); i++) {
+        napi_value jsStr;
+        napi_create_string_utf8(env, occludedTreeKeys[i].c_str(), occludedTreeKeys[i].length(), &jsStr);
+        napi_set_element(env, treeKeyArr, i, jsStr);
+    }
+    napi_set_named_property(env, result, "treeKeys", treeKeyArr);
+
+    return result;
+}
+
 // ============ Addon Init ============
 static napi_value Init(napi_env env, napi_value exports) {
-    napi_value fn_gen, fn_tile;
+    napi_value fn_gen, fn_tile, fn_occl;
 
     napi_create_function(env, "generateWorld", NAPI_AUTO_LENGTH, GenerateWorld, nullptr, &fn_gen);
     napi_set_named_property(env, exports, "generateWorld", fn_gen);
 
     napi_create_function(env, "getTerrainTile", NAPI_AUTO_LENGTH, GetTerrainTile, nullptr, &fn_tile);
     napi_set_named_property(env, exports, "getTerrainTile", fn_tile);
+
+    napi_create_function(env, "computeOcclusion", NAPI_AUTO_LENGTH, ComputeOcclusion, nullptr, &fn_occl);
+    napi_set_named_property(env, exports, "computeOcclusion", fn_occl);
 
     return exports;
 }

@@ -3,43 +3,12 @@ import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BuildingGeometry } from './BuildingGeometry';
 import { useBuildingStore } from './BuildingStore';
+import { getSocket } from '../shared/socket';
 
 interface BuildingWorldProps {
   playerX: number;
   playerY: number;
   viewRadius: number;
-}
-
-function rayHitsAABB(
-  ox: number, oz: number,
-  minX: number, maxX: number,
-  minZ: number, maxZ: number
-): boolean {
-  const dx = -ox;
-  const dz = -oz;
-  if (Math.abs(dx) < 0.0001 && Math.abs(dz) < 0.0001) return false;
-
-  let tMin = 0, tMax = 1;
-
-  if (Math.abs(dx) > 0.0001) {
-    const t1 = (minX - ox) / dx;
-    const t2 = (maxX - ox) / dx;
-    tMin = Math.max(tMin, Math.min(t1, t2));
-    tMax = Math.min(tMax, Math.max(t1, t2));
-  } else if (ox < minX || ox > maxX) {
-    return false;
-  }
-
-  if (Math.abs(dz) > 0.0001) {
-    const t1 = (minZ - oz) / dz;
-    const t2 = (maxZ - oz) / dz;
-    tMin = Math.max(tMin, Math.min(t1, t2));
-    tMax = Math.min(tMax, Math.max(t1, t2));
-  } else if (oz < minZ || oz > maxZ) {
-    return false;
-  }
-
-  return tMin <= tMax && tMax >= 0;
 }
 
 export const BuildingWorld = React.memo(({
@@ -56,6 +25,9 @@ export const BuildingWorld = React.memo(({
   const buildingRefs = useRef<Map<string, THREE.Group>>(new Map());
   const [ghostedIds, setGhostedIds] = useState<Set<string>>(new Set());
   const prevGhostedStr = useRef('');
+  const frameCountRef = useRef(0);
+  const pendingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     let foundInside = false;
@@ -77,6 +49,10 @@ export const BuildingWorld = React.memo(({
     }
   }, [playerX, playerY, buildings, currentBuildingId, enterBuilding, exitBuilding]);
 
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
   useFrame(() => {
     const camPos = camera.position;
     const camDist = camPos.length();
@@ -89,28 +65,29 @@ export const BuildingWorld = React.memo(({
       return;
     }
 
-    const cx = camPos.x;
-    const cz = camPos.z;
-    const newGhosted = new Set<string>();
+    frameCountRef.current++;
+    if (frameCountRef.current % 3 !== 0) return;  // throttle every 3 frames
+    if (pendingRef.current) return;                // skip if request in flight
 
-    for (const b of buildings) {
-      const relX = b.worldX - playerX;
-      const relZ = b.worldY - playerY;
-      const buildingDist = Math.sqrt(relX * relX + relZ * relZ);
-      if (buildingDist > viewRadius + b.def.compoundWidth * 0.5) continue;
-
-      const hw = b.def.compoundWidth / 2;
-      const hd = b.def.compoundDepth / 2;
-      if (rayHitsAABB(cx, cz, relX - hw, relX + hw, relZ - hd, relZ + hd)) {
-        newGhosted.add(b.id);
+    pendingRef.current = true;
+    const socket = getSocket();
+    console.log('[BldOcclusion] Emit: cam=', camPos.x.toFixed(1), camPos.z.toFixed(1),
+      'player=', playerX, playerY, 'viewRadius=', viewRadius);
+    socket.emit('occlusion:compute', {
+      camX: camPos.x, camZ: camPos.z,
+      playerX, playerY, viewRadius,
+    }, (res: { buildingIds?: string[] }) => {
+      if (!mountedRef.current) return;
+      pendingRef.current = false;
+      console.log('[BldOcclusion] Resp: ids=', res?.buildingIds);
+      const ids = res?.buildingIds || [];
+      const newGhosted = new Set(ids);
+      const key = [...newGhosted].sort().join(',');
+      if (key !== prevGhostedStr.current) {
+        prevGhostedStr.current = key;
+        setGhostedIds(newGhosted);
       }
-    }
-
-    const key = [...newGhosted].sort().join(',');
-    if (key !== prevGhostedStr.current) {
-      prevGhostedStr.current = key;
-      setGhostedIds(newGhosted);
-    }
+    });
   });
 
   return (

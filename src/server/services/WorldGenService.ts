@@ -59,10 +59,16 @@ export interface CppTerrainTile {
   isRoad: boolean;
 }
 
+export interface OcclusionResult {
+  buildingIds: string[];
+  treeKeys: string[];
+}
+
 export class WorldGenService {
   private static instance: WorldGenService;
   private addon: any = null;
   private initialized = false;
+  private _world: CppWorldOutput | null = null;
 
   private constructor() {}
 
@@ -89,13 +95,40 @@ export class WorldGenService {
       return { clans: [], buildings: [], trees: [], resources: [] };
     }
     const result = this.addon.generateWorld(seed, width, height, heavenLevel);
-    return result as CppWorldOutput;
+    this._world = result as CppWorldOutput;
+    return this._world;
   }
 
   getTerrainTile(seed: number, x: number, y: number): CppTerrainTile | null {
     if (!this.addon) return null;
     const result = this.addon.getTerrainTile(seed, x, y);
     return result as CppTerrainTile;
+  }
+
+  computeOcclusion(
+    camX: number, camZ: number,
+    playerX: number, playerY: number,
+    viewRadius: number
+  ): OcclusionResult {
+    if (!this.addon || !this._world) {
+      return { buildingIds: [], treeKeys: [] };
+    }
+    const bldBoxes = this._world.buildings.map(b => ({
+      id: b.id,
+      worldX: b.worldX,
+      worldY: b.worldY,
+      hw: b.compoundWidth / 2,
+      hd: b.compoundDepth / 2,
+    }));
+    const treePositions = this._world.trees.map(t => ({
+      worldX: t.x,
+      worldY: t.y,
+    }));
+    const result = this.addon.computeOcclusion(
+      camX, camZ, playerX, playerY, viewRadius,
+      bldBoxes, treePositions
+    );
+    return result as OcclusionResult;
   }
 
   get isAvailable(): boolean {

@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { PerspectiveCamera, Html, useCursor, Sparkles } from '@react-three/drei';
+import { PerspectiveCamera, Html, useCursor, Sparkles, Line } from '@react-three/drei';
 import { CameraControls } from '../utils/CameraControls';
 import * as THREE from 'three';
 import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, COUNTRIES_DATA, COUNTRIES, BodyType, getClanTerritoryCenter } from '../store/gameStore';
 import { generateCharacterStyle, getRealmAura } from '../utils/appearance';
 import { BuildingWorld } from '../buildings/BuildingWorld';
 import { useBuildingStore, makeBuildingId } from '../buildings/BuildingStore';
+import { getSocket } from '../shared/socket';
 import { getBuildingDef, BuildingKind } from '../buildings/CityRegistry';
 import { getTerrainTile } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
@@ -276,6 +277,13 @@ const TerrainBoxGroup = React.memo(({ tiles }: { tiles: Array<{ dx: number; dy: 
 });
 
 const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
+  const _worldTrees = useGameStore(s => s._worldTrees);
+  const treeKeySet = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of _worldTrees) set.add(`${t.x},${t.y}`);
+    return set;
+  }, [_worldTrees]);
+
   const tileData = useMemo(() => {
     const tiles: Array<{ x: number; y: number; dx: number; dy: number; biome: TerrainType; elevation: number; textureVariant: number; hasTree: boolean; isWaterTile: boolean; isMountain: boolean; showPeak: boolean; showSnowCap: boolean }> = [];
     const gridCenterX = Math.round(playerPos.x);
@@ -292,7 +300,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
           biome: tile.biome,
           elevation: tile.elevation,
           textureVariant: Math.floor(seededRandom(gx * 7.1, gy * 3.7) * TERRAIN_VARIANTS),
-          hasTree: tile.hasTree,
+          hasTree: treeKeySet.has(`${gx},${gy}`),
           isWaterTile,
           isMountain,
           showPeak: isMountain && tile.elevation > 0.6,
@@ -301,46 +309,42 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
       }
     }
     return tiles;
-  }, [Math.round(playerPos.x), Math.round(playerPos.y)]);
+  }, [Math.round(playerPos.x), Math.round(playerPos.y), treeKeySet]);
 
-  // Tree occlusion: track which tree tiles block camera→player line
+  // Tree occlusion: use C++ compute via socket
   const [ghostedTreeKeys, setGhostedTreeKeys] = useState<Set<string>>(new Set());
   const occlPrevStr = useRef('');
+  const occlFrameCountRef = useRef(0);
+  const occlPendingRef = useRef(false);
+  const occlMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { occlMountedRef.current = false; };
+  }, []);
 
   useFrame(() => {
     if (!_camera) return;
-    const cx = _camera.position.x;
-    const cz = _camera.position.z;
-    const ghosts = new Set<string>();
-    for (const t of tileData) {
-      if (!t.hasTree || t.isMountain || t.isWaterTile) continue;
-      // Tree bounding box ~2x2 centered on tile position
-      const minX = t.dx - 1; const maxX = t.dx + 1;
-      const minZ = t.dy - 1; const maxZ = t.dy + 1;
-      // Slab test: camera→(0,0) ray vs AABB
-      const dx = -cx; const dz = -cz;
-      if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) continue;
-      let tMin = 0, tMax = 1;
-      let hit = true;
-      if (Math.abs(dx) > 0.001) {
-        const t1 = (minX - cx) / dx, t2 = (maxX - cx) / dx;
-        tMin = Math.max(tMin, Math.min(t1, t2));
-        tMax = Math.min(tMax, Math.max(t1, t2));
-      } else if (cx < minX || cx > maxX) hit = false;
-      if (hit && Math.abs(dz) > 0.001) {
-        const t1 = (minZ - cz) / dz, t2 = (maxZ - cz) / dz;
-        tMin = Math.max(tMin, Math.min(t1, t2));
-        tMax = Math.min(tMax, Math.max(t1, t2));
-      } else if (hit && (cz < minZ || cz > maxZ)) hit = false;
-      if (hit && tMin <= tMax && tMax >= 0) {
-        ghosts.add(`tree-${t.x},${t.y}`);
+    occlFrameCountRef.current++;
+    if (occlFrameCountRef.current % 3 !== 0) return;
+    if (occlPendingRef.current) return;
+
+    occlPendingRef.current = true;
+    const socket = getSocket();
+    socket.emit('occlusion:compute', {
+      camX: _camera.position.x, camZ: _camera.position.z,
+      playerX: playerPos.x, playerY: playerPos.y,
+      viewRadius: VIEW_RADIUS,
+    }, (res: { treeKeys?: string[] }) => {
+      if (!occlMountedRef.current) return;
+      occlPendingRef.current = false;
+      const keys = res?.treeKeys || [];
+      const newGhosted = new Set(keys);
+      const key = [...newGhosted].sort().join(',');
+      if (key !== occlPrevStr.current) {
+        occlPrevStr.current = key;
+        setGhostedTreeKeys(newGhosted);
       }
-    }
-    const key = [...ghosts].sort().join(',');
-    if (key !== occlPrevStr.current) {
-      occlPrevStr.current = key;
-      setGhostedTreeKeys(ghosts);
-    }
+    });
   });
 
   const planeGroups = useMemo(() => {
@@ -419,6 +423,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
           />
         );
       })}
+
     </group>
   );
 };
