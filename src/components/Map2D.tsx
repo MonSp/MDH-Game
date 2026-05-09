@@ -332,6 +332,7 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
     const socket = getSocket();
     socket.emit('occlusion:compute', {
       camX: _camera.position.x, camZ: _camera.position.z,
+      camY: _camera.position.y,
       playerX: playerPos.x, playerY: playerPos.y,
       viewRadius: VIEW_RADIUS,
     }, (res: { treeKeys?: string[] }) => {

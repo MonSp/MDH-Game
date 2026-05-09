@@ -75,6 +75,7 @@ export const BuildingWorld = React.memo(({
       'player=', playerX, playerY, 'viewRadius=', viewRadius);
     socket.emit('occlusion:compute', {
       camX: camPos.x, camZ: camPos.z,
+      camY: camPos.y,
       playerX, playerY, viewRadius,
     }, (res: { buildingIds?: string[] }) => {
       if (!mountedRef.current) return;

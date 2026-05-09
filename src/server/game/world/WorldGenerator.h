@@ -60,6 +60,7 @@ struct BuildingInfo {
     float compoundDepth;
     std::string label;
     uint8_t level;
+    float height;
 };
 
 struct TreeInfo {
@@ -368,6 +369,13 @@ private:
                 b.worldX = bx + (i % 3) * 4;
                 b.worldY = by + (i / 3) * 4;
 
+                float baseHeight = 3.0f;
+                if (b.kind == "faction_hall") baseHeight = 5.0f;
+                else if (b.kind == "barracks") baseHeight = 4.0f;
+                else if (b.kind == "treasury") baseHeight = 2.5f;
+                else if (b.kind == "alchemy_lab") baseHeight = 2.5f;
+                b.height = baseHeight + static_cast<float>(b.level - 1) * 1.5f;
+
                 out.buildings.push_back(b);
             }
         }
@@ -384,6 +392,7 @@ private:
         testBld.level = 1;
         testBld.worldX = 310;
         testBld.worldY = 310;
+        testBld.height = 8.0f;
         out.buildings.push_back(testBld);
     }
 

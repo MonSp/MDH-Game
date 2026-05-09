@@ -26,6 +26,7 @@ export interface CppBuildingInfo {
   compoundDepth: number;
   label: string;
   level: number;
+  height: number;
 }
 
 export interface CppTreeInfo {
@@ -106,7 +107,7 @@ export class WorldGenService {
   }
 
   computeOcclusion(
-    camX: number, camZ: number,
+    camX: number, camZ: number, camY: number,
     playerX: number, playerY: number,
     viewRadius: number
   ): OcclusionResult {
@@ -119,13 +120,14 @@ export class WorldGenService {
       worldY: b.worldY,
       hw: b.compoundWidth / 2,
       hd: b.compoundDepth / 2,
+      height: b.height,
     }));
     const treePositions = this._world.trees.map(t => ({
       worldX: t.x,
       worldY: t.y,
     }));
     const result = this.addon.computeOcclusion(
-      camX, camZ, playerX, playerY, viewRadius,
+      camX, camZ, camY, playerX, playerY, viewRadius,
       bldBoxes, treePositions
     );
     return result as OcclusionResult;
