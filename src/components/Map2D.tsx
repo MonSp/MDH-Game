@@ -7,7 +7,6 @@ import { useGameStore, NPC, WildMonster, type SquadMember, type BuildingType, CO
 import { generateCharacterStyle, getRealmAura } from '../utils/appearance';
 import { BuildingWorld } from '../buildings/BuildingWorld';
 import { useBuildingStore, makeBuildingId } from '../buildings/BuildingStore';
-import { getSocket } from '../shared/socket';
 import { getBuildingDef, BuildingKind } from '../buildings/CityRegistry';
 import { getTerrainTile } from '../utils/terrain';
 import { TerrainType, isWater } from '../shared/types/map';
@@ -15,10 +14,16 @@ import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneR
 import { PixelCharacterSprite } from './PixelCharacterSprite';
 import { PixelMonsterSprite } from './PixelMonsterSprite';
 import { PixelResourceSprite } from './PixelResourceSprite';
-import { TreeModel } from './TreeModel';
+import TreeMesh from '../buildings/TreeMesh';
+import VoxelRenderer from '../buildings/VoxelRenderer';
 import { CombatParticles, BloodParticles, CameraShake, triggerScreenShake, GatheringEffect, BreakthroughEffect, SkillParticles, DebrisParticles } from './PixelParticleEffects';
 import { generateTerrainTileTexture, generateEffectTexture, generateDecorationSprite, type DecorationType } from '../utils/pixelSpriteGenerator';
 import { PixelDecoration } from './PixelDecoration';
+import { SunMoonLight } from './SunMoonLight';
+import { TimeControlPanel } from './TimeControlPanel';
+import { BuildModeController } from './BuildModeController';
+import { BuildModeUI } from './BuildModeUI';
+import { useBuildModeStore } from '../buildings/BuildModeStore';
 
 // Constants
 const VIEW_RADIUS = 12;
@@ -183,9 +188,6 @@ function getDecorationForTile(x: number, y: number, biome: TerrainType): Decorat
   }
 }
 
-// Tree types for varied pixel art trees — pick based on seeded position
-const TREE_TYPES: DecorationType[] = ['tree_pine', 'tree_broad', 'tree_tall'];
-
 // 2. Cultivator Pixel Sprite — real-world scale: ~1.8m human height
 const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: { appearance: any, isMoving?: boolean, isFloating?: boolean }) => {
   const { height } = appearance;
@@ -311,43 +313,6 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
     return tiles;
   }, [Math.round(playerPos.x), Math.round(playerPos.y), treeKeySet]);
 
-  // Tree occlusion: use C++ compute via socket
-  const [ghostedTreeKeys, setGhostedTreeKeys] = useState<Set<string>>(new Set());
-  const occlPrevStr = useRef('');
-  const occlFrameCountRef = useRef(0);
-  const occlPendingRef = useRef(false);
-  const occlMountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => { occlMountedRef.current = false; };
-  }, []);
-
-  useFrame(() => {
-    if (!_camera) return;
-    occlFrameCountRef.current++;
-    if (occlFrameCountRef.current % 3 !== 0) return;
-    if (occlPendingRef.current) return;
-
-    occlPendingRef.current = true;
-    const socket = getSocket();
-    socket.emit('occlusion:compute', {
-      camX: _camera.position.x, camZ: _camera.position.z,
-      camY: _camera.position.y,
-      playerX: playerPos.x, playerY: playerPos.y,
-      viewRadius: VIEW_RADIUS,
-    }, (res: { treeKeys?: string[] }) => {
-      if (!occlMountedRef.current) return;
-      occlPendingRef.current = false;
-      const keys = res?.treeKeys || [];
-      const newGhosted = new Set(keys);
-      const key = [...newGhosted].sort().join(',');
-      if (key !== occlPrevStr.current) {
-        occlPrevStr.current = key;
-        setGhostedTreeKeys(newGhosted);
-      }
-    });
-  });
-
   const planeGroups = useMemo(() => {
     const groups = new Map<string, Array<{ dx: number; dy: number; elevation: number }>>();
     for (const t of tileData) {
@@ -389,18 +354,16 @@ const Terrain = ({ playerPos }: { playerPos: { x: number, y: number } }) => {
       })}
 
       {tileData.filter(t => t.hasTree && !t.isMountain && !t.isWaterTile).map(tile => {
-        const treeIdx = Math.floor(seededRandom(tile.x * 3.7, tile.y * 7.1) * 3);
-        const treeType = TREE_TYPES[treeIdx];
+        const treeVariant = seededRandom(tile.x * 3.7, tile.y * 7.1);
         const treeScale = 2.5 + seededRandom(tile.x * 1.3, tile.y * 2.7) * 2.0;
         const yOff = tileElevationOffset(tile.biome, tile.elevation);
-        const treeKey = `tree-${tile.x},${tile.y}`;
         return (
-          <TreeModel
-            key={treeKey}
-            type={treeType as any}
-            position={[tile.dx, yOff, tile.dy]}
-            scale={treeScale}
-            ghostMode={ghostedTreeKeys.has(treeKey)}
+          <TreeMesh
+            key={`tree-${tile.x},${tile.y}`}
+            x={tile.dx}
+            y={tile.dy + yOff}
+            scale={treeScale * 0.5}
+            variant={treeVariant}
           />
         );
       })}
@@ -549,6 +512,21 @@ const CameraController = ({ playerPos }: { playerPos: { x: number; y: number } }
   return null;
 };
 
+const PlayerBuildVoxels = () => {
+  const currentBuild = useBuildModeStore(s => s.currentBuild);
+  const playerPos = useGameStore(s => s.player?.position);
+
+  if (!currentBuild || !playerPos) return null;
+
+  return (
+    <VoxelRenderer
+      voxels={currentBuild.voxels}
+      position={[currentBuild.worldX - playerPos.x, 0, currentBuild.worldY - playerPos.y]}
+      scale={0.333}
+    />
+  );
+};
+
 // 4. Resource Point with pixel art sprite
 const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => {
   const interactWithResource = useGameStore(state => state.interactWithResource);
@@ -565,6 +543,7 @@ const ResourceMesh = ({ res, dx, dy }: { res: any, dx: number, dy: number }) => 
 
   const handleGather = (e: any) => {
     e.stopPropagation();
+    if (useBuildModeStore.getState().active) return;
     interactWithResource(res.id);
     setGathering(true);
     setTimeout(() => setGathering(false), 1200);
@@ -639,7 +618,7 @@ const NPCMesh = ({ npc, dx, dy, onClick, showNameTag = true, compact = false }: 
 
       {/* Body */}
       <group
-        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        onClick={(e) => { e.stopPropagation(); if (useBuildModeStore.getState().active) return; onClick(); }}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
       >
@@ -1196,7 +1175,7 @@ const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside:
 const TRIGGER_COOLDOWN_MS = 30000;
 
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
-  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, _worldBuildings, movePlayer, addWorldEvent } = useGameStore();
+  const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, _worldBuildings, movePlayer, addWorldEvent, gameTime } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
 
   // Breakthrough effect
@@ -1366,6 +1345,28 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key;
+
+      if (key === 'b' || key === 'B') {
+        e.preventDefault();
+        const player = useGameStore.getState().player;
+        useBuildModeStore.getState().toggleBuildMode(player.position.x, player.position.y);
+        return;
+      }
+
+      const inBuildMode = useBuildModeStore.getState().active;
+
+      if (key === '[' || key === ']') {
+        if (inBuildMode) {
+          e.preventDefault();
+          const store = useBuildModeStore.getState();
+          const next = key === ']' ? store.currentLayer + 1 : store.currentLayer - 1;
+          if (next >= 0 && next <= 15) store.setLayer(next);
+        }
+        return;
+      }
+
+      if (inBuildMode) return;
+
       switch(key) {
         case 'ArrowUp':
         case 'ArrowDown':
@@ -1542,16 +1543,8 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         {/* Orbit camera controller: right-drag rotate, scroll zoom */}
         <CameraController playerPos={player.position} />
 
-        {/* 环境光提升，冷白明亮 */}
-        <ambientLight intensity={2.0} color="#f0f4ff" />
-
-        {/* 主平行光冷白，模拟天光 — repositioned for 3D perspective */}
-        <directionalLight
-          position={[20, 30, 15]}
-          intensity={1.8}
-          color="#e8e8e8"
-        />
-        <hemisphereLight args={['#b0c4ff', '#3a3a50', 0.4]} />
+        {/* 昼夜光照系统：太阳/月亮随时间移动 */}
+        <SunMoonLight />
 
         {/* Ground plane — fills sub-pixel gaps between edge tiles at bottom. */}
         <mesh position={[0, -0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -1662,10 +1655,22 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
             color="#ffd700"
           />
         )}
+        <BuildModeController />
+        <PlayerBuildVoxels />
       </Canvas>
 
-      {/* 坐标 + 控制提示 — 左下角 */}
-      <div className="absolute bottom-4 left-4 text-zinc-500 text-xs flex space-x-3 bg-zinc-900/60 px-3 py-1.5 rounded-md backdrop-blur pointer-events-none">
+      <BuildModeUI />
+
+      {/* 时间控制面板 — 右上角 */}
+      <TimeControlPanel />
+
+      {/* 坐标 + 时间 + 控制提示 — 左下角 */}
+      <div className="absolute bottom-4 left-4 text-zinc-500 text-xs flex space-x-3 bg-zinc-900/60 px-3 py-1.5 rounded-md backdrop-blur pointer-events-none items-center">
+        <span className={gameTime >= 5 && gameTime < 19 ? 'text-amber-400' : 'text-blue-400'}>
+          {gameTime >= 5 && gameTime < 19 ? '☀' : '☾'}{' '}
+          {String(Math.floor(gameTime)).padStart(2, '0')}:{String(Math.floor((gameTime % 1) * 60)).padStart(2, '0')}
+        </span>
+        <span className="text-zinc-600">|</span>
         <span className="text-emerald-400 font-mono font-bold">({player.position.x}, {player.position.y})</span>
         <span className="text-zinc-600">|</span>
         <span>WASD/方向键 移动</span>
@@ -1677,6 +1682,8 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         <span>滚轮缩放</span>
         <span className="text-zinc-600">|</span>
         <span>左键交互</span>
+        <span className="text-zinc-600">|</span>
+        <span>B 建造模式</span>
       </div>
 
       {/* 指南针 — 指向视口外的场景触发点和都城 */}

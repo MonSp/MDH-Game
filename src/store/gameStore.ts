@@ -87,6 +87,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   _factionLLMEnqueueTime: {} as Record<string, number>,
   /** Phase 1.4a: cached LLM decisions for factions */
   _factionLLMResults: {} as Record<string, { targetClanId: string; action: 'war' | 'alliance' | 'truce' | 'none'; reason: string } | null>,
+  gameTime: 8,
 
   joinServer: async (serverId, playerName) => {
     const heavenLevel: HeavenLevel = 9;
@@ -161,7 +162,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         maxExp: REALM_MAX_EXP['凡人']
       },
       position: initialPos,
-      inventory: { '灵石': 500 },
+      inventory: { '灵石': 500, '石材': 64, '木材': 64, '土块': 64, '金属块': 32, '茅草': 64 },
       cycleInfo: { type: null },
       isAscending: false,
       talent: defaultTalent,
@@ -2955,6 +2956,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       ascensionQuests: s.ascensionQuests,
       playerFactionId: s.playerFactionId,
       captives: s.captives,
+      gameTime: s.gameTime,
     }, s.player.name, s.player.realm, s.player.heavenLevel);
   },
 
@@ -2978,6 +2980,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         ascensionQuests: gameState.ascensionQuests ?? [],
         playerFactionId: gameState.playerFactionId ?? null,
         captives: gameState.captives ?? [],
+        gameTime: gameState.gameTime ?? 8,
       });
       return true;
     } catch {
@@ -2989,5 +2992,17 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   deleteSaveSlot: (slot: number) => {
     deleteSave(slot);
+  },
+
+  tickGameTime: (deltaSeconds: number) => {
+    const GAME_SECONDS_PER_REAL_SECOND = 2;
+    const gameHoursDelta = (deltaSeconds * GAME_SECONDS_PER_REAL_SECOND) / 3600;
+    set(s => ({
+      gameTime: (s.gameTime + gameHoursDelta) % 24,
+    }));
+  },
+
+  setGameTime: (hours: number) => {
+    set({ gameTime: ((hours % 24) + 24) % 24 });
   },
 }));

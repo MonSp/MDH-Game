@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { BuildingDef, BuildingKind } from './BuildingTypes';
+import { BuildingDef, BuildingKind, BlockState, VoxelGrid, MaterialType } from './BuildingTypes';
 import { getBuildingDef } from './CityRegistry';
 
 export interface BuildingInstance {
@@ -9,6 +9,11 @@ export interface BuildingInstance {
   worldY: number;
   country?: string;
   label?: string;
+}
+
+export interface BuildingDestructionState {
+  buildingId: string;
+  blockStates: Map<string, BlockState>;
 }
 
 export interface BuildingStore {
@@ -22,6 +27,12 @@ export interface BuildingStore {
 
   enterBuilding: (id: string) => void;
   exitBuilding: () => void;
+
+  destructionStates: Map<string, BuildingDestructionState>;
+
+  applyDamage: (buildingId: string, lx: number, ly: number, lz: number, damage: number) => number;
+
+  updateBlockStates: (buildingId: string, updates: Array<{ lx: number; ly: number; lz: number; material: MaterialType; health: number }>) => void;
 }
 
 export function makeBuildingId(kind: BuildingKind, x: number, y: number): string {
@@ -59,5 +70,43 @@ export const useBuildingStore = create<BuildingStore>((set, get) => ({
 
   exitBuilding: () => {
     set({ currentBuildingId: null, isInside: false });
+  },
+
+  destructionStates: new Map(),
+
+  applyDamage: (buildingId, lx, ly, lz, damage) => {
+    const state = get().destructionStates;
+    let bd = state.get(buildingId);
+    if (!bd) {
+      bd = { buildingId, blockStates: new Map() };
+      state.set(buildingId, bd);
+    }
+    const key = `${lx},${ly},${lz}`;
+    const existing = bd.blockStates.get(key);
+    const newHealth = Math.max(0, (existing?.health ?? 0) - damage);
+    if (newHealth <= 0) {
+      bd.blockStates.delete(key);
+    } else {
+      bd.blockStates.set(key, { ...(existing || { material: 'stone' }), health: newHealth });
+    }
+    return newHealth;
+  },
+
+  updateBlockStates: (buildingId, updates) => {
+    const state = get().destructionStates;
+    let bd = state.get(buildingId);
+    if (!bd) {
+      bd = { buildingId, blockStates: new Map() };
+      state.set(buildingId, bd);
+    }
+    for (const u of updates) {
+      const key = `${u.lx},${u.ly},${u.lz}`;
+      if (u.health <= 0) {
+        bd.blockStates.delete(key);
+      } else {
+        bd.blockStates.set(key, { material: u.material, health: u.health });
+      }
+    }
+    set({ destructionStates: new Map(state) });
   },
 }));

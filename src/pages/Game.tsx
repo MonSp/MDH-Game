@@ -69,7 +69,7 @@ const DIALOGUE_TIMEOUT_MS = 15000;
 export const Game = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { player, updateNPCs, modifyTalent, markNpcMet, setNpcMemory, addLog, saveToSlot, npcMemory } = useGameStore();
+  const { player, updateNPCs, modifyTalent, markNpcMet, setNpcMemory, addLog, saveToSlot, npcMemory, tickGameTime } = useGameStore();
   const [showChronicle, setShowChronicle] = useState(false);
   const [showEventLog, setShowEventLog] = useState(false);
 
@@ -152,6 +152,7 @@ export const Game = () => {
     }
     const npcInterval = setInterval(() => {
       updateNPCs();
+      useGameStore.getState().tickGameTime(1);
 
       // Li Si passive protection: when in squad and HP < 20%, auto-heal once per 30s
       const s = useGameStore.getState();

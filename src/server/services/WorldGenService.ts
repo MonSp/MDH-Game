@@ -60,11 +60,6 @@ export interface CppTerrainTile {
   isRoad: boolean;
 }
 
-export interface OcclusionResult {
-  buildingIds: string[];
-  treeKeys: string[];
-}
-
 export class WorldGenService {
   private static instance: WorldGenService;
   private addon: any = null;
@@ -104,33 +99,6 @@ export class WorldGenService {
     if (!this.addon) return null;
     const result = this.addon.getTerrainTile(seed, x, y);
     return result as CppTerrainTile;
-  }
-
-  computeOcclusion(
-    camX: number, camZ: number, camY: number,
-    playerX: number, playerY: number,
-    viewRadius: number
-  ): OcclusionResult {
-    if (!this.addon || !this._world) {
-      return { buildingIds: [], treeKeys: [] };
-    }
-    const bldBoxes = this._world.buildings.map(b => ({
-      id: b.id,
-      worldX: b.worldX,
-      worldY: b.worldY,
-      hw: b.compoundWidth / 2,
-      hd: b.compoundDepth / 2,
-      height: b.height,
-    }));
-    const treePositions = this._world.trees.map(t => ({
-      worldX: t.x,
-      worldY: t.y,
-    }));
-    const result = this.addon.computeOcclusion(
-      camX, camZ, camY, playerX, playerY, viewRadius,
-      bldBoxes, treePositions
-    );
-    return result as OcclusionResult;
   }
 
   get isAvailable(): boolean {

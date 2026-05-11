@@ -115,7 +115,7 @@ export function getVisionRadius(realm: string, watchtowerBonus: number = 0): num
 export { TerrainType };
 
 /** Test island: circular land surrounded by water, far from all buildings */
-export const TEST_ISLAND = { x: 300, y: 300, radius: 30, waterRing: 7 };
+export const TEST_ISLAND = { x: 300, y: 300, radius: 55, waterRing: 7 };
 
 export function isOnTestIsland(x: number, y: number): boolean {
   const dist = Math.sqrt((x - TEST_ISLAND.x) ** 2 + (y - TEST_ISLAND.y) ** 2);

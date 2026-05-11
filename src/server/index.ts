@@ -204,20 +204,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('occlusion:compute', (data: { camX: number; camZ: number; camY?: number; playerX: number; playerY: number; viewRadius: number }, callback?: Function) => {
-    if (typeof callback !== 'function') return;
-    try {
-      const wgen = WorldGenService.getInstance();
-      console.log('[Occlusion] Received:', JSON.stringify(data));
-      const result = wgen.computeOcclusion(data.camX, data.camZ, data.camY ?? 25, data.playerX, data.playerY, data.viewRadius ?? 30);
-      console.log('[Occlusion] Result:', JSON.stringify(result));
-      callback(result);
-    } catch (error) {
-      console.error('[Occlusion] Error:', error);
-      callback({ buildingIds: [], treeKeys: [] });
-    }
-  });
-
   socket.on('player:login', async (data: { playerId: string }) => {
     try {
       const player = PlayerService.getInstance().getPlayer(data.playerId);
@@ -524,6 +510,33 @@ io.on('connection', (socket) => {
     dialogueRateMap.delete(socket.id); // clean up rate limit state
     factionRateMap.delete(socket.id);
     console.log(`Client disconnected: ${socket.id}`);
+  });
+
+  socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
+    const { buildingId, lx, ly, lz, damage, playerId } = data;
+    
+    const updates = [{
+      lx, ly, lz,
+      material: 'wood' as const,
+      health: Math.max(0, 40 - damage),
+    }];
+    
+    // Broadcast destruction state to all clients
+    io.emit('destruct:state', {
+      buildingId,
+      updates,
+      sourcePlayerId: playerId,
+    });
+    
+    console.log(`[Destruct] ${playerId} hit ${buildingId} at [${lx},${ly},${lz}] damage=${damage}`);
+  });
+
+  socket.on('destruct:request', (data: { buildingId: string }) => {
+    // For now, return empty state — full persistence can be added later
+    socket.emit('destruct:state', {
+      buildingId: data.buildingId,
+      updates: [],
+    });
   });
 });
 

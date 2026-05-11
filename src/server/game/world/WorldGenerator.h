@@ -124,7 +124,7 @@ static constexpr int BUILDING_TYPE_COUNT = 6;
 // Test island (same as terrain.ts)
 static constexpr int TEST_ISLAND_X = 300;
 static constexpr int TEST_ISLAND_Y = 300;
-static constexpr int TEST_ISLAND_RADIUS = 30;
+static constexpr int TEST_ISLAND_RADIUS = 55;
 static constexpr int TEST_ISLAND_WATER_RING = 7;
 
 // === World Generator ===
@@ -380,20 +380,82 @@ private:
             }
         }
 
-        // Test building for occlusion testing (on test island, aligned with camera→player diagonal)
-        BuildingInfo testBld;
-        testBld.id = "test-building-occlusion";
-        testBld.kind = "faction_hall";
-        testBld.clanId = "";
-        testBld.country = "齐";
-        testBld.label = "遮挡测试塔";
-        testBld.compoundWidth = 6.0f;
-        testBld.compoundDepth = 6.0f;
-        testBld.level = 1;
-        testBld.worldX = 310;
-        testBld.worldY = 310;
-        testBld.height = 8.0f;
-        out.buildings.push_back(testBld);
+        // Manor compound on test island — manor walls + inner buildings
+        {
+            BuildingInfo b;
+            b.id = "manor@315,270";
+            b.kind = "manor";
+            b.clanId = "";
+            b.country = "齐";
+            b.label = "测试岛·别院(院墙)";
+            b.compoundWidth = 24.0f;
+            b.compoundDepth = 18.0f;
+            b.level = 1;
+            b.worldX = 315;
+            b.worldY = 270;
+            b.height = 3.0f;
+            out.buildings.push_back(b);
+        }
+        {
+            BuildingInfo b;
+            b.id = "manor@315,270_main-hall";
+            b.kind = "faction_hall";
+            b.clanId = "";
+            b.country = "齐";
+            b.label = "议事厅";
+            b.compoundWidth = 8.0f;
+            b.compoundDepth = 3.0f;
+            b.level = 1;
+            b.worldX = 308;
+            b.worldY = 263;
+            b.height = 4.0f;
+            out.buildings.push_back(b);
+        }
+        {
+            BuildingInfo b;
+            b.id = "manor@315,270_library";
+            b.kind = "faction_hall";
+            b.clanId = "";
+            b.country = "齐";
+            b.label = "藏经阁";
+            b.compoundWidth = 3.0f;
+            b.compoundDepth = 2.0f;
+            b.level = 1;
+            b.worldX = 318;
+            b.worldY = 267;
+            b.height = 4.0f;
+            out.buildings.push_back(b);
+        }
+        {
+            BuildingInfo b;
+            b.id = "manor@315,270_training";
+            b.kind = "barracks";
+            b.clanId = "";
+            b.country = "齐";
+            b.label = "练功房";
+            b.compoundWidth = 4.0f;
+            b.compoundDepth = 2.0f;
+            b.level = 1;
+            b.worldX = 307;
+            b.worldY = 267;
+            b.height = 3.0f;
+            out.buildings.push_back(b);
+        }
+        {
+            BuildingInfo b;
+            b.id = "manor@315,270_alchemy";
+            b.kind = "alchemy_lab";
+            b.clanId = "";
+            b.country = "齐";
+            b.label = "丹房";
+            b.compoundWidth = 4.0f;
+            b.compoundDepth = 2.0f;
+            b.level = 1;
+            b.worldX = 313;
+            b.worldY = 267;
+            b.height = 3.0f;
+            out.buildings.push_back(b);
+        }
     }
 
     void generateTrees(WorldOutput& out) {

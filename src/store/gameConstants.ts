@@ -715,6 +715,8 @@ export interface GameState {
   _worldBuildings: { id: string; kind: string; clanId: string; country: string; worldX: number; worldY: number; compoundWidth: number; compoundDepth: number; label: string; level: number }[];
   /** C++ ECS Phase 1: world trees data from server addon */
   _worldTrees: { x: number; y: number; scale: number; variant: number }[];
+  /** 昼夜系统：游戏时间 0-24（小时） */
+  gameTime: number;
 
   joinServer: (serverId: string, playerName: string) => Promise<void>;
   addLog: (log: Omit<LogEntry, 'id' | 'time'>) => void;
@@ -808,6 +810,10 @@ export interface GameState {
   releaseCaptive: (index: number) => void;
   executeCaptive: (index: number) => void;
   recruitCaptive: (index: number) => void;
+
+  // 昼夜系统
+  tickGameTime: (deltaSeconds: number) => void;
+  setGameTime: (hours: number) => void;
 }
 
 export interface CountryInfo {

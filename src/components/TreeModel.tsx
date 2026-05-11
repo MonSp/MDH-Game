@@ -7,7 +7,6 @@ interface TreeModelProps {
   type: TreeKind;
   position?: [number, number, number];
   scale?: number;
-  ghostMode?: boolean;
 }
 
 const trunkMat = new THREE.MeshLambertMaterial({ color: '#5c3a1e' });
@@ -28,51 +27,42 @@ const coneGeo3 = new THREE.ConeGeometry(0.2, 0.3, 6);
 const crownGeo = new THREE.IcosahedronGeometry(0.4, 1);
 const tallCrownGeo = new THREE.ConeGeometry(0.28, 0.55, 6);
 
-function cloneMat(mat: THREE.MeshLambertMaterial, ghost: boolean): THREE.MeshLambertMaterial {
-  const cloned = mat.clone();
-  cloned.transparent = ghost;
-  cloned.opacity = ghost ? 0.2 : 1;
-  cloned.depthWrite = !ghost;
-  return cloned;
-}
-
-const TreeModel = ({ type, position = [0, 0, 0], scale = 1, ghostMode = false }: TreeModelProps) => {
+const TreeModel = ({ type, position = [0, 0, 0], scale = 1 }: TreeModelProps) => {
   const groupRef = useRef<THREE.Group>(null);
 
   const content = useMemo(() => {
-    const g = ghostMode;
     const s = scale;
     switch (type) {
       case 'tree_pine':
         return (
           <group scale={[s, s, s]}>
-            <mesh position={[0, 0.25, 0]} geometry={trunkGeo} material={cloneMat(trunkMat, g)} />
-            <mesh position={[0, 0.55, 0]} geometry={coneGeo1} material={cloneMat(pineMat, g)} />
-            <mesh position={[0, 0.85, 0]} geometry={coneGeo2} material={cloneMat(darkPineMat, g)} />
-            <mesh position={[0, 1.10, 0]} geometry={coneGeo3} material={cloneMat(pineMat, g)} />
+            <mesh position={[0, 0.25, 0]} geometry={trunkGeo} material={trunkMat.clone()} />
+            <mesh position={[0, 0.55, 0]} geometry={coneGeo1} material={pineMat.clone()} />
+            <mesh position={[0, 0.85, 0]} geometry={coneGeo2} material={darkPineMat.clone()} />
+            <mesh position={[0, 1.10, 0]} geometry={coneGeo3} material={pineMat.clone()} />
           </group>
         );
       case 'tree_broad':
         return (
           <group scale={[s, s, s]}>
-            <mesh position={[0, 0.20, 0]} geometry={trunkGeoShort} material={cloneMat(darkTrunkMat, g)} />
-            <mesh position={[0, 0.60, 0]} geometry={crownGeo} material={cloneMat(broadMat, g)} />
-            <mesh position={[0.25, 0.50, 0.15]} geometry={new THREE.IcosahedronGeometry(0.25, 1)} material={cloneMat(darkBroadMat, g)} />
-            <mesh position={[-0.20, 0.45, -0.20]} geometry={new THREE.IcosahedronGeometry(0.22, 1)} material={cloneMat(broadMat, g)} />
+            <mesh position={[0, 0.20, 0]} geometry={trunkGeoShort} material={darkTrunkMat.clone()} />
+            <mesh position={[0, 0.60, 0]} geometry={crownGeo} material={broadMat.clone()} />
+            <mesh position={[0.25, 0.50, 0.15]} geometry={new THREE.IcosahedronGeometry(0.25, 1)} material={darkBroadMat.clone()} />
+            <mesh position={[-0.20, 0.45, -0.20]} geometry={new THREE.IcosahedronGeometry(0.22, 1)} material={broadMat.clone()} />
           </group>
         );
       case 'tree_tall':
         return (
           <group scale={[s, s, s]}>
-            <mesh position={[0, 0.35, 0]} geometry={trunkGeoThin} material={cloneMat(trunkMat, g)} />
-            <mesh position={[0, 0.80, 0]} geometry={tallCrownGeo} material={cloneMat(tallMat, g)} />
-            <mesh position={[0, 1.10, 0]} geometry={new THREE.ConeGeometry(0.18, 0.35, 6)} material={cloneMat(darkTallMat, g)} />
+            <mesh position={[0, 0.35, 0]} geometry={trunkGeoThin} material={trunkMat.clone()} />
+            <mesh position={[0, 0.80, 0]} geometry={tallCrownGeo} material={tallMat.clone()} />
+            <mesh position={[0, 1.10, 0]} geometry={new THREE.ConeGeometry(0.18, 0.35, 6)} material={darkTallMat.clone()} />
           </group>
         );
       default:
         return null;
     }
-  }, [type, scale, ghostMode]);
+  }, [type, scale]);
 
   return (
     <group ref={groupRef} position={position}>

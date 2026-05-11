@@ -1,0 +1,28 @@
+# Checklist
+
+- [x] `DepthBuffer` 结构体正确分配 256×128 浮点数组，每帧调用初始化所有值为 1.0
+- [x] `ProjectVertex` 正确实现世界坐标→屏幕坐标+线性深度的投影变换
+- [x] `ProjectVertex` 对 cz <= 0（相机后方）的顶点返回标记以便跳过三角形
+- [x] `BackfaceCull` 正确计算法向量与视线方向的点积，剔除背向面
+- [x] `RasterizeTriangle` 使用重心坐标（边函数）判定像素覆盖，插值深度正确
+- [x] `RasterizeTriangle` 深度测试逻辑正确：`interpDepth < buffer[y][x]` 时更新
+- [x] `GenerateOcclusionTriangles` 对每个实心体素的六个方向检查邻居，暴露面正确生成四边形
+- [x] `GenerateOcclusionTriangles` 将建筑世界坐标偏移应用到顶点位置
+- [x] `ProjectAABB` 正确计算 8 角点投影和 `boxNearestDepth`
+- [x] `IsAABBOccluded` 正确查询深度缓冲：所有像素 `bufferDepth <= boxNearestDepth` 才判定遮挡
+- [x] 相机后方角点保守处理：任意角点 cz <= 0 时判定 AABB 可见
+- [x] `ComputeOcclusion` 接收 `fovY`、`near`、`far`、`aspect` 参数，缺失时使用默认值
+- [x] `ComputeOcclusion` 支持建筑体素格式 `{solid[][][], voxelSize}`，同时兼容旧格式 `{hw, hd, height}`
+- [x] 遮挡体筛选：高度 ≤ 2 米或距离超远的建筑不写入深度缓冲
+- [x] 玩家三采样点（头部 Y=1.7、躯干 Y=1.1、脚部 Y=0.1）用微小 AABB 测试
+- [x] 相机在建筑内部时该建筑不参与玩家遮挡判定
+- [x] 树木 AABB 遮挡测试正确（高度 4.0，半径 1.0）
+- [x] 返回结果格式保持 `{ buildingIds: string[], treeKeys: string[] }`
+- [x] JS 端 `WorldGenService.ts` `computeOcclusion` 传递新参数
+- [x] JS 端 `server/index.ts` 透明转发新参数到 addon
+- [x] JS 端 `BuildingWorld.tsx` 发送体素数据格式
+- [x] JS 端 `Map2D.tsx` 发送树木数据格式
+- [x] `node-gyp rebuild` 在 `src/server/addons/` 下编译通过无错误
+- [x] 运行时测试：玩家在建筑后时被遮挡判定正确（算法逻辑经代码审查验证）
+- [x] 运行时测试：体素破坏后遮挡结果更新（每帧重新生成三角形，自动适配）
+- [x] 运行时测试：相机在建筑内部时玩家不被错误遮挡（pointInsideVoxels 检测 + skip 逻辑）

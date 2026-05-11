@@ -167,6 +167,9 @@ export class CameraControls {
   }
 
   _onPointerDown(e: PointerEvent) {
+    const op = this._buttonToOperation(e.button);
+    if (op < 0) return;
+
     e.preventDefault();
     this.domElement.focus();
 
@@ -186,7 +189,7 @@ export class CameraControls {
     });
 
     if (this.activePointers.size === 1) {
-      this.currentOperation = this._buttonToOperation(e.button);
+      this.currentOperation = op;
     } else if (this.activePointers.size === 2) {
       const pts = Array.from(this.activePointers.values());
       this.initialPinchDistance = Math.hypot(
@@ -311,7 +314,7 @@ export class CameraControls {
       case 0: return this.mouseButtons.LEFT;
       case 1: return this.mouseButtons.MIDDLE;
       case 2: return this.mouseButtons.RIGHT;
-      default: return OPERATION.ROTATE;
+      default: return -1;
     }
   }
 
