@@ -14,6 +14,7 @@ import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneR
 import { PixelCharacterSprite } from './PixelCharacterSprite';
 import { PixelMonsterSprite } from './PixelMonsterSprite';
 import { PixelResourceSprite } from './PixelResourceSprite';
+import { BakedSpriteViewer } from './BakedSpriteViewer';
 import TreeMesh from '../buildings/TreeMesh';
 import VoxelRenderer from '../buildings/VoxelRenderer';
 import { CombatParticles, BloodParticles, CameraShake, triggerScreenShake, GatheringEffect, BreakthroughEffect, SkillParticles, DebrisParticles } from './PixelParticleEffects';
@@ -1554,6 +1555,13 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         {/* Terrain — single heightfield plane with atlas texture */}
         <Terrain playerPos={player.position} />
         <BuildingWorld playerX={player.position.x} playerY={player.position.y} viewRadius={VIEW_RADIUS} />
+        {/* Phase 0 PoC: Baked sprite test — camera-aware angle selection */}
+        <BakedSpriteViewer
+          atlasUrl="/atlas/buildings.atlas.png"
+          metadataUrl="/atlas/buildings.atlas.json"
+          position={[4, 0, -4]}
+          scale={4}
+        />
         {/* GlobalNoiseOverlay — disabled; was creating moiré standing wave with tile grid */}
         {/* <GlobalNoiseOverlay /> */}
         <WeatherEffect playerPos={player.position} />

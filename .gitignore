@@ -16,6 +16,9 @@ build
 data/*
 phase*
 logs/*
+tools/orx-baker/output*
+
+public/atlas/*
 
 # Editor directories and files
 .vscode/*
