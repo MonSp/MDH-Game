@@ -32,13 +32,13 @@ endif()
 target_link_libraries(${BAKER_TARGET} m pthread)
 
 add_custom_target(run_baker
-    COMMAND ${BAKER_TARGET} --sample --output ${CMAKE_SOURCE_DIR}/output
+    COMMAND ${BAKER_TARGET} --sample --output ${CMAKE_SOURCE_DIR}/../../public/atlas
     DEPENDS ${BAKER_TARGET}
     COMMENT "Running orx-baker with sample data"
 )
 
 add_custom_target(run_baker_16angles
-    COMMAND ${BAKER_TARGET} --sample --angles 16 --output ${CMAKE_SOURCE_DIR}/output
+    COMMAND ${BAKER_TARGET} --sample --angles 16 --output ${CMAKE_SOURCE_DIR}/../../public/atlas
     DEPENDS ${BAKER_TARGET}
     COMMENT "Running orx-baker with 16 angles"
 )

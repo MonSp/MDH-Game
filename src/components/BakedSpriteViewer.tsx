@@ -139,19 +139,23 @@ export const BakedSpriteViewer: React.FC<BakedSpriteViewerProps> = ({
 interface BakedBuildingFieldProps {
   atlasUrl: string;
   metadataUrl: string;
-  buildings: Array<{
+  worldPositions: Array<{
     x: number;
     y: number;
     z?: number;
   }>;
+  playerPos?: { x: number; y: number };
   scale?: number;
+  heightOffset?: number;
 }
 
 export const BakedBuildingField: React.FC<BakedBuildingFieldProps> = ({
   atlasUrl,
   metadataUrl,
-  buildings,
+  worldPositions,
+  playerPos = { x: 0, y: 0 },
   scale = 4,
+  heightOffset = 0,
 }) => {
   const { camera } = useThree();
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -161,7 +165,7 @@ export const BakedBuildingField: React.FC<BakedBuildingFieldProps> = ({
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const instancedCount = buildings.length;
+  const instancedCount = worldPositions.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -198,18 +202,6 @@ export const BakedBuildingField: React.FC<BakedBuildingFieldProps> = ({
     };
   }, [atlasUrl, metadataUrl]);
 
-  useEffect(() => {
-    if (!meshRef.current) return;
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < buildings.length; i++) {
-      dummy.position.set(buildings[i].x, buildings[i].z ?? 0, buildings[i].y);
-      dummy.scale.set(scale, scale, 1);
-      dummy.updateMatrix();
-      meshRef.current.setMatrixAt(i, dummy.matrix);
-    }
-    meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [buildings, scale]);
-
   useFrame(() => {
     const mat = materialRef.current;
     const meta = metadataRef.current;
@@ -218,8 +210,21 @@ export const BakedBuildingField: React.FC<BakedBuildingFieldProps> = ({
     const atlasW = meta.atlasWidth;
     const atlasH = meta.atlasHeight;
 
+    const dummy = new THREE.Object3D();
+    const px = playerPos.x;
+    const py = playerPos.y;
+
+    for (let i = 0; i < worldPositions.length; i++) {
+      const wp = worldPositions[i];
+      dummy.position.set(wp.x - px, (wp.z ?? 0) + heightOffset, wp.y - py);
+      dummy.scale.set(scale, scale, 1);
+      dummy.updateMatrix();
+      meshRef.current.setMatrixAt(i, dummy.matrix);
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true;
+
     const camPos = camera.position.clone();
-    const angle = Math.atan2(camPos.x, camPos.z);
+    const angle = Math.atan2(camPos.x - (worldPositions[0].x - px), camPos.z - (worldPositions[0].y - py));
     const totalAngles = meta.entries.length;
     const normalizedAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     const angleIndex = Math.round((normalizedAngle / (Math.PI * 2)) * totalAngles) % totalAngles;

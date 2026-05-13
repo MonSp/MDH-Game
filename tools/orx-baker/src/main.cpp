@@ -165,9 +165,13 @@ int main(int argc, char** argv) {
 #endif
     }
 
-    float voxelScale = (grid.dimX + grid.dimZ > 100) ? 1.2f : 6.5f;
-    printf("[INFO] Using voxel scale: %.1f (grid %dx%dx%d)\n",
-           voxelScale, grid.dimX, grid.dimY, grid.dimZ);
+    float maxExtentX = (grid.dimX + grid.dimY) * 0.70710678f;
+    float maxExtentY = maxExtentX * 0.5f + (float)grid.dimZ;
+    float maxExtent = std::max(maxExtentX, maxExtentY);
+    float voxelScale = ((float)frameSize * 0.45f) / maxExtent;
+    if (voxelScale > 8.0f) voxelScale = 8.0f;
+    printf("[INFO] Using voxel scale: %.2f (grid %dx%dx%d, frame %d, maxExtent %.1f)\n",
+           voxelScale, grid.dimX, grid.dimY, grid.dimZ, frameSize, maxExtent);
 
     if (strcmp(mode, "sw") == 0) {
         std::string typeDir = std::string(outputDir) + "/buildings";

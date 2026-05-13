@@ -14,7 +14,8 @@ import { getSceneIdByCoordinate, SCENE_REGISTRY } from '../content/scenes/sceneR
 import { PixelCharacterSprite } from './PixelCharacterSprite';
 import { PixelMonsterSprite } from './PixelMonsterSprite';
 import { PixelResourceSprite } from './PixelResourceSprite';
-import { BakedSpriteViewer } from './BakedSpriteViewer';
+import { BakedCapitalField } from './BakedCapitalField';
+import { BakedManorField } from './BakedManorField';
 import TreeMesh from '../buildings/TreeMesh';
 import VoxelRenderer from '../buildings/VoxelRenderer';
 import { CombatParticles, BloodParticles, CameraShake, triggerScreenShake, GatheringEffect, BreakthroughEffect, SkillParticles, DebrisParticles } from './PixelParticleEffects';
@@ -25,11 +26,18 @@ import { TimeControlPanel } from './TimeControlPanel';
 import { BuildModeController } from './BuildModeController';
 import { BuildModeUI } from './BuildModeUI';
 import { useBuildModeStore } from '../buildings/BuildModeStore';
+import { BlockWorld } from '../blockworld/BlockWorld';
+import { FirstPersonController } from '../blockworld/FirstPersonController';
+import { BlockWorldHUD } from '../blockworld/BlockWorldHUD';
 
 // Constants
 const VIEW_RADIUS = 12;
 const TERRAIN_BORDER = 3; // Extra tile rings beyond VIEW_RADIUS to hide exposed side faces
 const TERRAIN_RADIUS = VIEW_RADIUS + TERRAIN_BORDER;
+
+// Block world mode toggle
+let _blockWorldMode = false;
+export function isBlockWorldMode() { return _blockWorldMode; }
 
 // Weather effect — rain or snow based on player biome
 const WeatherEffect = ({ playerPos }: { playerPos: { x: number; y: number } }) => {
@@ -1178,6 +1186,7 @@ const TRIGGER_COOLDOWN_MS = 30000;
 export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
   const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, _worldBuildings, movePlayer, addWorldEvent, gameTime } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
+  const [blockWorldMode, setBlockWorldMode] = useState(false);
 
   // Breakthrough effect
   const prevRealmRef = useRef(player?.realm);
@@ -1353,6 +1362,15 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         useBuildModeStore.getState().toggleBuildMode(player.position.x, player.position.y);
         return;
       }
+
+      if (key === 'm' || key === 'M') {
+        e.preventDefault();
+        _blockWorldMode = !_blockWorldMode;
+        setBlockWorldMode(_blockWorldMode);
+        return;
+      }
+
+      if (_blockWorldMode) return;
 
       const inBuildMode = useBuildModeStore.getState().active;
 
@@ -1542,11 +1560,14 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         />
 
         {/* Orbit camera controller: right-drag rotate, scroll zoom */}
-        <CameraController playerPos={player.position} />
+        {!blockWorldMode && <CameraController playerPos={player.position} />}
+        {blockWorldMode && <FirstPersonController />}
+        {blockWorldMode && <BlockWorld />}
 
-        {/* 昼夜光照系统：太阳/月亮随时间移动 */}
         <SunMoonLight />
 
+        {!blockWorldMode && (
+          <>
         {/* Ground plane — fills sub-pixel gaps between edge tiles at bottom. */}
         <mesh position={[0, -0.5, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[2000, 2000]} />
@@ -1555,13 +1576,10 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         {/* Terrain — single heightfield plane with atlas texture */}
         <Terrain playerPos={player.position} />
         <BuildingWorld playerX={player.position.x} playerY={player.position.y} viewRadius={VIEW_RADIUS} />
-        {/* Phase 0 PoC: Baked sprite test — camera-aware angle selection */}
-        <BakedSpriteViewer
-          atlasUrl="/atlas/buildings.atlas.png"
-          metadataUrl="/atlas/buildings.atlas.json"
-          position={[4, 0, -4]}
-          scale={4}
-        />
+        {/* Baked voxel capital sprites — camera-aware angle selection */}
+        <BakedCapitalField scale={4} />
+        {/* Baked voxel manor sprites — clan estates + test island */}
+        <BakedManorField scale={4} />
         {/* GlobalNoiseOverlay — disabled; was creating moiré standing wave with tile grid */}
         {/* <GlobalNoiseOverlay /> */}
         <WeatherEffect playerPos={player.position} />
@@ -1665,9 +1683,12 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         )}
         <BuildModeController />
         <PlayerBuildVoxels />
+        </>
+        )}
       </Canvas>
 
       <BuildModeUI />
+      {blockWorldMode && <BlockWorldHUD />}
 
       {/* 时间控制面板 — 右上角 */}
       <TimeControlPanel />
