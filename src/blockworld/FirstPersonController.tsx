@@ -2,20 +2,72 @@ import React, { useEffect, useRef } from 'react';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { CHUNK_SIZE, BlockType, worldToChunk, isCollidable } from './BlockTypes';
-import { blockWorldPlayer, selectedBlock } from './PlayerState';
+import { blockWorldPlayer, selectedBlock, CameraMode } from './PlayerState';
 import { ChunkData } from './ChunkData';
 import { raycastBlock } from './BlockInteraction';
 import { blockWorldActions } from './BlockWorld';
 import { interactionState, particleQueue } from './InteractionState';
+import { damp } from './CameraMath';
 
 const MOVE_SPEED = 8;
 const JUMP_SPEED = 10;
 const GRAVITY = 20;
+const PITCH_LIMIT = Math.PI / 2 - 0.05;
 const MOUSE_SENSITIVITY = 0.002;
+
+const _yawAxis = new THREE.Vector3(0, 1, 0);
+const _pitchAxis = new THREE.Vector3(1, 0, 0);
+
+function cameraQuat(): THREE.Quaternion {
+  return new THREE.Quaternion()
+    .setFromAxisAngle(_yawAxis, blockWorldPlayer.yaw)
+    .multiply(
+      new THREE.Quaternion().setFromAxisAngle(_pitchAxis, blockWorldPlayer.pitch)
+    );
+}
+
+function yawQuat(yaw: number): THREE.Quaternion {
+  return new THREE.Quaternion().setFromAxisAngle(_yawAxis, yaw);
+}
+
 const PLAYER_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.3;
 const REACH_DIST = 8;
 const MINING_TIME = 0.4;
+
+const TPS_PITCH_MIN = -Math.PI / 3;
+const TPS_PITCH_MAX = Math.PI / 3;
+const TPS_DISTANCE_MIN = 2;
+const TPS_DISTANCE_MAX = 12;
+const TPS_ZOOM_SENSITIVITY = 0.05;
+
+const BOBBING_ENABLED = true;
+const BOBBING_VERTICAL_FREQ = 4.0;
+const BOBBING_VERTICAL_AMP = 0.025;
+const BOBBING_HORIZONTAL_FREQ = 4.0;
+const BOBBING_HORIZONTAL_AMP = 0.015;
+const BOBBING_ROLL_FREQ = 4.0;
+const BOBBING_ROLL_AMP = 0.005;
+const BOBBING_SPEED_THRESHOLD = 3.5;
+const BREATHING_FREQ = 0.7;
+const BREATHING_AMP = 0.015;
+
+const FOV_BASE = 70;
+const FOV_MAX = 85;
+const FOV_SPEED_THRESHOLD = 3.0;
+const FOV_DAMP_LAMBDA = 6;
+
+const FRICTION_LAMBDA = 14;
+const TPS_DISTANCE_DAMP_LAMBDA = 12;
+const CAVE_BLEND_LAMBDA = 8;
+
+const CAVE_CHECK_HEIGHT_MIN = 2;
+const CAVE_CHECK_HEIGHT_MAX = 4;
+const CAVE_BLOCK_THRESHOLD = 2;
+
+const _tempVec3a = new THREE.Vector3();
+const _tempVec3b = new THREE.Vector3();
+const _bobOffset = new THREE.Vector3();
 
 let _loadedChunks: Map<string, ChunkData> = new Map();
 
@@ -27,12 +79,90 @@ function getChunkWrapped(cx: number, cy: number, cz: number): ChunkData | undefi
   return _loadedChunks.get(`${cx},${cy},${cz}`);
 }
 
+function computeBobbing(speed: number, isMoving: boolean, elapsed: number) {
+  _bobOffset.set(0, 0, 0);
+  let roll = 0;
+
+  if (!BOBBING_ENABLED) return { offset: _bobOffset, roll };
+
+  if (isMoving && speed > 0.1) {
+    const speedFactor = Math.min(speed / BOBBING_SPEED_THRESHOLD, 1.0);
+    _bobOffset.y = Math.sin(elapsed * BOBBING_VERTICAL_FREQ * Math.PI * 2)
+      * BOBBING_VERTICAL_AMP * speedFactor;
+    _bobOffset.x = Math.sin(elapsed * BOBBING_HORIZONTAL_FREQ * Math.PI * 2)
+      * BOBBING_HORIZONTAL_AMP * speedFactor;
+    roll = Math.sin(elapsed * BOBBING_ROLL_FREQ * Math.PI * 2)
+      * BOBBING_ROLL_AMP * speedFactor;
+  } else {
+    _bobOffset.y = Math.sin(elapsed * BREATHING_FREQ * Math.PI * 2) * BREATHING_AMP;
+  }
+
+  return { offset: _bobOffset, roll };
+}
+
+function checkCave(playerPos: THREE.Vector3): boolean {
+  const px = Math.floor(playerPos.x);
+  const py = Math.floor(playerPos.y);
+  const pz = Math.floor(playerPos.z);
+
+  let blocked = 0;
+  for (let dy = CAVE_CHECK_HEIGHT_MIN; dy <= CAVE_CHECK_HEIGHT_MAX; dy++) {
+    const wy = py + dy;
+    const { cx, cy, cz } = worldToChunk(px, wy, pz);
+    const chunk = getChunkWrapped(cx, cy, cz);
+    if (!chunk) continue;
+
+    const lbx = ((px % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lby = ((wy % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lbz = ((pz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+    if (isCollidable(chunk.getBlock(lbx, lby, lbz) as BlockType)) {
+      blocked++;
+    }
+  }
+
+  return blocked >= CAVE_BLOCK_THRESHOLD;
+}
+
+function checkBlockAt(wx: number, wy: number, wz: number): boolean {
+  const { cx, cy, cz } = worldToChunk(
+    Math.floor(wx), Math.floor(wy), Math.floor(wz)
+  );
+  const chunk = getChunkWrapped(cx, cy, cz);
+  if (!chunk) return false;
+
+  const lbx = ((Math.floor(wx) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const lby = ((Math.floor(wy) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+  const lbz = ((Math.floor(wz) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+
+  return isCollidable(chunk.getBlock(lbx, lby, lbz) as BlockType);
+}
+
+function resolveCameraBlocked(camPos: THREE.Vector3, playerHead: THREE.Vector3): THREE.Vector3 {
+  if (!checkBlockAt(camPos.x, camPos.y, camPos.z)) return camPos;
+
+  const dir = playerHead.clone().sub(camPos).normalize();
+  const result = camPos.clone();
+  for (let i = 0; i < 20; i++) {
+    result.addScaledVector(dir, 0.25);
+    if (!checkBlockAt(result.x, result.y, result.z)) return result;
+  }
+  return playerHead.clone();
+}
+
 export const FirstPersonController: React.FC = () => {
-  const { camera, gl } = useThree();
+  const { camera: cam, gl } = useThree();
+  const camera = cam as THREE.PerspectiveCamera;
   const keys = useRef(new Set<string>());
   const isLocked = useRef(false);
   const mouseDown = useRef<{ button: number; time: number } | null>(null);
   const lastHoverKey = useRef('');
+
+  const smoothState = useRef({
+    tpsDistance: blockWorldPlayer.tpsDistance,
+    fov: FOV_BASE,
+    caveBlend: 0,
+  });
 
   useEffect(() => {
     const canvas = gl.domElement;
@@ -42,14 +172,35 @@ export const FirstPersonController: React.FC = () => {
       if (e.code === 'Escape') {
         document.exitPointerLock();
       }
+      if (e.code === 'KeyV') {
+        const next: CameraMode = blockWorldPlayer.cameraMode === 'fps' ? 'tps' : 'fps';
+        blockWorldPlayer.cameraMode = next;
+        if (next === 'tps') {
+          blockWorldPlayer.pitch = Math.max(TPS_PITCH_MIN, Math.min(TPS_PITCH_MAX, blockWorldPlayer.pitch));
+        }
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => { keys.current.delete(e.code); };
 
     const onMouseMove = (e: MouseEvent) => {
       if (!isLocked.current) return;
-      blockWorldPlayer.euler.y -= e.movementX * MOUSE_SENSITIVITY;
-      blockWorldPlayer.euler.x -= e.movementY * MOUSE_SENSITIVITY;
-      blockWorldPlayer.euler.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, blockWorldPlayer.euler.x));
+      if (blockWorldPlayer.cameraMode === 'fps') {
+        blockWorldPlayer.yaw -= e.movementX * MOUSE_SENSITIVITY;
+        blockWorldPlayer.pitch -= e.movementY * MOUSE_SENSITIVITY;
+        blockWorldPlayer.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, blockWorldPlayer.pitch));
+      } else {
+        blockWorldPlayer.yaw -= e.movementX * MOUSE_SENSITIVITY;
+        blockWorldPlayer.pitch -= e.movementY * MOUSE_SENSITIVITY;
+        blockWorldPlayer.pitch = Math.max(TPS_PITCH_MIN, Math.min(TPS_PITCH_MAX, blockWorldPlayer.pitch));
+      }
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (!isLocked.current) return;
+      if (blockWorldPlayer.cameraMode === 'tps') {
+        blockWorldPlayer.tpsDistance += e.deltaY * TPS_ZOOM_SENSITIVITY;
+        blockWorldPlayer.tpsDistance = Math.max(TPS_DISTANCE_MIN, Math.min(TPS_DISTANCE_MAX, blockWorldPlayer.tpsDistance));
+      }
     };
 
     const onPointerLockChange = () => {
@@ -126,6 +277,7 @@ export const FirstPersonController: React.FC = () => {
     document.addEventListener('mousemove', onMouseMove);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
       canvas.removeEventListener('click', onClick);
@@ -136,10 +288,11 @@ export const FirstPersonController: React.FC = () => {
       document.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      canvas.removeEventListener('wheel', onWheel);
     };
   }, [gl]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!isLocked.current) {
       if (interactionState.hoverTarget) {
         interactionState.hoverTarget = null;
@@ -148,6 +301,8 @@ export const FirstPersonController: React.FC = () => {
     }
 
     const dt = Math.min(delta, 0.1);
+    const elapsed = state.clock.elapsedTime;
+    const mode = blockWorldPlayer.cameraMode;
 
     const result = doRaycast();
     if (result && isCollidable(result.hitType as BlockType)) {
@@ -173,52 +328,50 @@ export const FirstPersonController: React.FC = () => {
     }
 
     if (mouseDown.current) {
-      const state = interactionState;
-      if (state.miningActive) {
-        state.miningProgress += dt / MINING_TIME;
-        if (state.miningProgress >= 1) {
+      const st = interactionState;
+      if (st.miningActive) {
+        st.miningProgress += dt / MINING_TIME;
+        if (st.miningProgress >= 1) {
           if (blockWorldActions.setBlock) {
             blockWorldActions.setBlock(
-              state.miningWorldX,
-              state.miningWorldY,
-              state.miningWorldZ,
+              st.miningWorldX,
+              st.miningWorldY,
+              st.miningWorldZ,
               BlockType.AIR,
             );
             particleQueue.push({
-              worldX: state.miningWorldX,
-              worldY: state.miningWorldY,
-              worldZ: state.miningWorldZ,
-              blockType: state.miningBlockType,
+              worldX: st.miningWorldX,
+              worldY: st.miningWorldY,
+              worldZ: st.miningWorldZ,
+              blockType: st.miningBlockType,
             });
           }
           mouseDown.current = null;
-          state.miningActive = false;
-          state.miningProgress = 0;
+          st.miningActive = false;
+          st.miningProgress = 0;
           lastHoverKey.current = '';
         }
       }
     }
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-      new THREE.Quaternion().setFromEuler(blockWorldPlayer.euler)
-    );
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(
-      new THREE.Quaternion().setFromEuler(blockWorldPlayer.euler)
-    );
+    const quat = cameraQuat();
+    const moveQuat = mode === 'fps' ? quat : yawQuat(blockWorldPlayer.yaw);
+    const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(moveQuat);
+    const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(moveQuat);
 
     const moveDir = new THREE.Vector3();
-    if (keys.current.has('KeyW')) moveDir.add(forward);
-    if (keys.current.has('KeyS')) moveDir.sub(forward);
-    if (keys.current.has('KeyA')) moveDir.sub(right);
-    if (keys.current.has('KeyD')) moveDir.add(right);
+    if (keys.current.has('KeyW')) moveDir.add(camForward);
+    if (keys.current.has('KeyS')) moveDir.sub(camForward);
+    if (keys.current.has('KeyA')) moveDir.sub(camRight);
+    if (keys.current.has('KeyD')) moveDir.add(camRight);
 
     if (moveDir.length() > 0) {
       moveDir.normalize();
       blockWorldPlayer.velocity.x = moveDir.x * MOVE_SPEED;
       blockWorldPlayer.velocity.z = moveDir.z * MOVE_SPEED;
     } else {
-      blockWorldPlayer.velocity.x *= 0.8;
-      blockWorldPlayer.velocity.z *= 0.8;
+      blockWorldPlayer.velocity.x = damp(blockWorldPlayer.velocity.x, 0, FRICTION_LAMBDA, dt);
+      blockWorldPlayer.velocity.z = damp(blockWorldPlayer.velocity.z, 0, FRICTION_LAMBDA, dt);
     }
 
     if (keys.current.has('Space') && blockWorldPlayer.onGround) {
@@ -252,28 +405,105 @@ export const FirstPersonController: React.FC = () => {
       vel.z = 0;
     }
 
-    camera.position.copy(pos);
-    camera.position.y += PLAYER_HEIGHT;
-    camera.quaternion.setFromEuler(blockWorldPlayer.euler);
+    const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+    const isMoving = speed > 0.2;
+
+    const isCave = checkCave(pos);
+    smoothState.current.caveBlend = damp(smoothState.current.caveBlend, isCave ? 1 : 0, CAVE_BLEND_LAMBDA, dt);
+
+    const { offset: bobOffset, roll: bobRoll } = computeBobbing(speed, isMoving, elapsed);
+
+    if (mode === 'fps') {
+      camera.position.copy(pos);
+      camera.position.y += PLAYER_HEIGHT;
+      camera.quaternion.copy(quat);
+
+      if (bobOffset.x !== 0 || bobOffset.y !== 0 || bobOffset.z !== 0) {
+        camera.position.add(bobOffset);
+      }
+      if (bobRoll !== 0) {
+        camera.rotateZ(bobRoll);
+      }
+    } else {
+      smoothState.current.tpsDistance = damp(
+        smoothState.current.tpsDistance,
+        blockWorldPlayer.tpsDistance,
+        TPS_DISTANCE_DAMP_LAMBDA,
+        dt,
+      );
+
+      const dist = smoothState.current.tpsDistance;
+      const tpsPitch = blockWorldPlayer.pitch;
+      const tpsYaw = blockWorldPlayer.yaw;
+
+      const hDist = dist * Math.cos(tpsPitch);
+      const ox = Math.sin(tpsYaw) * hDist;
+      const oy = Math.sin(tpsPitch) * dist;
+      const oz = Math.cos(tpsYaw) * hDist;
+
+      const rawCamPos = _tempVec3a.set(pos.x + ox, pos.y + oy, pos.z + oz);
+
+      const playerEye = _tempVec3b.set(pos.x, pos.y + PLAYER_HEIGHT, pos.z);
+      const resolvedPos = resolveCameraBlocked(rawCamPos, playerEye);
+
+      camera.position.copy(resolvedPos);
+      camera.position.add(bobOffset);
+
+      const caveTightness = smoothState.current.caveBlend;
+      const lookY = pos.y + PLAYER_HEIGHT * 0.7 - caveTightness * 0.3;
+
+      camera.lookAt(pos.x, lookY, pos.z);
+
+      if (bobRoll !== 0) {
+        camera.rotateZ(bobRoll);
+      }
+    }
+
+    let targetFov = FOV_BASE;
+    const speedRatio = Math.min(speed / FOV_SPEED_THRESHOLD, 1.0);
+    targetFov = FOV_BASE + (FOV_MAX - FOV_BASE) * speedRatio;
+
+    smoothState.current.fov = damp(smoothState.current.fov, targetFov, FOV_DAMP_LAMBDA, dt);
+    camera.fov = smoothState.current.fov;
+    camera.updateProjectionMatrix();
   });
 
   return null;
 };
 
 function doRaycast(): ReturnType<typeof raycastBlock> {
-  const originX = blockWorldPlayer.position.x;
-  const originY = blockWorldPlayer.position.y + PLAYER_HEIGHT;
-  const originZ = blockWorldPlayer.position.z;
+  const mode = blockWorldPlayer.cameraMode;
+  let originX: number, originY: number, originZ: number;
+  let dirX: number, dirY: number, dirZ: number;
+  let reachDist = REACH_DIST;
 
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-    new THREE.Quaternion().setFromEuler(blockWorldPlayer.euler)
-  );
-  forward.normalize();
+  if (mode === 'fps') {
+    originX = blockWorldPlayer.position.x;
+    originY = blockWorldPlayer.position.y + PLAYER_HEIGHT;
+    originZ = blockWorldPlayer.position.z;
+
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuat());
+    forward.normalize();
+    dirX = forward.x;
+    dirY = forward.y;
+    dirZ = forward.z;
+  } else {
+    originX = blockWorldPlayer.position.x;
+    originY = blockWorldPlayer.position.y + PLAYER_HEIGHT;
+    originZ = blockWorldPlayer.position.z;
+
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(yawQuat(blockWorldPlayer.yaw));
+    fwd.normalize();
+    dirX = fwd.x;
+    dirY = 0;
+    dirZ = fwd.z;
+    reachDist = REACH_DIST + blockWorldPlayer.tpsDistance * 0.5;
+  }
 
   return raycastBlock(
     originX, originY, originZ,
-    forward.x, forward.y, forward.z,
-    REACH_DIST,
+    dirX, dirY, dirZ,
+    reachDist,
     getChunkWrapped,
   );
 }

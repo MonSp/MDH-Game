@@ -7,10 +7,18 @@ const HOTBAR_BLOCKS: BlockType[] = [
   BlockType.DIRT,
   BlockType.STONE,
   BlockType.SAND,
-  BlockType.WOOD,
-  BlockType.LEAVES,
-  BlockType.SNOW,
-  BlockType.WATER,
+  BlockType.OAK_LOG,
+  BlockType.OAK_LEAVES,
+  BlockType.STONE_BRICK,
+  BlockType.PLANK,
+  BlockType.COBBLESTONE,
+  BlockType.BRICK,
+  BlockType.ROOF_TILE,
+  BlockType.PILLAR,
+  BlockType.STONE_PATH,
+  BlockType.WINDOW,
+  BlockType.LANTERN,
+  BlockType.SMOOTH_SANDSTONE,
 ];
 
 const BLOCK_NAMES: Record<number, string> = {
@@ -23,6 +31,28 @@ const BLOCK_NAMES: Record<number, string> = {
   [BlockType.WOOD]: 'Wood',
   [BlockType.LEAVES]: 'Leaves',
   [BlockType.SNOW]: 'Snow',
+  [BlockType.STONE_BRICK]: 'Stone Brick',
+  [BlockType.PLANK]: 'Plank',
+  [BlockType.COBBLESTONE]: 'Cobblestone',
+  [BlockType.SMOOTH_STONE]: 'Smooth Stone',
+  [BlockType.BRICK]: 'Brick',
+  [BlockType.OAK_LOG]: 'Oak Log',
+  [BlockType.SPRUCE_LOG]: 'Spruce Log',
+  [BlockType.BIRCH_LOG]: 'Birch Log',
+  [BlockType.OAK_LEAVES]: 'Oak Leaves',
+  [BlockType.SPRUCE_LEAVES]: 'Spruce Leaves',
+  [BlockType.BIRCH_LEAVES]: 'Birch Leaves',
+  [BlockType.CHERRY_LEAVES]: 'Cherry Leaves',
+  [BlockType.ROOF_TILE]: 'Roof Tile',
+  [BlockType.PILLAR]: 'Pillar',
+  [BlockType.FENCE]: 'Fence',
+  [BlockType.STONE_PATH]: 'Stone Path',
+  [BlockType.WINDOW]: 'Window',
+  [BlockType.DOOR]: 'Door',
+  [BlockType.LANTERN]: 'Lantern',
+  [BlockType.SMOOTH_SANDSTONE]: 'Sandstone',
+  [BlockType.NETHERRACK]: 'Netherrack',
+  [BlockType.OBSIDIAN]: 'Obsidian',
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -124,7 +154,7 @@ export const BlockWorldHUD: React.FC = () => {
   return (
     <>
       <div style={styles.hint}>
-        Left-click: break &nbsp;|&nbsp; Right-click: place &nbsp;|&nbsp; 1-8 / scroll: select block
+        Left-click: break &nbsp;|&nbsp; Right-click: place &nbsp;|&nbsp; 1-9 / scroll: select block
       </div>
       <div style={styles.container}>
         {HOTBAR_BLOCKS.map((bt, i) => {

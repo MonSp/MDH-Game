@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 import { BlockType } from './BlockTypes';
 
+export type CameraMode = 'fps' | 'tps';
+
 export const blockWorldPlayer = {
   position: new THREE.Vector3(0, 50, 0),
-  euler: new THREE.Euler(0, 0, 0, 'YXZ'),
+  yaw: 0,
+  pitch: 0,
   velocity: new THREE.Vector3(),
   onGround: false,
   isLocked: false,
+  cameraMode: 'fps' as CameraMode,
+  tpsDistance: 5,
 };
 
 export const selectedBlock = { type: BlockType.STONE };

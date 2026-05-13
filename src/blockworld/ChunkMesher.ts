@@ -30,7 +30,11 @@ const FACE_NORMALS: [number, number, number][] = [
 ];
 
 function isOccludingForAO(block: BlockType): boolean {
-  return block !== BlockType.AIR && block !== BlockType.WATER && block !== BlockType.LEAVES;
+  return block !== BlockType.AIR && block !== BlockType.WATER
+    && block !== BlockType.LEAVES && block !== BlockType.OAK_LEAVES
+    && block !== BlockType.SPRUCE_LEAVES && block !== BlockType.BIRCH_LEAVES
+    && block !== BlockType.CHERRY_LEAVES
+    && block !== BlockType.WINDOW && block !== BlockType.FENCE && block !== BlockType.LANTERN;
 }
 
 function aoToShade(ao: number): number {
@@ -244,12 +248,14 @@ function greedyMerge(
       wh[uAxis] = width;
       wh[vAxis] = height;
 
-      const qx = cx[0] * scale;
-      const qy = cx[1] * scale;
-      const qz = cx[2] * scale;
+      let qx = cx[0] * scale;
+      let qy = cx[1] * scale;
+      let qz = cx[2] * scale;
+      if (face === 0) { qx += scale; }
+      else if (face === 2) { qy += scale; }
+      else if (face === 4) { qz += scale; }
       const qw = wh[uAxis] * scale;
       const qh = wh[vAxis] * scale;
-
       const quad = faceQuad(face, qx, qy, qz, qw, qh);
 
       const [uMin, uMax, vMin, vMax] = getUVOffset(cell.type);

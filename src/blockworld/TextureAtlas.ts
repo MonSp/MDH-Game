@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BlockType, BLOCK_COLORS } from './BlockTypes';
 
-const ATLAS_SIZE = 64;
+const ATLAS_SIZE = 128;
 const TILE_SIZE = 16;
 const COLS = ATLAS_SIZE / TILE_SIZE;
 
@@ -76,6 +76,28 @@ export function getTextureAtlas(): THREE.CanvasTexture {
     [BlockType.LEAVES]: 'speckled',
     [BlockType.WATER]: 'striped',
     [BlockType.SNOW]: 'checker',
+    [BlockType.STONE_BRICK]: 'checker',
+    [BlockType.PLANK]: 'striped',
+    [BlockType.COBBLESTONE]: 'noisy',
+    [BlockType.SMOOTH_STONE]: 'solid',
+    [BlockType.BRICK]: 'checker',
+    [BlockType.OAK_LOG]: 'striped',
+    [BlockType.SPRUCE_LOG]: 'striped',
+    [BlockType.BIRCH_LOG]: 'striped',
+    [BlockType.OAK_LEAVES]: 'speckled',
+    [BlockType.SPRUCE_LEAVES]: 'speckled',
+    [BlockType.BIRCH_LEAVES]: 'speckled',
+    [BlockType.CHERRY_LEAVES]: 'speckled',
+    [BlockType.ROOF_TILE]: 'striped',
+    [BlockType.PILLAR]: 'striped',
+    [BlockType.FENCE]: 'striped',
+    [BlockType.STONE_PATH]: 'noisy',
+    [BlockType.WINDOW]: 'solid',
+    [BlockType.DOOR]: 'striped',
+    [BlockType.LANTERN]: 'speckled',
+    [BlockType.SMOOTH_SANDSTONE]: 'solid',
+    [BlockType.NETHERRACK]: 'noisy',
+    [BlockType.OBSIDIAN]: 'noisy',
   };
 
   const blockTypes = [
@@ -88,6 +110,28 @@ export function getTextureAtlas(): THREE.CanvasTexture {
     BlockType.LEAVES,
     BlockType.WATER,
     BlockType.SNOW,
+    BlockType.STONE_BRICK,
+    BlockType.PLANK,
+    BlockType.COBBLESTONE,
+    BlockType.SMOOTH_STONE,
+    BlockType.BRICK,
+    BlockType.OAK_LOG,
+    BlockType.SPRUCE_LOG,
+    BlockType.BIRCH_LOG,
+    BlockType.OAK_LEAVES,
+    BlockType.SPRUCE_LEAVES,
+    BlockType.BIRCH_LEAVES,
+    BlockType.CHERRY_LEAVES,
+    BlockType.ROOF_TILE,
+    BlockType.PILLAR,
+    BlockType.FENCE,
+    BlockType.STONE_PATH,
+    BlockType.WINDOW,
+    BlockType.DOOR,
+    BlockType.LANTERN,
+    BlockType.SMOOTH_SANDSTONE,
+    BlockType.NETHERRACK,
+    BlockType.OBSIDIAN,
   ];
 
   for (let i = 0; i < blockTypes.length; i++) {
