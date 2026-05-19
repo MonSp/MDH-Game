@@ -54,11 +54,11 @@ function faceQuad(
   bx: number, by: number, bz: number,
   w: number, h: number,
 ): [number, number, number][] {
-  if (face === 0) return [[bx, by, bz + w], [bx, by, bz], [bx, by + h, bz], [bx, by + h, bz + w]];
-  if (face === 1) return [[bx, by, bz], [bx, by, bz + w], [bx, by + h, bz + w], [bx, by + h, bz]];
-  if (face === 2) return [[bx, by, bz + w], [bx + w, by, bz + w], [bx + w, by, bz], [bx, by, bz]];
-  if (face === 3) return [[bx, by, bz], [bx + w, by, bz], [bx + w, by, bz + w], [bx, by, bz + w]];
-  if (face === 4) return [[bx + w, by + h, bz], [bx, by + h, bz], [bx, by, bz], [bx + w, by, bz]];
+  if (face === 0) return [[bx, by, bz], [bx, by + w, bz], [bx, by + w, bz + h], [bx, by, bz + h]];
+  if (face === 1) return [[bx, by, bz], [bx, by, bz + h], [bx, by + w, bz + h], [bx, by + w, bz]];
+  if (face === 2) return [[bx, by, bz], [bx, by, bz + w], [bx + h, by, bz + w], [bx + h, by, bz]];
+  if (face === 3) return [[bx, by, bz + w], [bx, by, bz], [bx + h, by, bz], [bx + h, by, bz + w]];
+  if (face === 4) return [[bx, by, bz], [bx + w, by, bz], [bx + w, by + h, bz], [bx, by + h, bz]];
   return [[bx, by + h, bz], [bx + w, by + h, bz], [bx + w, by, bz], [bx, by, bz]];
 }
 
@@ -81,9 +81,9 @@ function readBlock(blocks: Uint8Array, neighbors: Map<string, Uint8Array>, bx: n
     return BlockType.AIR;
   }
 
-  const chunkX = Math.floor(bx / CHUNK_SIZE) + (bx < 0 ? -1 : 0);
-  const chunkY = Math.floor(by / CHUNK_SIZE) + (by < 0 ? -1 : 0);
-  const chunkZ = Math.floor(bz / CHUNK_SIZE) + (bz < 0 ? -1 : 0);
+  const chunkX = Math.floor(bx / CHUNK_SIZE);
+  const chunkY = Math.floor(by / CHUNK_SIZE);
+  const chunkZ = Math.floor(bz / CHUNK_SIZE);
   const nKey = `${chunkX},${chunkY},${chunkZ}`;
   const nBlocks = neighbors.get(nKey);
   if (!nBlocks) return BlockType.AIR;
@@ -248,9 +248,7 @@ function greedyMerge(
       const quad = faceQuad(face, qx, qy, qz, qw, qh);
 
       const [uMin, uMax, vMin, vMax] = getUVOffset(cell.type);
-      const uvQuad: [number, number][] = face === 0 || face === 4
-        ? [[uMax, vMin], [uMin, vMin], [uMin, vMax], [uMax, vMax]]
-        : [[uMin, vMin], [uMax, vMin], [uMax, vMax], [uMin, vMax]];
+      const uvQuad: [number, number][] = [[uMin, vMin], [uMax, vMin], [uMax, vMax], [uMin, vMax]];
 
       const aoValues: [number, number, number, number] = [
         mask[v][u]!.ao,

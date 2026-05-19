@@ -72,6 +72,19 @@ export class ChunkWorkerManager {
       this.flush();
     };
 
+    worker.onerror = (err) => {
+      console.error('[Worker] error:', err);
+      this.busy[index] = false;
+      for (const job of this.queue) {
+        if (job.id === this.nextId - 1) {
+          this.queue = this.queue.filter(j => j.id !== job.id);
+          job.resolve(null);
+          break;
+        }
+      }
+      this.flush();
+    };
+
     this.workers[index] = worker;
     this.busy[index] = false;
   }

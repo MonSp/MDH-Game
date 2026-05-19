@@ -725,7 +725,7 @@ export function generateStructures(
       const zcz = zoneCZ + dz;
       const baseX = zcx * STRUCTURE_ZONE_SIZE;
       const baseZ = zcz * STRUCTURE_ZONE_SIZE;
-      const baseY = Math.floor(terrainHeightAt(baseX, baseZ));
+      const baseY = Math.floor(terrainHeightAt(baseX + STRUCTURE_ZONE_SIZE / 2, baseZ + STRUCTURE_ZONE_SIZE / 2));
 
       const kind = getZoneKind(zcx, zcz);
 

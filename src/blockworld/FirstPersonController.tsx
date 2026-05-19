@@ -14,16 +14,31 @@ const JUMP_SPEED = 10;
 const GRAVITY = 20;
 const PITCH_LIMIT = Math.PI / 2 - 0.05;
 const MOUSE_SENSITIVITY = 0.002;
+const MAX_MOUSE_DELTA = 50;
 
 const _yawAxis = new THREE.Vector3(0, 1, 0);
-const _pitchAxis = new THREE.Vector3(1, 0, 0);
+const _forwardVec = new THREE.Vector3();
+let _accumMX = 0;
+let _accumMY = 0;
 
-function cameraQuat(): THREE.Quaternion {
-  return new THREE.Quaternion()
-    .setFromAxisAngle(_yawAxis, blockWorldPlayer.yaw)
-    .multiply(
-      new THREE.Quaternion().setFromAxisAngle(_pitchAxis, blockWorldPlayer.pitch)
-    );
+function computeForward(yaw: number, pitch: number): THREE.Vector3 {
+  if (!Number.isFinite(yaw) || !Number.isFinite(pitch)) {
+    return _forwardVec.set(0, 0, -1);
+  }
+  const clamped = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch));
+  const c = Math.cos(clamped);
+  return _forwardVec.set(
+    -Math.sin(yaw) * c,
+    Math.sin(clamped),
+    -Math.cos(yaw) * c,
+  );
+}
+
+function normalizeAngle(a: number): number {
+  if (!Number.isFinite(a)) return 0;
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
 }
 
 function yawQuat(yaw: number): THREE.Quaternion {
@@ -184,15 +199,10 @@ export const FirstPersonController: React.FC = () => {
 
     const onMouseMove = (e: MouseEvent) => {
       if (!isLocked.current) return;
-      if (blockWorldPlayer.cameraMode === 'fps') {
-        blockWorldPlayer.yaw -= e.movementX * MOUSE_SENSITIVITY;
-        blockWorldPlayer.pitch -= e.movementY * MOUSE_SENSITIVITY;
-        blockWorldPlayer.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, blockWorldPlayer.pitch));
-      } else {
-        blockWorldPlayer.yaw -= e.movementX * MOUSE_SENSITIVITY;
-        blockWorldPlayer.pitch -= e.movementY * MOUSE_SENSITIVITY;
-        blockWorldPlayer.pitch = Math.max(TPS_PITCH_MIN, Math.min(TPS_PITCH_MAX, blockWorldPlayer.pitch));
-      }
+      const mx = Number.isFinite(e.movementX) ? e.movementX : 0;
+      const my = Number.isFinite(e.movementY) ? e.movementY : 0;
+      _accumMX += Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, mx));
+      _accumMY += Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, my));
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -304,6 +314,28 @@ export const FirstPersonController: React.FC = () => {
     const elapsed = state.clock.elapsedTime;
     const mode = blockWorldPlayer.cameraMode;
 
+    const pitchLimit = mode === 'fps' ? PITCH_LIMIT : TPS_PITCH_MAX;
+    if (!Number.isFinite(blockWorldPlayer.pitch)
+      || blockWorldPlayer.pitch > pitchLimit
+      || blockWorldPlayer.pitch < -pitchLimit) {
+      console.warn('[FPC] pitch anomaly corrected', {
+        pitch: blockWorldPlayer.pitch, yaw: blockWorldPlayer.yaw, mode,
+      });
+      blockWorldPlayer.pitch = Math.max(-pitchLimit, Math.min(pitchLimit, blockWorldPlayer.pitch || 0));
+    }
+    if (!Number.isFinite(blockWorldPlayer.yaw)) {
+      console.warn('[FPC] yaw NaN corrected');
+      blockWorldPlayer.yaw = 0;
+    }
+
+    const mx = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, _accumMX));
+    const my = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, _accumMY));
+    _accumMX = 0;
+    _accumMY = 0;
+    blockWorldPlayer.yaw = normalizeAngle(blockWorldPlayer.yaw - mx * MOUSE_SENSITIVITY);
+    blockWorldPlayer.pitch -= my * MOUSE_SENSITIVITY;
+    blockWorldPlayer.pitch = Math.max(-pitchLimit, Math.min(pitchLimit, blockWorldPlayer.pitch));
+
     const result = doRaycast();
     if (result && isCollidable(result.hitType as BlockType)) {
       const wx = result.hitChunkX * CHUNK_SIZE + result.hitBlockX;
@@ -354,10 +386,17 @@ export const FirstPersonController: React.FC = () => {
       }
     }
 
-    const quat = cameraQuat();
-    const moveQuat = mode === 'fps' ? quat : yawQuat(blockWorldPlayer.yaw);
-    const camForward = new THREE.Vector3(0, 0, -1).applyQuaternion(moveQuat);
-    const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(moveQuat);
+    const forward = computeForward(blockWorldPlayer.yaw, blockWorldPlayer.pitch);
+    let camForward: THREE.Vector3;
+    let camRight: THREE.Vector3;
+    if (mode === 'fps') {
+      camForward = forward.clone();
+      camRight = new THREE.Vector3().crossVectors(forward, _yawAxis).normalize();
+    } else {
+      const yawFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(yawQuat(blockWorldPlayer.yaw));
+      camForward = yawFwd;
+      camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(yawQuat(blockWorldPlayer.yaw));
+    }
 
     const moveDir = new THREE.Vector3();
     if (keys.current.has('KeyW')) moveDir.add(camForward);
@@ -416,12 +455,18 @@ export const FirstPersonController: React.FC = () => {
     if (mode === 'fps') {
       camera.position.copy(pos);
       camera.position.y += PLAYER_HEIGHT;
-      camera.quaternion.copy(quat);
+      camera.lookAt(
+        camera.position.x + forward.x,
+        camera.position.y + forward.y,
+        camera.position.z + forward.z,
+      );
 
       if (bobOffset.x !== 0 || bobOffset.y !== 0 || bobOffset.z !== 0) {
-        camera.position.add(bobOffset);
+        if (Number.isFinite(bobOffset.x) && Number.isFinite(bobOffset.y) && Number.isFinite(bobOffset.z)) {
+          camera.position.add(bobOffset);
+        }
       }
-      if (bobRoll !== 0) {
+      if (bobRoll !== 0 && Number.isFinite(bobRoll)) {
         camera.rotateZ(bobRoll);
       }
     } else {
@@ -435,13 +480,14 @@ export const FirstPersonController: React.FC = () => {
       const dist = smoothState.current.tpsDistance;
       const tpsPitch = blockWorldPlayer.pitch;
       const tpsYaw = blockWorldPlayer.yaw;
+      const orbitY = pos.y + PLAYER_HEIGHT;
 
       const hDist = dist * Math.cos(tpsPitch);
       const ox = Math.sin(tpsYaw) * hDist;
       const oy = Math.sin(tpsPitch) * dist;
       const oz = Math.cos(tpsYaw) * hDist;
 
-      const rawCamPos = _tempVec3a.set(pos.x + ox, pos.y + oy, pos.z + oz);
+      const rawCamPos = _tempVec3a.set(pos.x + ox, orbitY + oy, pos.z + oz);
 
       const playerEye = _tempVec3b.set(pos.x, pos.y + PLAYER_HEIGHT, pos.z);
       const resolvedPos = resolveCameraBlocked(rawCamPos, playerEye);
@@ -454,7 +500,7 @@ export const FirstPersonController: React.FC = () => {
 
       camera.lookAt(pos.x, lookY, pos.z);
 
-      if (bobRoll !== 0) {
+      if (bobRoll !== 0 && Number.isFinite(bobRoll)) {
         camera.rotateZ(bobRoll);
       }
     }
@@ -482,11 +528,10 @@ function doRaycast(): ReturnType<typeof raycastBlock> {
     originY = blockWorldPlayer.position.y + PLAYER_HEIGHT;
     originZ = blockWorldPlayer.position.z;
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuat());
-    forward.normalize();
-    dirX = forward.x;
-    dirY = forward.y;
-    dirZ = forward.z;
+    const fwd = computeForward(blockWorldPlayer.yaw, blockWorldPlayer.pitch);
+    dirX = fwd.x;
+    dirY = fwd.y;
+    dirZ = fwd.z;
   } else {
     originX = blockWorldPlayer.position.x;
     originY = blockWorldPlayer.position.y + PLAYER_HEIGHT;

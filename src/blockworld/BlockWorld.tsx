@@ -54,6 +54,8 @@ export const BlockWorld: React.FC = () => {
   const chunkDataMap = useRef(new Map<string, ChunkData>());
   const workerRef = useRef<ChunkWorkerManager | null>(null);
   const loadingSet = useRef(new Set<string>());
+  const chunkGenRef = useRef(new Map<string, number>());
+  const remeshChunkRef = useRef<(cx: number, cy: number, cz: number) => void>(() => {});
 
   useEffect(() => {
     setChunkDataMap(chunkDataMap.current);
@@ -86,7 +88,12 @@ export const BlockWorld: React.FC = () => {
   const remeshChunk = useCallback((cx: number, cy: number, cz: number) => {
     const key = chunkKey(cx, cy, cz);
     const entry = chunksRef.current.get(key);
-    if (!entry || entry.loading) return;
+    if (!entry) {
+      chunkGenRef.current.set(key, (chunkGenRef.current.get(key) || 0) + 1);
+      return;
+    }
+    const gen = (chunkGenRef.current.get(key) || 0) + 1;
+    chunkGenRef.current.set(key, gen);
 
     loadingSet.current.add(key);
 
@@ -97,8 +104,10 @@ export const BlockWorld: React.FC = () => {
       return next;
     });
 
-    workerRef.current!.enqueue(entry.data, buildNeighbors(cx, cy, cz), entry.lod).then(meshData => {
+    const data = chunkDataMap.current.get(key) || entry.data;
+    workerRef.current!.enqueue(data, buildNeighbors(cx, cy, cz), entry.lod).then(meshData => {
       loadingSet.current.delete(key);
+      if (chunkGenRef.current.get(key) !== gen) return;
       setChunks(prev => {
         const next = new Map(prev);
         const e = next.get(key);
@@ -109,6 +118,8 @@ export const BlockWorld: React.FC = () => {
       });
     });
   }, [buildNeighbors]);
+
+  remeshChunkRef.current = remeshChunk;
 
   const setBlockAt = useCallback((wx: number, wy: number, wz: number, type: BlockType) => {
     const { cx, cy, cz } = worldToChunk(wx, wy, wz);
@@ -136,7 +147,7 @@ export const BlockWorld: React.FC = () => {
     if (bz === CHUNK_SIZE - 1) chunksToRemesh.add(chunkKey(cx, cy, cz + 1));
 
     for (const k of chunksToRemesh) {
-      if (chunksRef.current.has(k)) {
+      if (chunkDataMap.current.has(k)) {
         const [cxStr, cyStr, czStr] = k.split(',');
         remeshChunk(Number(cxStr), Number(cyStr), Number(czStr));
       }
@@ -145,8 +156,36 @@ export const BlockWorld: React.FC = () => {
 
   const loadChunk = useCallback((cx: number, cy: number, cz: number, lod: MeshLOD) => {
     const key = chunkKey(cx, cy, cz);
-    if (chunksRef.current.has(key) || loadingSet.current.has(key)) return;
+    if (chunksRef.current.has(key)) {
+      const existing = chunksRef.current.get(key)!;
+      if (existing.lod <= lod) return;
+      if (loadingSet.current.has(key)) return;
+      const gen = (chunkGenRef.current.get(key) || 0) + 1;
+      chunkGenRef.current.set(key, gen);
+      loadingSet.current.add(key);
+      setChunks(prev => {
+        const next = new Map(prev);
+        const e = next.get(key);
+        if (e) next.set(key, { ...e, lod, loading: true });
+        return next;
+      });
+      const data = chunkDataMap.current.get(key) || existing.data;
+      workerRef.current!.enqueue(data, buildNeighbors(cx, cy, cz), lod).then(meshData => {
+        loadingSet.current.delete(key);
+        if (chunkGenRef.current.get(key) !== gen) return;
+        setChunks(prev => {
+          const next = new Map(prev);
+          const e = next.get(key);
+          if (e) next.set(key, { ...e, meshData, lod, loading: false });
+          return next;
+        });
+      });
+      return;
+    }
+    if (loadingSet.current.has(key)) return;
 
+    const gen = (chunkGenRef.current.get(key) || 0) + 1;
+    chunkGenRef.current.set(key, gen);
     loadingSet.current.add(key);
 
     const data = generateChunk(cx, cy, cz);
@@ -160,6 +199,7 @@ export const BlockWorld: React.FC = () => {
 
     workerRef.current!.enqueue(data, buildNeighbors(cx, cy, cz), lod).then(meshData => {
       loadingSet.current.delete(key);
+      if (chunkGenRef.current.get(key) !== gen) return;
       setChunks(prev => {
         const next = new Map(prev);
         const entry = next.get(key);
@@ -168,6 +208,14 @@ export const BlockWorld: React.FC = () => {
         }
         return next;
       });
+
+      const offsets = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
+      for (const [dx, dy, dz] of offsets) {
+        const nk = chunkKey(cx + dx, cy + dy, cz + dz);
+        if (chunkDataMap.current.has(nk) && !loadingSet.current.has(nk)) {
+          remeshChunkRef.current(cx + dx, cy + dy, cz + dz);
+        }
+      }
     });
   }, [buildNeighbors]);
 
@@ -177,6 +225,7 @@ export const BlockWorld: React.FC = () => {
     if (loadingSet.current.has(key)) {
       loadingSet.current.delete(key);
     }
+    chunkGenRef.current.delete(key);
     chunkDataMap.current.delete(key);
     setChunks(prev => {
       const next = new Map(prev);
@@ -221,7 +270,7 @@ export const BlockWorld: React.FC = () => {
     }
 
     for (const [key, dist] of desiredKeys) {
-      if (!currentKeys.has(key) && !loadingSet.current.has(key)) {
+      if (!loadingSet.current.has(key)) {
         const [cxStr, cyStr, czStr] = key.split(',');
         loadChunk(Number(cxStr), Number(cyStr), Number(czStr), getLOD(dist));
       }

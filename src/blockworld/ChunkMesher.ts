@@ -70,11 +70,11 @@ function faceQuad(
   bx: number, by: number, bz: number,
   w: number, h: number,
 ): [number, number, number][] {
-  if (face === 0) return [[bx, by, bz + w], [bx, by, bz], [bx, by + h, bz], [bx, by + h, bz + w]];
-  if (face === 1) return [[bx, by, bz], [bx, by, bz + w], [bx, by + h, bz + w], [bx, by + h, bz]];
-  if (face === 2) return [[bx, by, bz + w], [bx + w, by, bz + w], [bx + w, by, bz], [bx, by, bz]];
-  if (face === 3) return [[bx, by, bz], [bx + w, by, bz], [bx + w, by, bz + w], [bx, by, bz + w]];
-  if (face === 4) return [[bx + w, by + h, bz], [bx, by + h, bz], [bx, by, bz], [bx + w, by, bz]];
+  if (face === 0) return [[bx, by, bz], [bx, by + w, bz], [bx, by + w, bz + h], [bx, by, bz + h]];
+  if (face === 1) return [[bx, by, bz], [bx, by, bz + h], [bx, by + w, bz + h], [bx, by + w, bz]];
+  if (face === 2) return [[bx, by, bz], [bx, by, bz + w], [bx + h, by, bz + w], [bx + h, by, bz]];
+  if (face === 3) return [[bx, by, bz + w], [bx, by, bz], [bx + h, by, bz], [bx + h, by, bz + w]];
+  if (face === 4) return [[bx, by, bz], [bx + w, by, bz], [bx + w, by + h, bz], [bx, by + h, bz]];
   return [[bx, by + h, bz], [bx + w, by + h, bz], [bx + w, by, bz], [bx, by, bz]];
 }
 
