@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BlockType, BLOCK_COLORS } from './BlockTypes';
+import { BlockType, BLOCK_COLORS, isNonCubeBlock, getNonCubeParent } from './BlockTypes';
 
 const ATLAS_SIZE = 128;
 const TILE_SIZE = 16;
@@ -102,6 +102,27 @@ export function getTextureAtlas(): THREE.CanvasTexture {
     [BlockType.SPIRIT_ORE]: 'checker',
     [BlockType.FISH_SPOT]: 'striped',
     [BlockType.LUMBER_FIELD]: 'striped',
+
+    [BlockType.OAK_SLAB]: 'striped',
+    [BlockType.STONE_SLAB]: 'noisy',
+    [BlockType.COBBLESTONE_SLAB]: 'noisy',
+    [BlockType.STONE_BRICK_SLAB]: 'checker',
+    [BlockType.BRICK_SLAB]: 'checker',
+    [BlockType.PLANK_SLAB]: 'striped',
+
+    [BlockType.OAK_STAIRS]: 'striped',
+    [BlockType.STONE_STAIRS]: 'noisy',
+    [BlockType.COBBLESTONE_STAIRS]: 'noisy',
+    [BlockType.STONE_BRICK_STAIRS]: 'checker',
+    [BlockType.BRICK_STAIRS]: 'checker',
+    [BlockType.PLANK_STAIRS]: 'striped',
+
+    [BlockType.OAK_FENCE]: 'striped',
+    [BlockType.SPRUCE_FENCE]: 'striped',
+    [BlockType.BIRCH_FENCE]: 'striped',
+
+    [BlockType.GLASS_PANE]: 'solid',
+    [BlockType.IRON_BARS]: 'noisy',
   };
 
   const blockTypes = [
@@ -140,6 +161,27 @@ export function getTextureAtlas(): THREE.CanvasTexture {
     BlockType.SPIRIT_ORE,
     BlockType.FISH_SPOT,
     BlockType.LUMBER_FIELD,
+
+    BlockType.OAK_SLAB,
+    BlockType.STONE_SLAB,
+    BlockType.COBBLESTONE_SLAB,
+    BlockType.STONE_BRICK_SLAB,
+    BlockType.BRICK_SLAB,
+    BlockType.PLANK_SLAB,
+
+    BlockType.OAK_STAIRS,
+    BlockType.STONE_STAIRS,
+    BlockType.COBBLESTONE_STAIRS,
+    BlockType.STONE_BRICK_STAIRS,
+    BlockType.BRICK_STAIRS,
+    BlockType.PLANK_STAIRS,
+
+    BlockType.OAK_FENCE,
+    BlockType.SPRUCE_FENCE,
+    BlockType.BIRCH_FENCE,
+
+    BlockType.GLASS_PANE,
+    BlockType.IRON_BARS,
   ];
 
   for (let i = 0; i < blockTypes.length; i++) {
@@ -167,7 +209,8 @@ export function getTextureAtlas(): THREE.CanvasTexture {
 }
 
 export function getUVOffset(blockType: BlockType): [number, number, number, number] {
-  const i = blockType as number;
+  const parentType = isNonCubeBlock(blockType) ? getNonCubeParent(blockType) : blockType;
+  const i = parentType as number;
   const col = i % COLS;
   const row = Math.floor(i / COLS);
   const uMin = col / COLS;

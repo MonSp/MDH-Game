@@ -1,10 +1,11 @@
-import { BlockType, CHUNK_SIZE } from './BlockTypes';
+import { BlockType, CHUNK_SIZE, isSlab, isStairs, isFence, isPane, isNonCubeBlock, getNonCubeParent } from './BlockTypes';
 import { MeshLOD } from './ChunkMesher';
 
 const ATLAS_COLS = 8;
 
 function getUVOffset(blockType: BlockType): [number, number, number, number] {
-  const i = blockType as number;
+  const parentType = isNonCubeBlock(blockType) ? getNonCubeParent(blockType) : blockType;
+  const i = parentType as number;
   const col = i % ATLAS_COLS;
   const row = Math.floor(i / ATLAS_COLS);
   const uMin = col / ATLAS_COLS;
@@ -116,7 +117,8 @@ function isOccludingForAO(block: BlockType): boolean {
     && block !== BlockType.SPRUCE_LEAVES && block !== BlockType.BIRCH_LEAVES
     && block !== BlockType.CHERRY_LEAVES
     && block !== BlockType.WINDOW && block !== BlockType.FENCE && block !== BlockType.LANTERN
-    && block !== BlockType.SPIRIT_FIELD && block !== BlockType.FISH_SPOT && block !== BlockType.LUMBER_FIELD;
+    && block !== BlockType.SPIRIT_FIELD && block !== BlockType.FISH_SPOT && block !== BlockType.LUMBER_FIELD
+    && !isSlab(block) && !isStairs(block) && !isFence(block) && !isPane(block);
 }
 
 function aoToShade(ao: number): number {
@@ -269,6 +271,289 @@ function greedyMerge(
   }
 }
 
+function addSlabGeometry(
+  buffers: MeshBuffers,
+  bx: number, by: number, bz: number,
+  type: BlockType,
+  scale: number,
+): void {
+  const halfH = 0.5 * scale;
+  const w = scale;
+  const d = scale;
+  const x = bx * scale;
+  const y = by * scale;
+  const z = bz * scale;
+  const [uMin, uMax, vMin, vMax] = getUVOffset(type);
+
+  const faces: { quad: [number,number,number][]; normal: [number,number,number]; uv: [number,number][] }[] = [
+    { quad: [[x+w,y+halfH,z],[x+w,y+halfH,z+d],[x+w,y,z+d],[x+w,y,z]], normal: [1,0,0], uv: [[uMax,vMax],[uMin,vMax],[uMin,vMin],[uMax,vMin]] },
+    { quad: [[x,y,z],[x,y,z+d],[x,y+halfH,z+d],[x,y+halfH,z]], normal: [-1,0,0], uv: [[uMax,vMax],[uMin,vMax],[uMin,vMin],[uMax,vMin]] },
+    { quad: [[x,y+halfH,z],[x,y+halfH,z+d],[x+w,y+halfH,z+d],[x+w,y+halfH,z]], normal: [0,1,0], uv: [[uMin,vMax],[uMax,vMax],[uMax,vMin],[uMin,vMin]] },
+    { quad: [[x,y,z],[x+w,y,z],[x+w,y,z+d],[x,y,z+d]], normal: [0,-1,0], uv: [[uMin,vMax],[uMax,vMax],[uMax,vMin],[uMin,vMin]] },
+    { quad: [[x,y+halfH,z+d],[x,y,z+d],[x+w,y,z+d],[x+w,y+halfH,z+d]], normal: [0,0,1], uv: [[uMax,vMin],[uMin,vMin],[uMin,vMax],[uMax,vMax]] },
+    { quad: [[x,y,z],[x,y+halfH,z],[x+w,y+halfH,z],[x+w,y,z]], normal: [0,0,-1], uv: [[uMin,vMax],[uMax,vMax],[uMax,vMin],[uMin,vMin]] },
+  ];
+
+  for (const face of faces) {
+    const vi = buffers.vertexIndex;
+    for (let qi = 0; qi < 4; qi++) {
+      buffers.positions.push(face.quad[qi][0], face.quad[qi][1], face.quad[qi][2]);
+      buffers.normals.push(face.normal[0], face.normal[1], face.normal[2]);
+      buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+      buffers.colors.push(1, 1, 1);
+    }
+    buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    buffers.vertexIndex += 4;
+  }
+}
+
+function addStairGeometry(
+  buffers: MeshBuffers,
+  bx: number, by: number, bz: number,
+  type: BlockType,
+  scale: number,
+): void {
+  const s = scale;
+  const hs = s * 0.5;
+  const x = bx * s;
+  const y = by * s;
+  const z = bz * s;
+  const [uMin, uMax, vMin, vMax] = getUVOffset(type);
+
+  const uMid = (uMin + uMax) * 0.5;
+  const vMid = (vMin + vMax) * 0.5;
+
+  const baseUV: [number, number][] = [[uMin, vMax], [uMax, vMax], [uMax, vMin], [uMin, vMin]];
+  const halfUV: [number, number][] = [[uMin, vMax], [uMid, vMax], [uMid, vMin], [uMin, vMin]];
+
+  type F = { q: [number,number,number][]; n: [number,number,number]; uv: [number,number][] };
+  const faces: F[] = [];
+
+  faces.push({ q: [[x+s,y+hs,z],[x+s,y+hs,z+s],[x+s,y,z+s],[x+s,y,z]], n: [1,0,0], uv: baseUV });
+  faces.push({ q: [[x+hs,y+hs,z+s],[x+hs,y+hs,z],[x+hs,y,z],[x+hs,y,z+s]], n: [-1,0,0], uv: halfUV });
+  faces.push({ q: [[x+hs,y+hs,z],[x+s,y+hs,z],[x+s,y+hs,z+s],[x+hs,y+hs,z+s]], n: [0,1,0], uv: [[uMid,vMax],[uMax,vMax],[uMax,vMin],[uMid,vMin]] });
+  faces.push({ q: [[x,y+hs,z],[x+hs,y+hs,z],[x+hs,y,z],[x,y,z]], n: [0,1,0], uv: halfUV });
+  faces.push({ q: [[x+hs,y,z],[x+hs,y+hs,z],[x+s,y+hs,z],[x+s,y,z]], n: [0,1,0], uv: halfUV });
+  faces.push({ q: [[x,y,z],[x+s,y,z],[x+s,y,z+s],[x,y,z+s]], n: [0,-1,0], uv: baseUV });
+  faces.push({ q: [[x+hs,y+hs,z+s],[x+s,y+hs,z+s],[x+s,y,z+s],[x+hs,y,z+s]], n: [0,0,1], uv: [[uMid,vMax],[uMax,vMax],[uMax,vMin],[uMid,vMin]] });
+  faces.push({ q: [[x,y,z+s],[x+hs,y,z+s],[x+hs,y+hs,z+s],[x,y+hs,z+s]], n: [0,0,1], uv: halfUV });
+  faces.push({ q: [[x,y,z],[x,y+hs,z],[x+hs,y+hs,z],[x+hs,y,z]], n: [0,0,-1], uv: baseUV });
+  faces.push({ q: [[x+hs,y,z],[x+s,y,z],[x+s,y+hs,z],[x+hs,y+hs,z]], n: [0,0,-1], uv: baseUV });
+
+  for (const face of faces) {
+    const vi = buffers.vertexIndex;
+    for (let qi = 0; qi < 4; qi++) {
+      buffers.positions.push(face.q[qi][0], face.q[qi][1], face.q[qi][2]);
+      buffers.normals.push(face.n[0], face.n[1], face.n[2]);
+      buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+      buffers.colors.push(1, 1, 1);
+    }
+    buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    buffers.vertexIndex += 4;
+  }
+}
+
+function addFenceGeometry(
+  buffers: MeshBuffers,
+  blocks: Uint8Array,
+  neighbors: Map<string, Uint8Array>,
+  bx: number, by: number, bz: number,
+  type: BlockType,
+  scale: number,
+): void {
+  const s = scale;
+  const x = bx * s;
+  const y = by * s;
+  const z = bz * s;
+  const pw = s * 0.125;
+  const ph = s * 1.5;
+  const cx = x + s * 0.5;
+  const cz = z + s * 0.5;
+  const [uMin, uMax, vMin, vMax] = getUVOffset(type);
+  const uMid = (uMin + uMax) * 0.5;
+  const vMid = (vMin + vMax) * 0.5;
+
+  const p = (a: number, b: number, c: number): [number, number, number] => [a, b, c];
+
+  type F = { q: [number,number,number][]; n: [number,number,number]; uv: [number,number][] };
+
+  const postFaces: F[] = [
+    { q: [p(cx+pw,y+ph,cz+pw),p(cx+pw,y+ph,cz-pw),p(cx+pw,y,cz-pw),p(cx+pw,y,cz+pw)], n: [1,0,0], uv: [[uMax,vMax],[uMin,vMax],[uMin,vMin],[uMax,vMin]] },
+    { q: [p(cx-pw,y+ph,cz-pw),p(cx-pw,y+ph,cz+pw),p(cx-pw,y,cz+pw),p(cx-pw,y,cz-pw)], n: [-1,0,0], uv: [[uMax,vMax],[uMin,vMax],[uMin,vMin],[uMax,vMin]] },
+    { q: [p(cx-pw,y+ph,cz-pw),p(cx+pw,y+ph,cz-pw),p(cx+pw,y+ph,cz+pw),p(cx-pw,y+ph,cz+pw)], n: [0,1,0], uv: [[uMin,vMax],[uMax,vMax],[uMax,vMin],[uMin,vMin]] },
+    { q: [p(cx-pw,y,cz+pw),p(cx+pw,y,cz+pw),p(cx+pw,y,cz-pw),p(cx-pw,y,cz-pw)], n: [0,-1,0], uv: [[uMin,vMax],[uMax,vMax],[uMax,vMin],[uMin,vMin]] },
+    { q: [p(cx+pw,y+ph,cz+pw),p(cx-pw,y+ph,cz+pw),p(cx-pw,y,cz+pw),p(cx+pw,y,cz+pw)], n: [0,0,1], uv: [[uMax,vMin],[uMin,vMin],[uMin,vMax],[uMax,vMax]] },
+    { q: [p(cx-pw,y+ph,cz-pw),p(cx+pw,y+ph,cz-pw),p(cx+pw,y,cz-pw),p(cx-pw,y,cz-pw)], n: [0,0,-1], uv: [[uMin,vMax],[uMax,vMax],[uMax,vMin],[uMin,vMin]] },
+  ];
+
+  for (const face of postFaces) {
+    const vi = buffers.vertexIndex;
+    for (let qi = 0; qi < 4; qi++) {
+      buffers.positions.push(face.q[qi][0], face.q[qi][1], face.q[qi][2]);
+      buffers.normals.push(face.n[0], face.n[1], face.n[2]);
+      buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+      buffers.colors.push(1, 1, 1);
+    }
+    buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    buffers.vertexIndex += 4;
+  }
+
+  const dirs: [number, number, [number,number,number], [number,number,number]][] = [
+    [1, 0, p(cx+pw, y+s*0.8, cz-pw), p(cx+pw, y+s*0.8, cz+pw)],
+    [-1, 0, p(cx-pw, y+s*0.8, cz+pw), p(cx-pw, y+s*0.8, cz-pw)],
+    [0, 1, p(cx-pw, y+s*0.8, cz+pw), p(cx+pw, y+s*0.8, cz+pw)],
+    [0, -1, p(cx+pw, y+s*0.8, cz-pw), p(cx-pw, y+s*0.8, cz-pw)],
+  ];
+
+  for (const [dx, dz, p1, p2] of dirs) {
+    const barH = pw;
+    const barType = readBlock(blocks, neighbors, bx + dx, by, bz + dz, scale);
+    if (isFence(barType) || (!isNonCubeBlock(barType) && barType !== BlockType.AIR && barType !== BlockType.WATER)) {
+      const barFaces: F[] = [
+        { q: [p(p1[0],p1[1]+barH,p1[2]),p(p2[0],p2[1]+barH,p2[2]),p(p2[0],p2[1]-barH,p2[2]),p(p1[0],p1[1]-barH,p1[2])],
+          n: dx !== 0 ? [dx,0,0] : [0,0,dz],
+          uv: [[uMid,vMid],[uMid,vMid],[uMid,vMid],[uMid,vMid]] },
+        { q: [p(p2[0],p2[1]+barH,p2[2]),p(p1[0],p1[1]+barH,p1[2]),p(p1[0],p1[1]-barH,p1[2]),p(p2[0],p2[1]-barH,p2[2])],
+          n: dx !== 0 ? [-dx,0,0] : [0,0,-dz],
+          uv: [[uMid,vMid],[uMid,vMid],[uMid,vMid],[uMid,vMid]] },
+        { q: [p(p1[0],p1[1]+barH,p1[2]),p(p2[0],p2[1]+barH,p2[2]),p(p2[0],p2[1]+barH,p2[2]),p(p1[0],p1[1]+barH,p1[2])],
+          n: [0,1,0], uv: [[uMid,vMid],[uMid,vMid],[uMid,vMid],[uMid,vMid]] },
+        { q: [p(p2[0],p2[1]-barH,p2[2]),p(p1[0],p1[1]-barH,p1[2]),p(p1[0],p1[1]-barH,p1[2]),p(p2[0],p2[1]-barH,p2[2])],
+          n: [0,-1,0], uv: [[uMid,vMid],[uMid,vMid],[uMid,vMid],[uMid,vMid]] },
+      ];
+      for (const face of barFaces) {
+        const vi = buffers.vertexIndex;
+        for (let qi = 0; qi < 4; qi++) {
+          buffers.positions.push(face.q[qi][0], face.q[qi][1], face.q[qi][2]);
+          buffers.normals.push(face.n[0], face.n[1], face.n[2]);
+          buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+          buffers.colors.push(1, 1, 1);
+        }
+        buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+        buffers.vertexIndex += 4;
+      }
+    }
+  }
+}
+
+function addPaneGeometry(
+  buffers: MeshBuffers,
+  blocks: Uint8Array,
+  neighbors: Map<string, Uint8Array>,
+  bx: number, by: number, bz: number,
+  type: BlockType,
+  scale: number,
+): void {
+  const s = scale;
+  const x = bx * s;
+  const y = by * s;
+  const z = bz * s;
+  const pw = s * 0.0625;
+  const [uMin, uMax, vMin, vMax] = getUVOffset(type);
+  const uMid = (uMin + uMax) * 0.5;
+  const vMid = (vMin + vMax) * 0.5;
+
+  type F = { q: [number,number,number][]; n: [number,number,number]; uv: [number,number][] };
+
+  const paneUV: [number, number][] = [[uMid, vMax], [uMid, vMax], [uMid, vMin], [uMid, vMin]];
+
+  const dirs: [number, number, number, number][] = [
+    [1, 0, x + s, x + s],
+    [-1, 0, x, x],
+    [0, 1, z + s, z + s],
+    [0, -1, z, z],
+  ];
+
+  for (const [dx, dz, edgeX, edgeZ] of dirs) {
+    const adjType = readBlock(blocks, neighbors, bx + dx, by, bz + dz, scale);
+    if (isPane(adjType) || (!isNonCubeBlock(adjType) && adjType !== BlockType.AIR && adjType !== BlockType.WATER)) {
+      const isX = dx !== 0;
+      if (isX) {
+        const qx = edgeX - pw;
+        const faces: F[] = [
+          { q: [[qx, y + s, z + s], [qx, y + s, z], [qx, y, z], [qx, y, z + s]], n: dx > 0 ? [1, 0, 0] : [-1, 0, 0], uv: paneUV },
+          { q: [[qx, y + s, z], [qx + pw * 2, y + s, z], [qx + pw * 2, y + s, z + s], [qx, y + s, z + s]], n: dx > 0 ? [-1, 0, 0] : [1, 0, 0], uv: paneUV },
+        ];
+        for (const face of faces) {
+          const vi = buffers.vertexIndex;
+          for (let qi = 0; qi < 4; qi++) {
+            buffers.positions.push(face.q[qi][0], face.q[qi][1], face.q[qi][2]);
+            buffers.normals.push(face.n[0], face.n[1], face.n[2]);
+            buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+            buffers.colors.push(1, 1, 1);
+          }
+          buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+          buffers.vertexIndex += 4;
+        }
+      } else {
+        const qz = edgeZ - pw;
+        const faces: F[] = [
+          { q: [[x, y + s, qz], [x + s, y + s, qz], [x + s, y, qz], [x, y, qz]], n: dz > 0 ? [0, 0, 1] : [0, 0, -1], uv: paneUV },
+          { q: [[x + s, y + s, qz + pw * 2], [x, y + s, qz + pw * 2], [x, y + s, qz], [x + s, y + s, qz]], n: dz > 0 ? [0, 0, -1] : [0, 0, 1], uv: paneUV },
+        ];
+        for (const face of faces) {
+          const vi = buffers.vertexIndex;
+          for (let qi = 0; qi < 4; qi++) {
+            buffers.positions.push(face.q[qi][0], face.q[qi][1], face.q[qi][2]);
+            buffers.normals.push(face.n[0], face.n[1], face.n[2]);
+            buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+            buffers.colors.push(1, 1, 1);
+          }
+          buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+          buffers.vertexIndex += 4;
+        }
+      }
+    }
+  }
+
+  const postFaces: F[] = [
+    { q: [[x + s - pw, y + s, z + s - pw], [x + s - pw, y + s, z + pw], [x + s - pw, y, z + pw], [x + s - pw, y, z + s - pw]], n: [1, 0, 0], uv: paneUV },
+    { q: [[x + pw, y + s, z + pw], [x + pw, y + s, z + s - pw], [x + pw, y, z + s - pw], [x + pw, y, z + pw]], n: [-1, 0, 0], uv: paneUV },
+    { q: [[x + s, y + s, z + pw], [x, y + s, z + pw], [x, y, z + pw], [x + s, y, z + pw]], n: [0, 0, 1], uv: paneUV },
+    { q: [[x, y + s, z + s - pw], [x + s, y + s, z + s - pw], [x + s, y, z + s - pw], [x, y, z + s - pw]], n: [0, 0, -1], uv: paneUV },
+  ];
+  for (const face of postFaces) {
+    const vi = buffers.vertexIndex;
+    for (let qi = 0; qi < 4; qi++) {
+      buffers.positions.push(face.q[qi][0], face.q[qi][1], face.q[qi][2]);
+      buffers.normals.push(face.n[0], face.n[1], face.n[2]);
+      buffers.uvs.push(face.uv[qi][0], face.uv[qi][1]);
+      buffers.colors.push(1, 1, 1);
+    }
+    buffers.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+    buffers.vertexIndex += 4;
+  }
+}
+
+function generateNonCubeGeometry(
+  buffers: MeshBuffers,
+  blocks: Uint8Array,
+  neighbors: Map<string, Uint8Array>,
+  lod: MeshLOD,
+): void {
+  const scale = lod as number;
+  const dim = CHUNK_SIZE / scale;
+
+  for (let by = 0; by < dim; by++) {
+    for (let bz = 0; bz < dim; bz++) {
+      for (let bx = 0; bx < dim; bx++) {
+        const block = readBlock(blocks, neighbors, bx * scale, by * scale, bz * scale, scale);
+        if (!isNonCubeBlock(block)) continue;
+
+        if (isSlab(block)) {
+          addSlabGeometry(buffers, bx, by, bz, block, scale);
+        } else if (isStairs(block)) {
+          addStairGeometry(buffers, bx, by, bz, block, scale);
+        } else if (isFence(block)) {
+          addFenceGeometry(buffers, blocks, neighbors, bx, by, bz, block, scale);
+        } else if (isPane(block)) {
+          addPaneGeometry(buffers, blocks, neighbors, bx, by, bz, block, scale);
+        }
+      }
+    }
+  }
+}
+
 function doMesh(
   blocks: Uint8Array,
   neighbors: Map<string, Uint8Array>,
@@ -316,7 +601,9 @@ function doMesh(
               waterMask[v][u] = { type: BlockType.WATER, ao: 0 };
             }
           } else {
-            if (nb === BlockType.AIR || nb === BlockType.WATER) {
+            if (isNonCubeBlock(block)) continue;
+
+            if (nb === BlockType.AIR || nb === BlockType.WATER || isNonCubeBlock(nb)) {
               const ao = computeTopColumnAO(blocks, neighbors, bc[0] * scale, bc[1] * scale, bc[2] * scale, scale);
               mask[v][u] = { type: block, ao };
             }
@@ -328,6 +615,8 @@ function doMesh(
       greedyMerge(waterBuf, waterMask, face, uDim, vDim, w, axis, uAxis, vAxis, normal as [number, number, number], scale);
     }
   }
+
+  generateNonCubeGeometry(solidBuf, blocks, neighbors, lod);
 
   return { solid: buildMeshPayload(solidBuf), water: buildMeshPayload(waterBuf) };
 }

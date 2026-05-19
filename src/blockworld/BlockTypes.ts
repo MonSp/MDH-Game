@@ -37,6 +37,96 @@ export enum BlockType {
   SPIRIT_ORE = 32,
   FISH_SPOT = 33,
   LUMBER_FIELD = 34,
+
+  OAK_SLAB = 35,
+  STONE_SLAB = 36,
+  COBBLESTONE_SLAB = 37,
+  STONE_BRICK_SLAB = 38,
+  BRICK_SLAB = 39,
+  PLANK_SLAB = 40,
+
+  OAK_STAIRS = 41,
+  STONE_STAIRS = 42,
+  COBBLESTONE_STAIRS = 43,
+  STONE_BRICK_STAIRS = 44,
+  BRICK_STAIRS = 45,
+  PLANK_STAIRS = 46,
+
+  OAK_FENCE = 47,
+  SPRUCE_FENCE = 48,
+  BIRCH_FENCE = 49,
+
+  GLASS_PANE = 50,
+  IRON_BARS = 51,
+}
+
+export function isSlab(type: BlockType): boolean {
+  return type >= BlockType.OAK_SLAB && type <= BlockType.PLANK_SLAB;
+}
+
+export function isStairs(type: BlockType): boolean {
+  return type >= BlockType.OAK_STAIRS && type <= BlockType.PLANK_STAIRS;
+}
+
+export function isFence(type: BlockType): boolean {
+  return (type >= BlockType.OAK_FENCE && type <= BlockType.BIRCH_FENCE) || type === BlockType.FENCE;
+}
+
+export function isPane(type: BlockType): boolean {
+  return type === BlockType.GLASS_PANE || type === BlockType.IRON_BARS;
+}
+
+export function isNonCubeBlock(type: BlockType): boolean {
+  return isSlab(type) || isStairs(type) || isFence(type) || isPane(type);
+}
+
+export function getSlabParent(type: BlockType): BlockType {
+  switch (type) {
+    case BlockType.OAK_SLAB: return BlockType.PLANK;
+    case BlockType.STONE_SLAB: return BlockType.STONE;
+    case BlockType.COBBLESTONE_SLAB: return BlockType.COBBLESTONE;
+    case BlockType.STONE_BRICK_SLAB: return BlockType.STONE_BRICK;
+    case BlockType.BRICK_SLAB: return BlockType.BRICK;
+    case BlockType.PLANK_SLAB: return BlockType.PLANK;
+    default: return type;
+  }
+}
+
+export function getStairsParent(type: BlockType): BlockType {
+  switch (type) {
+    case BlockType.OAK_STAIRS: return BlockType.PLANK;
+    case BlockType.STONE_STAIRS: return BlockType.STONE;
+    case BlockType.COBBLESTONE_STAIRS: return BlockType.COBBLESTONE;
+    case BlockType.STONE_BRICK_STAIRS: return BlockType.STONE_BRICK;
+    case BlockType.BRICK_STAIRS: return BlockType.BRICK;
+    case BlockType.PLANK_STAIRS: return BlockType.PLANK;
+    default: return type;
+  }
+}
+
+export function getFenceParent(type: BlockType): BlockType {
+  switch (type) {
+    case BlockType.OAK_FENCE: return BlockType.PLANK;
+    case BlockType.SPRUCE_FENCE: return BlockType.SPRUCE_LOG;
+    case BlockType.BIRCH_FENCE: return BlockType.BIRCH_LOG;
+    default: return BlockType.WOOD;
+  }
+}
+
+export function getPaneParent(type: BlockType): BlockType {
+  switch (type) {
+    case BlockType.GLASS_PANE: return BlockType.WINDOW;
+    case BlockType.IRON_BARS: return BlockType.SMOOTH_STONE;
+    default: return type;
+  }
+}
+
+export function getNonCubeParent(type: BlockType): BlockType {
+  if (isSlab(type)) return getSlabParent(type);
+  if (isStairs(type)) return getStairsParent(type);
+  if (isFence(type)) return getFenceParent(type);
+  if (isPane(type)) return getPaneParent(type);
+  return type;
 }
 
 export const BLOCK_COLORS: Record<BlockType, [number, number, number]> = {
@@ -75,6 +165,27 @@ export const BLOCK_COLORS: Record<BlockType, [number, number, number]> = {
   [BlockType.SPIRIT_ORE]: [0.85, 0.75, 0.2],
   [BlockType.FISH_SPOT]: [0.25, 0.7, 0.85],
   [BlockType.LUMBER_FIELD]: [0.15, 0.5, 0.15],
+
+  [BlockType.OAK_SLAB]: [0.7, 0.55, 0.3],
+  [BlockType.STONE_SLAB]: [0.5, 0.5, 0.5],
+  [BlockType.COBBLESTONE_SLAB]: [0.45, 0.45, 0.45],
+  [BlockType.STONE_BRICK_SLAB]: [0.55, 0.55, 0.55],
+  [BlockType.BRICK_SLAB]: [0.7, 0.35, 0.25],
+  [BlockType.PLANK_SLAB]: [0.7, 0.55, 0.3],
+
+  [BlockType.OAK_STAIRS]: [0.7, 0.55, 0.3],
+  [BlockType.STONE_STAIRS]: [0.5, 0.5, 0.5],
+  [BlockType.COBBLESTONE_STAIRS]: [0.45, 0.45, 0.45],
+  [BlockType.STONE_BRICK_STAIRS]: [0.55, 0.55, 0.55],
+  [BlockType.BRICK_STAIRS]: [0.7, 0.35, 0.25],
+  [BlockType.PLANK_STAIRS]: [0.7, 0.55, 0.3],
+
+  [BlockType.OAK_FENCE]: [0.7, 0.55, 0.3],
+  [BlockType.SPRUCE_FENCE]: [0.35, 0.25, 0.1],
+  [BlockType.BIRCH_FENCE]: [0.75, 0.7, 0.55],
+
+  [BlockType.GLASS_PANE]: [0.6, 0.75, 0.85],
+  [BlockType.IRON_BARS]: [0.55, 0.55, 0.55],
 };
 
 export const SOLID_BLOCK_TYPES = new Set([
@@ -89,6 +200,16 @@ export const SOLID_BLOCK_TYPES = new Set([
   BlockType.DOOR, BlockType.LANTERN,
   BlockType.SMOOTH_SANDSTONE, BlockType.NETHERRACK, BlockType.OBSIDIAN,
   BlockType.SPIRIT_FIELD, BlockType.SPIRIT_ORE, BlockType.FISH_SPOT, BlockType.LUMBER_FIELD,
+
+  BlockType.OAK_SLAB, BlockType.STONE_SLAB, BlockType.COBBLESTONE_SLAB,
+  BlockType.STONE_BRICK_SLAB, BlockType.BRICK_SLAB, BlockType.PLANK_SLAB,
+
+  BlockType.OAK_STAIRS, BlockType.STONE_STAIRS, BlockType.COBBLESTONE_STAIRS,
+  BlockType.STONE_BRICK_STAIRS, BlockType.BRICK_STAIRS, BlockType.PLANK_STAIRS,
+
+  BlockType.OAK_FENCE, BlockType.SPRUCE_FENCE, BlockType.BIRCH_FENCE,
+
+  BlockType.GLASS_PANE, BlockType.IRON_BARS,
 ]);
 
 export function isSolidBlock(type: BlockType): boolean {
@@ -100,7 +221,9 @@ export function isCollidable(type: BlockType): boolean {
 }
 
 export function isOccluding(type: BlockType): boolean {
-  return isCollidable(type) && type !== BlockType.WINDOW && type !== BlockType.FENCE && type !== BlockType.LANTERN;
+  return isCollidable(type)
+    && type !== BlockType.WINDOW && type !== BlockType.FENCE && type !== BlockType.LANTERN
+    && !isFence(type) && !isPane(type);
 }
 
 export function blockIndex(lx: number, ly: number, lz: number): number {

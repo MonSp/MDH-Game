@@ -19,6 +19,16 @@ const HOTBAR_BLOCKS: BlockType[] = [
   BlockType.WINDOW,
   BlockType.LANTERN,
   BlockType.SMOOTH_SANDSTONE,
+  BlockType.OAK_SLAB,
+  BlockType.STONE_SLAB,
+  BlockType.COBBLESTONE_SLAB,
+  BlockType.STONE_BRICK_SLAB,
+  BlockType.OAK_STAIRS,
+  BlockType.STONE_STAIRS,
+  BlockType.PLANK_STAIRS,
+  BlockType.OAK_FENCE,
+  BlockType.SPRUCE_FENCE,
+  BlockType.GLASS_PANE,
 ];
 
 const BLOCK_NAMES: Record<number, string> = {
@@ -57,6 +67,27 @@ const BLOCK_NAMES: Record<number, string> = {
   [BlockType.SPIRIT_ORE]: 'Spirit Ore',
   [BlockType.FISH_SPOT]: 'Fish Spot',
   [BlockType.LUMBER_FIELD]: 'Lumber',
+
+  [BlockType.OAK_SLAB]: 'Oak Slab',
+  [BlockType.STONE_SLAB]: 'Stone Slab',
+  [BlockType.COBBLESTONE_SLAB]: 'Cobble Slab',
+  [BlockType.STONE_BRICK_SLAB]: 'Stone Brick Slab',
+  [BlockType.BRICK_SLAB]: 'Brick Slab',
+  [BlockType.PLANK_SLAB]: 'Plank Slab',
+
+  [BlockType.OAK_STAIRS]: 'Oak Stairs',
+  [BlockType.STONE_STAIRS]: 'Stone Stairs',
+  [BlockType.COBBLESTONE_STAIRS]: 'Cobble Stairs',
+  [BlockType.STONE_BRICK_STAIRS]: 'Stone Brick Stairs',
+  [BlockType.BRICK_STAIRS]: 'Brick Stairs',
+  [BlockType.PLANK_STAIRS]: 'Plank Stairs',
+
+  [BlockType.OAK_FENCE]: 'Oak Fence',
+  [BlockType.SPRUCE_FENCE]: 'Spruce Fence',
+  [BlockType.BIRCH_FENCE]: 'Birch Fence',
+
+  [BlockType.GLASS_PANE]: 'Glass Pane',
+  [BlockType.IRON_BARS]: 'Iron Bars',
 };
 
 const styles: Record<string, React.CSSProperties> = {
