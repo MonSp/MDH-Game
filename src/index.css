@@ -25,3 +25,18 @@ body {
   overflow: hidden;
   background-color: #09090b;
 }
+
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -24px);
+  }
+}
+
+.animate-float-up {
+  animation: float-up 1.2s ease-out forwards;
+}

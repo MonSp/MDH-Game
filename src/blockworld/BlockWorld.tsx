@@ -12,11 +12,12 @@ import { BlockSelectionHelper } from './BlockSelectionHelper';
 import { BlockMiningOverlay } from './BlockMiningOverlay';
 import { BlockBreakParticles } from './BlockBreakParticles';
 import { PostProcessing } from './PostProcessing';
+import { BlockWorldEntities } from './BlockWorldEntities';
 
-const HORIZONTAL_VIEW_CHUNKS = 6;
-const VERTICAL_VIEW_CHUNKS = 2;
-const LOD0_DIST = 3;
-const LOD1_DIST = 5;
+const HORIZONTAL_VIEW_CHUNKS = 8;
+const VERTICAL_VIEW_CHUNKS = 3;
+const LOD0_DIST = 4;
+const LOD1_DIST = 6;
 
 interface LoadedChunk {
   data: ChunkData;
@@ -59,7 +60,7 @@ export const BlockWorld: React.FC = () => {
 
   useEffect(() => {
     setChunkDataMap(chunkDataMap.current);
-    workerRef.current = new ChunkWorkerManager(4);
+    workerRef.current = new ChunkWorkerManager(6);
 
     blockWorldActions.getChunkData = (cx, cy, cz) => chunkDataMap.current.get(chunkKey(cx, cy, cz));
 
@@ -298,6 +299,7 @@ export const BlockWorld: React.FC = () => {
         <BlockSelectionHelper />
         <BlockMiningOverlay />
         <BlockBreakParticles />
+        <BlockWorldEntities />
       </group>
       <PostProcessing />
     </>

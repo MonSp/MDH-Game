@@ -115,7 +115,8 @@ function isOccludingForAO(block: BlockType): boolean {
     && block !== BlockType.LEAVES && block !== BlockType.OAK_LEAVES
     && block !== BlockType.SPRUCE_LEAVES && block !== BlockType.BIRCH_LEAVES
     && block !== BlockType.CHERRY_LEAVES
-    && block !== BlockType.WINDOW && block !== BlockType.FENCE && block !== BlockType.LANTERN;
+    && block !== BlockType.WINDOW && block !== BlockType.FENCE && block !== BlockType.LANTERN
+    && block !== BlockType.SPIRIT_FIELD && block !== BlockType.FISH_SPOT && block !== BlockType.LUMBER_FIELD;
 }
 
 function aoToShade(ao: number): number {

@@ -1177,16 +1177,25 @@ const GlobalNoiseOverlay = () => {
 interface Map2DProps {
   onProximityTrigger?: (sceneId: string) => void;
   triggerVersion?: number;
+  onBlockWorldToggle?: (active: boolean) => void;
 }
 
 // Module-level scene trigger cooldown (persists across re-renders)
 const sceneTriggerCooldowns: Record<string, { lastTriggerAt: number; wasOutside: boolean }> = {};
 const TRIGGER_COOLDOWN_MS = 30000;
 
-export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) => {
+export const Map2D = ({ onProximityTrigger, triggerVersion = 0, onBlockWorldToggle }: Map2DProps) => {
   const { player, nearbyNPCs, wildMonsters, resourcePoints, squadMembers, playerFactionId, clans, _worldBuildings, movePlayer, addWorldEvent, gameTime } = useGameStore();
   const [selectedNPC, setSelectedNPC] = useState<NPC | null>(null);
   const [blockWorldMode, setBlockWorldMode] = useState(false);
+  const onBlockWorldToggleRef = useRef(onBlockWorldToggle);
+  onBlockWorldToggleRef.current = onBlockWorldToggle;
+
+  useEffect(() => {
+    if (blockWorldMode && selectedNPC) {
+      document.exitPointerLock();
+    }
+  }, [blockWorldMode, selectedNPC]);
 
   // Breakthrough effect
   const prevRealmRef = useRef(player?.realm);
@@ -1367,10 +1376,33 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         e.preventDefault();
         _blockWorldMode = !_blockWorldMode;
         setBlockWorldMode(_blockWorldMode);
+        onBlockWorldToggleRef.current?.(_blockWorldMode);
         return;
       }
 
-      if (_blockWorldMode) return;
+      if (_blockWorldMode) {
+        if (key === 'e' || key === 'E') {
+          e.preventDefault();
+          const state = useGameStore.getState();
+          const p = state.player;
+          if (!p) return;
+          let closest: NPC | null = null;
+          let closestDist = 5;
+          for (const npc of state.nearbyNPCs) {
+            const dx = npc.position.x - p.position.x;
+            const dy = npc.position.y - p.position.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < closestDist) {
+              closestDist = dist;
+              closest = npc;
+            }
+          }
+          if (closest) {
+            setSelectedNPC(closest);
+          }
+        }
+        return;
+      }
 
       const inBuildMode = useBuildModeStore.getState().active;
 
@@ -1563,6 +1595,7 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0 }: Map2DProps) =>
         {!blockWorldMode && <CameraController playerPos={player.position} />}
         {blockWorldMode && <FirstPersonController />}
         {blockWorldMode && <BlockWorld />}
+        {blockWorldMode && <CameraShake />}
 
         <SunMoonLight />
 

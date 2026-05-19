@@ -472,35 +472,35 @@ function makeLampPosts(
   fillBlock(blocks, cx, cy, cz, ox, oy + 4, oz, BlockType.LANTERN);
 }
 
-function getZoneKind(zoneCX: number, zoneCZ: number): StructureKind {
+export function getZoneKind(zoneCX: number, zoneCZ: number): StructureKind {
   const h = hashFloat(zoneCX, zoneCZ);
   const dist = Math.sqrt(zoneCX * zoneCX + zoneCZ * zoneCZ) * STRUCTURE_ZONE_SIZE;
 
   if (dist < 200 && h < 0.005) {
     return StructureKind.CAPITAL_CITY;
   }
-  if (dist < 800 && h < 0.002) {
+  if (dist < 1000 && h < 0.002) {
     return StructureKind.CAPITAL_CITY;
   }
-  if (dist < 150 && h < 0.06) {
+  if (dist < 200 && h < 0.08) {
     return StructureKind.MANOR;
   }
-  if (dist < 600 && h < 0.03) {
+  if (dist < 800 && h < 0.04) {
     return StructureKind.MANOR;
   }
-  if (dist < 100 && h < 0.4) {
+  if (dist < 150 && h < 0.5) {
     return StructureKind.HOUSE_MEDIUM;
   }
-  if (dist < 300 && h < 0.25) {
+  if (dist < 400 && h < 0.30) {
     return StructureKind.HOUSE_SMALL;
   }
-  if (dist < 500 && h < 0.15) {
+  if (dist < 700 && h < 0.18) {
     return StructureKind.WATCHTOWER;
   }
-  if (dist < 800 && h < 0.08) {
+  if (dist < 1200 && h < 0.10) {
     return StructureKind.TEMPLE;
   }
-  if (dist < 2000 && h < 0.02) {
+  if (dist < 3000 && h < 0.03) {
     return StructureKind.PAGODA;
   }
   return StructureKind.NONE;
@@ -512,9 +512,9 @@ function determineTrees(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
 ) {
   const treeChance = hashFloat(zoneCX + 1000, zoneCZ + 2000);
-  if (treeChance < 0.6) return;
+  if (treeChance < 0.75) return;
 
-  const treeCount = Math.floor(hashFloat(zoneCX + 3000, zoneCZ + 4000) * 8) + 2;
+  const treeCount = Math.floor(hashFloat(zoneCX + 3000, zoneCZ + 4000) * 12) + 3;
   let rngState = hash2D(zoneCX + 5000, zoneCZ + 6000);
   const baseX = zoneCX * STRUCTURE_ZONE_SIZE;
   const baseZ = zoneCZ * STRUCTURE_ZONE_SIZE;
@@ -719,8 +719,8 @@ export function generateStructures(
   const zoneCX = Math.floor((cx * CHUNK_SIZE) / STRUCTURE_ZONE_SIZE);
   const zoneCZ = Math.floor((cz * CHUNK_SIZE) / STRUCTURE_ZONE_SIZE);
 
-  for (let dz = -1; dz <= 1; dz++) {
-    for (let dx = -1; dx <= 1; dx++) {
+  for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -2; dx <= 2; dx++) {
       const zcx = zoneCX + dx;
       const zcz = zoneCZ + dz;
       const baseX = zcx * STRUCTURE_ZONE_SIZE;
@@ -743,6 +743,60 @@ export function generateStructures(
           generateBuildingsForZone(zcx, zcz, baseY, blocks, cx, cy, cz, kind);
           break;
       }
+    }
+  }
+}
+
+export interface GameBuildingSpec {
+  kind: 'capital' | 'manor' | 'city' | 'fortress' | 'watchtower';
+  worldX: number;
+  worldZ: number;
+}
+
+export function generateGameBuildings(
+  buildings: GameBuildingSpec[],
+  blocks: Uint8Array,
+  cx: number,
+  cy: number,
+  cz: number,
+  terrainHeightAt: (wx: number, wz: number) => number,
+) {
+  for (const b of buildings) {
+    const zoneCX = Math.floor(b.worldX / STRUCTURE_ZONE_SIZE);
+    const zoneCZ = Math.floor(b.worldZ / STRUCTURE_ZONE_SIZE);
+    const baseX = zoneCX * STRUCTURE_ZONE_SIZE;
+    const baseZ = zoneCZ * STRUCTURE_ZONE_SIZE;
+    const baseY = Math.floor(terrainHeightAt(baseX + STRUCTURE_ZONE_SIZE / 2, baseZ + STRUCTURE_ZONE_SIZE / 2));
+
+    const buildingCX = zoneCX * STRUCTURE_ZONE_SIZE + STRUCTURE_ZONE_SIZE / 2;
+    const buildingCZ = zoneCZ * STRUCTURE_ZONE_SIZE + STRUCTURE_ZONE_SIZE / 2;
+    const bboxHalf = 20;
+    const chunkMinX = cx * CHUNK_SIZE;
+    const chunkMinZ = cz * CHUNK_SIZE;
+    const chunkMaxX = chunkMinX + CHUNK_SIZE - 1;
+    const chunkMaxZ = chunkMinZ + CHUNK_SIZE - 1;
+
+    if (chunkMaxX < buildingCX - bboxHalf || chunkMinX > buildingCX + bboxHalf ||
+        chunkMaxZ < buildingCZ - bboxHalf || chunkMinZ > buildingCZ + bboxHalf) {
+      continue;
+    }
+
+    switch (b.kind) {
+      case 'capital':
+        generateCapitalCity(zoneCX, zoneCZ, baseY, blocks, cx, cy, cz);
+        break;
+      case 'manor':
+        generateManorComplex(zoneCX, zoneCZ, baseY, blocks, cx, cy, cz);
+        break;
+      case 'city':
+        generateManorComplex(zoneCX, zoneCZ, baseY, blocks, cx, cy, cz);
+        break;
+      case 'fortress':
+        generateBuildingsForZone(zoneCX, zoneCZ, baseY, blocks, cx, cy, cz, StructureKind.WATCHTOWER);
+        break;
+      case 'watchtower':
+        generateBuildingsForZone(zoneCX, zoneCZ, baseY, blocks, cx, cy, cz, StructureKind.WATCHTOWER);
+        break;
     }
   }
 }

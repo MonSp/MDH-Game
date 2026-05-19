@@ -98,6 +98,10 @@ export function getTextureAtlas(): THREE.CanvasTexture {
     [BlockType.SMOOTH_SANDSTONE]: 'solid',
     [BlockType.NETHERRACK]: 'noisy',
     [BlockType.OBSIDIAN]: 'noisy',
+    [BlockType.SPIRIT_FIELD]: 'speckled',
+    [BlockType.SPIRIT_ORE]: 'checker',
+    [BlockType.FISH_SPOT]: 'striped',
+    [BlockType.LUMBER_FIELD]: 'striped',
   };
 
   const blockTypes = [
@@ -132,6 +136,10 @@ export function getTextureAtlas(): THREE.CanvasTexture {
     BlockType.SMOOTH_SANDSTONE,
     BlockType.NETHERRACK,
     BlockType.OBSIDIAN,
+    BlockType.SPIRIT_FIELD,
+    BlockType.SPIRIT_ORE,
+    BlockType.FISH_SPOT,
+    BlockType.LUMBER_FIELD,
   ];
 
   for (let i = 0; i < blockTypes.length; i++) {

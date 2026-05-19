@@ -25,7 +25,7 @@ export class ChunkWorkerManager {
   private maxWorkers: number;
 
   constructor(maxWorkers = navigator.hardwareConcurrency || 4) {
-    this.maxWorkers = Math.min(maxWorkers, 4);
+    this.maxWorkers = Math.min(maxWorkers, 8);
     for (let i = 0; i < this.maxWorkers; i++) {
       this.addWorker(i);
     }

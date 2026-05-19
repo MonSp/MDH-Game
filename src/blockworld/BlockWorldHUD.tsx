@@ -53,6 +53,10 @@ const BLOCK_NAMES: Record<number, string> = {
   [BlockType.SMOOTH_SANDSTONE]: 'Sandstone',
   [BlockType.NETHERRACK]: 'Netherrack',
   [BlockType.OBSIDIAN]: 'Obsidian',
+  [BlockType.SPIRIT_FIELD]: 'Spirit Field',
+  [BlockType.SPIRIT_ORE]: 'Spirit Ore',
+  [BlockType.FISH_SPOT]: 'Fish Spot',
+  [BlockType.LUMBER_FIELD]: 'Lumber',
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -154,7 +158,7 @@ export const BlockWorldHUD: React.FC = () => {
   return (
     <>
       <div style={styles.hint}>
-        Left-click: break &nbsp;|&nbsp; Right-click: place &nbsp;|&nbsp; 1-9 / scroll: select block
+        Left-click: break &nbsp;|&nbsp; Right-click: place &nbsp;|&nbsp; 1-9 / scroll: select block &nbsp;|&nbsp; E: interact NPC
       </div>
       <div style={styles.container}>
         {HOTBAR_BLOCKS.map((bt, i) => {

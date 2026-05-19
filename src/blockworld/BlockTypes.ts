@@ -33,6 +33,10 @@ export enum BlockType {
   SMOOTH_SANDSTONE = 28,
   NETHERRACK = 29,
   OBSIDIAN = 30,
+  SPIRIT_FIELD = 31,
+  SPIRIT_ORE = 32,
+  FISH_SPOT = 33,
+  LUMBER_FIELD = 34,
 }
 
 export const BLOCK_COLORS: Record<BlockType, [number, number, number]> = {
@@ -67,6 +71,10 @@ export const BLOCK_COLORS: Record<BlockType, [number, number, number]> = {
   [BlockType.SMOOTH_SANDSTONE]: [0.8, 0.75, 0.55],
   [BlockType.NETHERRACK]: [0.4, 0.1, 0.1],
   [BlockType.OBSIDIAN]: [0.15, 0.1, 0.25],
+  [BlockType.SPIRIT_FIELD]: [0.3, 0.8, 0.35],
+  [BlockType.SPIRIT_ORE]: [0.85, 0.75, 0.2],
+  [BlockType.FISH_SPOT]: [0.25, 0.7, 0.85],
+  [BlockType.LUMBER_FIELD]: [0.15, 0.5, 0.15],
 };
 
 export const SOLID_BLOCK_TYPES = new Set([
@@ -80,6 +88,7 @@ export const SOLID_BLOCK_TYPES = new Set([
   BlockType.FENCE, BlockType.STONE_PATH, BlockType.WINDOW,
   BlockType.DOOR, BlockType.LANTERN,
   BlockType.SMOOTH_SANDSTONE, BlockType.NETHERRACK, BlockType.OBSIDIAN,
+  BlockType.SPIRIT_FIELD, BlockType.SPIRIT_ORE, BlockType.FISH_SPOT, BlockType.LUMBER_FIELD,
 ]);
 
 export function isSolidBlock(type: BlockType): boolean {

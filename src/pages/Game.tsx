@@ -8,6 +8,7 @@ import { ChroniclePanel } from '../components/ChroniclePanel';
 import { ScenePanel } from '../components/ScenePanel';
 import { EventLog } from '../components/EventLog';
 import { SurveyPopup } from '../components/SurveyPopup';
+import { BlockWorldGameHUD } from '../blockworld/BlockWorldGameHUD';
 import { getSceneEntry } from '../content/scenes/sceneRegistry';
 import { GRUDGE_NPC_DIALOGUE } from '../content/scenes/grudge/npcDialogue';
 import { LI_SI_ID, LI_SI_ROBBED, LI_SI_HELPED } from '../content/scenes/grudge/grudgeScene';
@@ -72,6 +73,7 @@ export const Game = () => {
   const { player, updateNPCs, modifyTalent, markNpcMet, setNpcMemory, addLog, saveToSlot, npcMemory, tickGameTime } = useGameStore();
   const [showChronicle, setShowChronicle] = useState(false);
   const [showEventLog, setShowEventLog] = useState(false);
+  const [blockWorldMode, setBlockWorldMode] = useState(false);
 
   // Scene state
   const [activeScene, setActiveScene] = useState<SceneEntry | null>(null);
@@ -675,12 +677,12 @@ export const Game = () => {
     <div className="relative w-screen h-screen bg-zinc-950 overflow-hidden font-sans text-zinc-300">
       {/* 2.5D 地图层 */}
       <div className="absolute inset-0 z-0">
-        <Map2D onProximityTrigger={handleSceneTrigger} triggerVersion={triggerVersion} />
+        <Map2D onProximityTrigger={handleSceneTrigger} triggerVersion={triggerVersion} onBlockWorldToggle={(active) => setBlockWorldMode(active)} />
       </div>
 
       {/* UI 覆盖层 */}
       <div className="absolute inset-0 z-10 pointer-events-none">
-        <HUD onOpenChronicle={() => setShowChronicle(true)} />
+        {!blockWorldMode ? <HUD onOpenChronicle={() => setShowChronicle(true)} /> : <BlockWorldGameHUD />}
         <LogBox />
         {showChronicle && <ChroniclePanel onClose={() => setShowChronicle(false)} />}
         <EventLog isOpen={showEventLog} onToggle={() => setShowEventLog(v => !v)} />
