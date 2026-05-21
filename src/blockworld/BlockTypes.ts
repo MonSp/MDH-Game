@@ -58,6 +58,19 @@ export enum BlockType {
 
   GLASS_PANE = 50,
   IRON_BARS = 51,
+
+  GLASS = 52,
+  BOOKSHELF = 53,
+  CLAY = 54,
+  MOSSY_COBBLE = 55,
+  GLOWSTONE = 56,
+  DARK_PLANK = 57,
+  RED_ROOF = 58,
+  WOOL_RED = 59,
+  WOOL_BLUE = 60,
+  SANDSTONE_BRICK = 61,
+  CHISELED_STONE = 62,
+  THATCH = 63,
 }
 
 export function isSlab(type: BlockType): boolean {
@@ -186,6 +199,19 @@ export const BLOCK_COLORS: Record<BlockType, [number, number, number]> = {
 
   [BlockType.GLASS_PANE]: [0.6, 0.75, 0.85],
   [BlockType.IRON_BARS]: [0.55, 0.55, 0.55],
+
+  [BlockType.GLASS]: [0.7, 0.85, 0.9],
+  [BlockType.BOOKSHELF]: [0.6, 0.4, 0.2],
+  [BlockType.CLAY]: [0.65, 0.65, 0.7],
+  [BlockType.MOSSY_COBBLE]: [0.4, 0.5, 0.3],
+  [BlockType.GLOWSTONE]: [0.95, 0.85, 0.35],
+  [BlockType.DARK_PLANK]: [0.35, 0.2, 0.1],
+  [BlockType.RED_ROOF]: [0.7, 0.15, 0.1],
+  [BlockType.WOOL_RED]: [0.85, 0.25, 0.2],
+  [BlockType.WOOL_BLUE]: [0.25, 0.3, 0.75],
+  [BlockType.SANDSTONE_BRICK]: [0.85, 0.75, 0.5],
+  [BlockType.CHISELED_STONE]: [0.55, 0.55, 0.6],
+  [BlockType.THATCH]: [0.75, 0.7, 0.3],
 };
 
 export const SOLID_BLOCK_TYPES = new Set([
@@ -210,6 +236,11 @@ export const SOLID_BLOCK_TYPES = new Set([
   BlockType.OAK_FENCE, BlockType.SPRUCE_FENCE, BlockType.BIRCH_FENCE,
 
   BlockType.GLASS_PANE, BlockType.IRON_BARS,
+
+  BlockType.BOOKSHELF, BlockType.CLAY, BlockType.MOSSY_COBBLE,
+  BlockType.GLOWSTONE, BlockType.DARK_PLANK, BlockType.RED_ROOF,
+  BlockType.WOOL_RED, BlockType.WOOL_BLUE, BlockType.SANDSTONE_BRICK,
+  BlockType.CHISELED_STONE, BlockType.THATCH,
 ]);
 
 export function isSolidBlock(type: BlockType): boolean {
@@ -217,12 +248,14 @@ export function isSolidBlock(type: BlockType): boolean {
 }
 
 export function isCollidable(type: BlockType): boolean {
-  return type !== BlockType.AIR && type !== BlockType.WATER;
+  return type !== BlockType.AIR && type !== BlockType.WATER && type !== BlockType.DOOR;
 }
 
 export function isOccluding(type: BlockType): boolean {
   return isCollidable(type)
     && type !== BlockType.WINDOW && type !== BlockType.FENCE && type !== BlockType.LANTERN
+    && type !== BlockType.GLASS && type !== BlockType.GLOWSTONE
+    && type !== BlockType.DOOR
     && !isFence(type) && !isPane(type);
 }
 

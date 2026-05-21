@@ -170,21 +170,52 @@ function makeHut(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
   ox: number, oy: number, oz: number, _seed: number,
 ) {
-  const w = 3, d = 3, h = 2;
-  for (let y = 0; y < h; y++) {
+  const w = 8, d = 8, wh = 4;
+
+  for (let x = 0; x < w; x++) {
+    for (let z = 0; z < d; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.STONE_PATH);
+      fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.DARK_PLANK);
+    }
+  }
+
+  for (let y = 0; y < wh; y++) {
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
-        const isEdge = x === 0 || x === w - 1 || z === 0 || z === d - 1;
-        const isDoor = z === d - 1 && x === 1 && y === 0;
-        if (isEdge && !isDoor) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.PLANK);
+        const isWall = (x === 0 || x === w - 1 || z === 0 || z === d - 1);
+        const isDoor = z === d - 1 && x >= 3 && x <= 5 && y < 3;
+        if (isWall && !isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.PLANK);
+        }
+        if (isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.DOOR);
         }
       }
     }
   }
-  for (let x = 0; x < w; x++) {
-    for (let z = 0; z < d; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h, oz + z, BlockType.ROOF_TILE);
+
+  fillBlock(blocks, cx, cy, cz, ox + 1, oy + 2, oz + 1, BlockType.WINDOW);
+  fillBlock(blocks, cx, cy, cz, ox + 6, oy + 2, oz + 1, BlockType.WINDOW);
+  fillBlock(blocks, cx, cy, cz, ox + 6, oy + 2, oz + 6, BlockType.WINDOW);
+
+  for (let x = 2; x <= 3; x++) {
+    for (let z = 2; z <= 4; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + z, BlockType.BOOKSHELF);
+    }
+  }
+
+  for (let x = -1; x <= w; x++) {
+    for (let z = -1; z <= d; z++) {
+      const roofY = oy + 1 + wh;
+      if (x >= 0 && x < w && z >= 0 && z < d) {
+        fillBlock(blocks, cx, cy, cz, ox + x, roofY, oz + z, BlockType.RED_ROOF);
+      }
+      if (x >= 1 && x < w - 1 && z >= 1 && z < d - 1) {
+        fillBlock(blocks, cx, cy, cz, ox + x, roofY + 1, oz + z, BlockType.RED_ROOF);
+      }
+      if (x >= 2 && x < w - 2 && z >= 2 && z < d - 2) {
+        fillBlock(blocks, cx, cy, cz, ox + x, roofY + 2, oz + z, BlockType.RED_ROOF);
+      }
     }
   }
 }
@@ -193,28 +224,103 @@ function makeHouse(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
   ox: number, oy: number, oz: number, _seed: number,
 ) {
-  const w = 5, d = 5, h = 3;
-  for (let y = 0; y < h; y++) {
+  const w = 12, d = 9, groundH = 4, upperH = 4;
+
+  for (let x = 0; x < w; x++) {
+    for (let z = 0; z < d; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.STONE_PATH);
+    }
+  }
+
+  for (let y = 0; y < groundH; y++) {
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
-        const isEdge = x === 0 || x === w - 1 || z === 0 || z === d - 1;
-        const isFrontDoor = z === 0 && (x === 1 || x === 3) && y === 0;
-        if (isEdge && !isFrontDoor) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.PLANK);
+        const isWall = (x === 0 || x === w - 1 || z === 0 || z === d - 1);
+        const isDoor = z === 0 && x >= 4 && x <= 6 && y < 3;
+        const wallBlock = y < 2 ? BlockType.STONE_BRICK : BlockType.PLANK;
+        if (isWall && !isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, wallBlock);
         }
-        if (x === 1 && z === 1 && y === 0) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.DOOR);
+        if (isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.DOOR);
         }
       }
     }
   }
-  for (let x = -1; x <= w; x++) {
-    for (let z = -1; z <= d; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h, oz + z, BlockType.ROOF_TILE);
+
+  fillBlock(blocks, cx, cy, cz, ox + 10, oy + 3, oz + 1, BlockType.WINDOW);
+  fillBlock(blocks, cx, cy, cz, ox + 1, oy + 3, oz + 7, BlockType.WINDOW);
+  fillBlock(blocks, cx, cy, cz, ox + 1, oy + 3, oz + 1, BlockType.WINDOW);
+
+  for (let x = 1; x < w - 1; x++) {
+    for (let z = 1; z < d - 1; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + groundH, oz + z, BlockType.PLANK);
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + z, BlockType.DARK_PLANK);
     }
   }
-  for (let y = 1; y < h; y++) {
-    fillBlock(blocks, cx, cy, cz, ox + 2, oy + y, oz + 2, BlockType.WINDOW);
+
+  for (let x = 2; x <= 4; x++) {
+    for (let z = 2; z <= 3; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + z, BlockType.BOOKSHELF);
+    }
+  }
+
+  const stairX = 9;
+  for (let step = 0; step < groundH; step++) {
+    const sz = oz + 2 + step;
+    const sy = oy + 1 + step;
+    fillBlock(blocks, cx, cy, cz, ox + stairX, sy, sz, BlockType.OAK_STAIRS);
+    if (step < groundH - 1) {
+      fillBlock(blocks, cx, cy, cz, ox + stairX - 1, sy, sz, BlockType.PLANK_SLAB);
+      fillBlock(blocks, cx, cy, cz, ox + stairX, sy, sz + 1, BlockType.PLANK_SLAB);
+    }
+  }
+
+  const upperY = oy + 1 + groundH + 1;
+  for (let x = 1; x < w - 1; x++) {
+    for (let z = 1; z < d - 1; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, upperY - 1, oz + z, BlockType.DARK_PLANK);
+    }
+  }
+
+  for (let y = 0; y < upperH; y++) {
+    for (let x = 0; x < w; x++) {
+      for (let z = 0; z < d; z++) {
+        const isWall = (x === 0 || x === w - 1 || z === 0 || z === d - 1);
+        const isWindow = z === 0 && x === 5 && y === 1;
+        const isWindow2 = x === w - 1 && z === 4 && y === 1;
+        if (isWall && !isWindow && !isWindow2) {
+          fillBlock(blocks, cx, cy, cz, ox + x, upperY + y, oz + z, BlockType.PLANK);
+        }
+        if (isWindow || isWindow2) {
+          fillBlock(blocks, cx, cy, cz, ox + x, upperY + y, oz + z, BlockType.GLASS_PANE);
+        }
+      }
+    }
+  }
+
+  fillBlock(blocks, cx, cy, cz, ox + 5, upperY + 2, oz + 4, BlockType.GLOWSTONE);
+  fillBlock(blocks, cx, cy, cz, ox + 5, upperY + upperH - 1, oz + 4, BlockType.GLOWSTONE);
+
+  const roofBaseY = upperY + upperH;
+  for (let x = -1; x <= w; x++) {
+    for (let z = -1; z <= d; z++) {
+      if (x >= 0 && x < w && z >= 0 && z < d) {
+        fillBlock(blocks, cx, cy, cz, ox + x, roofBaseY, oz + z, BlockType.RED_ROOF);
+        if (x >= 2 && x < w - 2 && z >= 2 && z < d - 2) {
+          fillBlock(blocks, cx, cy, cz, ox + x, roofBaseY + 1, oz + z, BlockType.RED_ROOF);
+        }
+        if (x >= 4 && x < w - 4 && z >= 3 && z < d - 3) {
+          fillBlock(blocks, cx, cy, cz, ox + x, roofBaseY + 2, oz + z, BlockType.RED_ROOF);
+        }
+      }
+      if (z === -1 || z === d) {
+        if (x >= 0 && x < w) fillBlock(blocks, cx, cy, cz, ox + x, roofBaseY, oz + z, BlockType.RED_ROOF);
+      }
+      if (x === -1 || x === w) {
+        if (z >= 0 && z < d) fillBlock(blocks, cx, cy, cz, ox + x, roofBaseY, oz + z, BlockType.RED_ROOF);
+      }
+    }
   }
 }
 
@@ -222,67 +328,113 @@ function makeWatchtower(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
   ox: number, oy: number, oz: number, _seed: number,
 ) {
-  const w = 3, d = 3, h = 5;
+  const w = 5, d = 5, h = 10;
+
+  for (let x = 0; x < w; x++) {
+    for (let z = 0; z < d; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.COBBLESTONE);
+    }
+  }
+
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
-        const isEdge = x === 0 || x === w - 1 || z === 0 || z === d - 1;
-        if (isEdge) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.STONE_BRICK);
+        const isWall = (x === 0 || x === w - 1 || z === 0 || z === d - 1);
+        const isDoor = z === 4 && x >= 1 && x <= 2 && y < 3;
+        if (isWall && !isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.STONE_BRICK);
+        }
+        if (isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.DOOR);
         }
       }
     }
   }
-  for (let x = -1; x <= w; x++) {
-    for (let z = -1; z <= d; z++) {
-      const roofEdge = Math.abs(x) === w || Math.abs(z) === d;
-      if (roofEdge) continue;
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h, oz + z, BlockType.ROOF_TILE);
-    }
+
+  fillBlock(blocks, cx, cy, cz, ox + 1, oy + 4, oz + 0, BlockType.WINDOW);
+  fillBlock(blocks, cx, cy, cz, ox + 4, oy + 6, oz + 2, BlockType.WINDOW);
+  fillBlock(blocks, cx, cy, cz, ox + 0, oy + 8, oz + 2, BlockType.WINDOW);
+
+  for (let step = 0; step < 9; step++) {
+    const sy = oy + 1 + step;
+    const stairX = step < 5 ? 3 : 1;
+    const stairZ = 2 + (step % 2);
+    fillBlock(blocks, cx, cy, cz, ox + stairX, sy, oz + stairZ, BlockType.PLANK_STAIRS);
   }
+
   for (let x = 0; x < w; x++) {
     for (let z = 0; z < d; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h + 1, oz + z, BlockType.FENCE);
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + h, oz + z, BlockType.PLANK);
     }
   }
+
+  for (let x = -1; x <= w; x++) {
+    for (let z = -1; z <= d; z++) {
+      if ((x < 0 || x >= w || z < 0 || z >= d) && !(x < -1 || x > w || z < -1 || z > d)) {
+        fillBlock(blocks, cx, cy, cz, ox + x, oy + 2 + h, oz + z, BlockType.OAK_FENCE);
+      }
+    }
+  }
+
+  fillBlock(blocks, cx, cy, cz, ox + 2, oy + 2, oz + 0, BlockType.LANTERN);
 }
 
 function makeManor(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
   ox: number, oy: number, oz: number, _seed: number,
 ) {
-  const wallW = 11, wallD = 9, wallH = 3;
+  const wallW = 21, wallD = 17, wallH = 4;
+
   for (let y = 0; y < wallH; y++) {
     for (let x = 0; x < wallW; x++) {
       for (let z = 0; z < wallD; z++) {
         const isEdge = x === 0 || x === wallW - 1 || z === 0 || z === wallD - 1;
-        const isGate = z === 0 && x >= 4 && x <= 6 && y < 1;
+        const isGate = z === 0 && x >= 8 && x <= 12 && y < 3;
         if (isEdge && !isGate) {
           fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.COBBLESTONE);
         }
       }
     }
   }
-  const mainHX = 4, mainHZ = 2;
-  makeHouse(blocks, cx, cy, cz, ox + mainHX, oy, oz + mainHZ, _seed);
-  const wingW = 3, wingD = 3;
-  makeHouse(blocks, cx, cy, cz, ox + 1, oy, oz + 1, _seed);
-  makeHouse(blocks, cx, cy, cz, ox + wallW - 1 - wingW, oy, oz + 1, _seed);
-  for (let x = 3; x <= 7; x++) {
-    fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + 1, BlockType.STONE_PATH);
-  }
-  for (let x = 3; x <= 7; x++) {
-    for (let z = 2; z <= 4; z++) {
+
+  for (let x = 1; x < wallW - 1; x++) {
+    for (let z = 1; z < wallD - 1; z++) {
       fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.STONE_PATH);
     }
   }
+
+  for (let i = 0; i < 4; i++) {
+    const tx = i < 2 ? 1 : wallW - 2;
+    const tz = i % 2 === 0 ? 1 : wallD - 2;
+    for (let y = 0; y < 6; y++) {
+      fillBlock(blocks, cx, cy, cz, ox + tx, oy + y, oz + tz, BlockType.COBBLESTONE);
+    }
+    fillBlock(blocks, cx, cy, cz, ox + tx, oy + 6, oz + tz, BlockType.OAK_FENCE);
+    fillBlock(blocks, cx, cy, cz, ox + tx, oy + 7, oz + tz, BlockType.LANTERN);
+  }
+
   for (let x = 0; x < wallW; x++) {
-    fillBlock(blocks, cx, cy, cz, ox + x, oy + wallH, oz, BlockType.ROOF_TILE);
-    fillBlock(blocks, cx, cy, cz, ox + x, oy + wallH, oz + wallD - 1, BlockType.ROOF_TILE);
+    fillBlock(blocks, cx, cy, cz, ox + x, oy + wallH, oz, BlockType.COBBLESTONE_SLAB);
+    fillBlock(blocks, cx, cy, cz, ox + x, oy + wallH, oz + wallD - 1, BlockType.COBBLESTONE_SLAB);
   }
   for (let z = 0; z < wallD; z++) {
-    fillBlock(blocks, cx, cy, cz, ox, oy + wallH, oz + z, BlockType.ROOF_TILE);
-    fillBlock(blocks, cx, cy, cz, ox + wallW - 1, oy + wallH, oz + z, BlockType.ROOF_TILE);
+    fillBlock(blocks, cx, cy, cz, ox, oy + wallH, oz + z, BlockType.COBBLESTONE_SLAB);
+    fillBlock(blocks, cx, cy, cz, ox + wallW - 1, oy + wallH, oz + z, BlockType.COBBLESTONE_SLAB);
+  }
+
+  makeHouse(blocks, cx, cy, cz, ox + 3, oy, oz + 3, _seed);
+
+  const fountainX = Math.floor((wallW - 1) / 2);
+  const fountainZ = Math.floor((wallD - 1) / 2) + 1;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const block = (dx === 0 && dz === 0) ? BlockType.WATER : BlockType.STONE_BRICK_SLAB;
+      fillBlock(blocks, cx, cy, cz, ox + fountainX + dx, oy, oz + fountainZ + dz, block);
+    }
+  }
+
+  for (let x = 6; x <= 14; x++) {
+    fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + 1, BlockType.STONE_PATH);
   }
 }
 
@@ -290,37 +442,67 @@ function makeTemple(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
   ox: number, oy: number, oz: number, _seed: number,
 ) {
-  const w = 7, d = 5, h = 4;
-  for (let y = 0; y < h; y++) {
+  const w = 14, d = 10, wh = 5;
+
+  for (let x = 0; x < w; x++) {
+    for (let z = 0; z < d; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.CHISELED_STONE);
+    }
+  }
+
+  for (let y = 0; y < wh; y++) {
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
-        const isEdge = x === 0 || x === w - 1 || z === 0 || z === d - 1;
-        const isDoor = z === d - 1 && x >= 2 && x <= 4 && y === 0;
-        if (isEdge && !isDoor) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.STONE_BRICK);
+        const isWall = (x === 0 || x === w - 1 || z === 0 || z === d - 1);
+        const isDoor = z === 0 && x >= 5 && x <= 8 && y < 4;
+        const isWindow = x === 0 && z === 3 && y === 2;
+        const isWindow2 = x === w - 1 && z === 3 && y === 2;
+        const isWindow3 = x === 0 && z === 6 && y === 2;
+        const isWindow4 = x === w - 1 && z === 6 && y === 2;
+        const wallBlock = y < 2 ? BlockType.STONE_BRICK : BlockType.SMOOTH_STONE;
+        if (isWall && !isDoor && !isWindow && !isWindow2 && !isWindow3 && !isWindow4) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, wallBlock);
+        }
+        if (isDoor) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.DOOR);
+        }
+        if (isWindow || isWindow2 || isWindow3 || isWindow4) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.GLASS_PANE);
         }
       }
     }
   }
-  for (let x = 0; x < w; x++) {
-    for (let z = 0; z < d; z++) {
-      if (x === 0 || x === w - 1 || z === 0 || z === d - 1) continue;
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h, oz + z, BlockType.ROOF_TILE);
-    }
-  }
+
   for (let x = 1; x < w - 1; x++) {
     for (let z = 1; z < d - 1; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h + 1, oz + z, BlockType.ROOF_TILE);
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + z, BlockType.CLAY);
     }
   }
-  for (let i = 0; i < 4; i++) {
-    const px = i < 2 ? 1 : w - 2;
-    const pz = i % 2 === 0 ? 1 : d - 2;
-    for (let py = 0; py < 3; py++) {
-      fillBlock(blocks, cx, cy, cz, ox + px, oy + h + 2 + py, oz + pz, BlockType.PILLAR);
-    }
-    fillBlock(blocks, cx, cy, cz, ox + px, oy + h + 5, oz + pz, BlockType.ROOF_TILE);
+
+  for (let x = 3; x <= 6; x++) {
+    fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + 1, BlockType.BOOKSHELF);
   }
+  fillBlock(blocks, cx, cy, cz, ox + 4, oy + 2, oz + 1, BlockType.CHISELED_STONE);
+
+  for (let x = 1; x < w - 1; x++) {
+    for (let z = 1; z < d - 1; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + wh, oz + z, BlockType.RED_ROOF);
+      if (x >= 3 && x <= w - 4 && z >= 3 && z <= d - 4) {
+        fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + wh + 1, oz + z, BlockType.RED_ROOF);
+      }
+      if (x >= 5 && x <= w - 6 && z >= 4 && z <= d - 5) {
+        fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + wh + 2, oz + z, BlockType.RED_ROOF);
+      }
+    }
+  }
+  for (let x = -1; x <= w; x++) {
+    for (let z = -1; z <= d; z++) {
+      if (x >= 0 && x < w && (z === -1 || z === d)) fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + wh, oz + z, BlockType.RED_ROOF);
+      if (z >= 0 && z < d && (x === -1 || x === w)) fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + wh, oz + z, BlockType.RED_ROOF);
+    }
+  }
+
+  fillBlock(blocks, cx, cy, cz, ox + 6, oy + 1 + wh, oz + 4, BlockType.LANTERN);
 }
 
 function makePagoda(
@@ -328,78 +510,180 @@ function makePagoda(
   ox: number, oy: number, oz: number, _seed: number,
 ) {
   const floors = 3;
+  const floorH = 4;
+  const gap = 2;
+  const fw = 9;
+
+  for (let cx = 0; cx < 3; cx++) {
+    for (let cz = 0; cz < 3; cz++) {
+      const px = ox + 2 + cx * 2;
+      const pz = oz + 2 + cz * 2;
+      for (let y = 0; y < floors * (floorH + gap) + 4; y++) {
+        fillBlock(blocks, cx, cy, cz, px, oy + y, pz, BlockType.CHISELED_STONE);
+      }
+    }
+  }
+
   for (let floor = 0; floor < floors; floor++) {
-    const fw = 5 - floor;
-    const fh = 3;
-    const fy = oy + floor * (fh + 1);
-    for (let y = 0; y < fh; y++) {
+    const fy = oy + floor * (floorH + gap);
+
+    for (let x = 0; x < fw; x++) {
+      for (let z = 0; z < fw; z++) {
+        fillBlock(blocks, cx, cy, cz, ox + x, fy, oz + z, BlockType.STONE_PATH);
+      }
+    }
+
+    for (let y = 0; y < floorH; y++) {
       for (let x = 0; x < fw; x++) {
         for (let z = 0; z < fw; z++) {
-          const isEdge = x === 0 || x === fw - 1 || z === 0 || z === fw - 1;
-          const isDoor = y === 0 && z === 0 && x === Math.floor(fw / 2);
-          if (isEdge && !isDoor) {
-            fillBlock(blocks, cx, cy, cz, ox + x, fy + y, oz + z, BlockType.BRICK);
+          const isWall = (x === 0 || x === fw - 1 || z === 0 || z === fw - 1);
+          const isDoor = z === 0 && x >= 3 && x <= 5 && y < 3;
+          const isWindow = x === 0 && z === 3 && y === 1;
+          const isWindow2 = x === fw - 1 && z === 6 && y === 1;
+          if (isWall && !isDoor && !isWindow && !isWindow2) {
+            fillBlock(blocks, cx, cy, cz, ox + x, fy + 1 + y, oz + z, BlockType.BRICK);
+          }
+          if (isDoor) {
+            fillBlock(blocks, cx, cy, cz, ox + x, fy + 1 + y, oz + z, BlockType.DOOR);
+          }
+          if (isWindow || isWindow2) {
+            fillBlock(blocks, cx, cy, cz, ox + x, fy + 1 + y, oz + z, BlockType.GLASS_PANE);
           }
         }
       }
     }
-    for (let x = -1; x <= fw; x++) {
-      for (let z = -1; z <= fw; z++) {
-        if (x === -1 || x === fw || z === -1 || z === fw) continue;
-        if (x < 0 || x >= fw || z < 0 || z >= fw) {
-          fillBlock(blocks, cx, cy, cz, ox + x, fy + fh, oz + z, BlockType.ROOF_TILE);
-        } else {
-          fillBlock(blocks, cx, cy, cz, ox + x, fy + fh, oz + z, BlockType.ROOF_TILE);
+
+    for (let step = 0; step < floorH; step++) {
+      const sy = fy + 1 + step;
+      fillBlock(blocks, cx, cy, cz, ox + 1, sy, oz + 1, BlockType.OAK_STAIRS);
+      fillBlock(blocks, cx, cy, cz, ox + 1, sy, oz + 2, BlockType.PLANK_SLAB);
+      fillBlock(blocks, cx, cy, cz, ox + 2, sy, oz + 2, BlockType.PLANK_SLAB);
+    }
+
+    fillBlock(blocks, cx, cy, cz, ox + 4, fy + floorH - 1, oz + 4, BlockType.GLOWSTONE);
+
+    for (let x = 1; x < fw - 1; x++) {
+      for (let z = 1; z < fw - 1; z++) {
+        fillBlock(blocks, cx, cy, cz, ox + x, fy + 1 + floorH, oz + z, BlockType.PLANK);
+      }
+    }
+
+    const roofY = fy + 1 + floorH + 1;
+    for (let x = -2; x <= fw + 1; x++) {
+      for (let z = -2; z <= fw + 1; z++) {
+        if (x >= -1 && x <= fw && z >= -1 && z <= fw) {
+          const inner = x >= 0 && x < fw && z >= 0 && z < fw;
+          fillBlock(blocks, cx, cy, cz, ox + x, roofY, oz + z, BlockType.RED_ROOF);
         }
       }
     }
   }
-  const topY = oy + floors * 4;
-  for (let y = 0; y < 3; y++) {
-    fillBlock(blocks, cx, cy, cz, ox + 2, topY + y, oz + 2, BlockType.PILLAR);
+
+  const topY = oy + floors * (floorH + gap) + 4;
+  for (let y = 0; y < 4; y++) {
+    fillBlock(blocks, cx, cy, cz, ox + 4, topY + y, oz + 4, BlockType.PILLAR);
   }
-  fillBlock(blocks, cx, cy, cz, ox + 2, topY + 3, oz + 2, BlockType.LANTERN);
+  fillBlock(blocks, cx, cy, cz, ox + 4, topY + 4, oz + 4, BlockType.LANTERN);
 }
 
 function makePalace(
   blocks: Uint8Array, cx: number, cy: number, cz: number,
   ox: number, oy: number, oz: number, _seed: number,
 ) {
-  const w = 11, d = 7, h = 5;
-  for (let y = 0; y < h; y++) {
+  const w = 23, d = 15, wh = 6;
+
+  for (let x = 0; x < w; x++) {
+    for (let z = 0; z < d; z++) {
+      fillBlock(blocks, cx, cy, cz, ox + x, oy, oz + z, BlockType.SANDSTONE_BRICK);
+    }
+  }
+
+  for (let y = 0; y < wh; y++) {
     for (let x = 0; x < w; x++) {
       for (let z = 0; z < d; z++) {
-        const isEdge = x === 0 || x === w - 1 || z === 0 || z === d - 1;
-        const isDoor = z === 0 && x >= 4 && x <= 6 && y < 2;
-        const isWindow = !isEdge && (y === 2 || y === 3) && (x % 3 === 0 && z % 2 === 0);
-        if (isEdge && !isDoor) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.STONE_BRICK);
+        const isOuterWall = (x === 0 || x === w - 1 || z === 0 || z === d - 1);
+        const isGrandDoor = z === 0 && x >= 9 && x <= 13 && y < 5;
+        const isSideWindow = x === 0 && z === 4 && (y === 2 || y === 3);
+        const isSideWindow2 = x === w - 1 && z === 4 && (y === 2 || y === 3);
+        const isSideWindow3 = x === 0 && z === 10 && (y === 2 || y === 3);
+        const isSideWindow4 = x === w - 1 && z === 10 && (y === 2 || y === 3);
+        const isBackWindow = z === d - 1 && x === 6 && y === 2;
+        const isBackWindow2 = z === d - 1 && x === 16 && y === 2;
+        const wallBlock = y < 2 ? BlockType.CHISELED_STONE : BlockType.STONE_BRICK;
+        const divX1 = 7, divX2 = 15;
+        const isDiv1 = x === divX1 && z >= 0 && z <= d - 1;
+        const isDiv2 = x === divX2 && z >= 0 && z <= d - 1;
+        const isDivDoor1 = isDiv1 && z === 2 && y < 3;
+        const isDivDoor2 = isDiv2 && z === 2 && y < 3;
+        const isDivDoor3 = isDiv1 && z === 11 && y < 3;
+        const isDivDoor4 = isDiv2 && z === 11 && y < 3;
+
+        if ((isDiv1 || isDiv2) && y < wh) {
+          if (!isDivDoor1 && !isDivDoor2 && !isDivDoor3 && !isDivDoor4) {
+            fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.STONE_BRICK);
+          }
         }
-        if (isWindow) {
-          fillBlock(blocks, cx, cy, cz, ox + x, oy + y, oz + z, BlockType.WINDOW);
+
+        if (isOuterWall && !isGrandDoor && !isSideWindow && !isSideWindow2 &&
+            !isSideWindow3 && !isSideWindow4 && !isBackWindow && !isBackWindow2 &&
+            !isDiv1 && !isDiv2) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, wallBlock);
+        }
+        if (isSideWindow || isSideWindow2 || isSideWindow3 || isSideWindow4 ||
+            isBackWindow || isBackWindow2) {
+          fillBlock(blocks, cx, cy, cz, ox + x, oy + 1 + y, oz + z, BlockType.GLASS);
         }
       }
     }
   }
-  for (let x = 0; x < w; x++) {
-    for (let z = 0; z < d; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h, oz + z, BlockType.ROOF_TILE);
-    }
-  }
+
   for (let x = 1; x < w - 1; x++) {
     for (let z = 1; z < d - 1; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h + 1, oz + z, BlockType.ROOF_TILE);
+      if (x === 7 || x === 15) continue;
+      fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + z, BlockType.DARK_PLANK);
     }
   }
-  for (let x = 2; x < w - 2; x++) {
-    for (let z = 2; z < d - 2; z++) {
-      fillBlock(blocks, cx, cy, cz, ox + x, oy + h + 2, oz + z, BlockType.ROOF_TILE);
+
+  for (let room = 0; room < 3; room++) {
+    const rx = ox + 1 + room * 8;
+    const rz = oz + 1;
+    for (let dx = 0; dx < 6; dx++) {
+      for (let dz = 0; dz < 3; dz++) {
+        const color = room === 0 ? BlockType.WOOL_RED : room === 2 ? BlockType.WOOL_BLUE : BlockType.WOOL_RED;
+        fillBlock(blocks, cx, cy, cz, rx + dx, oy + 1, rz + dz, color);
+      }
     }
   }
-  for (let i = 0; i < w; i += 2) {
-    fillBlock(blocks, cx, cy, cz, ox + i, oy, oz, BlockType.PILLAR);
-    fillBlock(blocks, cx, cy, cz, ox + i, oy, oz + d - 1, BlockType.PILLAR);
+
+  for (let x = 2; x <= 5; x++) {
+    fillBlock(blocks, cx, cy, cz, ox + x, oy + 1, oz + 7, BlockType.BOOKSHELF);
+    fillBlock(blocks, cx, cy, cz, ox + x, oy + 2, oz + 7, BlockType.BOOKSHELF);
   }
+
+  for (let rx of [2, 10, 18]) {
+    fillBlock(blocks, cx, cy, cz, ox + rx + 2, oy + wh - 1, oz + 3, BlockType.GLOWSTONE);
+    fillBlock(blocks, cx, cy, cz, ox + rx + 2, oy + wh - 1, oz + 10, BlockType.GLOWSTONE);
+  }
+
+  fillBlock(blocks, cx, cy, cz, ox + 8, oy, oz, BlockType.PILLAR);
+  fillBlock(blocks, cx, cy, cz, ox + 14, oy, oz, BlockType.PILLAR);
+  fillBlock(blocks, cx, cy, cz, ox + 8, oy, oz + d - 1, BlockType.PILLAR);
+  fillBlock(blocks, cx, cy, cz, ox + 14, oy, oz + d - 1, BlockType.PILLAR);
+
+  const roofBase = oy + 1 + wh;
+  for (let layer = 0; layer < 4; layer++) {
+    const lw = w - layer * 3;
+    const ld = d - layer * 3;
+    const lx = ox + Math.floor(layer * 1.5);
+    const lz = oz + Math.floor(layer * 1.5);
+    for (let x = 0; x < lw; x++) {
+      for (let z = 0; z < ld; z++) {
+        fillBlock(blocks, cx, cy, cz, lx + x, roofBase + layer, lz + z, BlockType.RED_ROOF);
+      }
+    }
+  }
+
+  fillBlock(blocks, cx, cy, cz, ox + 11, roofBase + 4, oz + 7, BlockType.LANTERN);
 }
 
 function makeCityWall(
@@ -569,7 +853,7 @@ function generateCapitalCity(
   const rngState = hash2D(cityCX + 20000, cityCZ + 30000);
   const cityCenterX = cityCX * STRUCTURE_ZONE_SIZE + STRUCTURE_ZONE_SIZE / 2;
   const cityCenterZ = cityCZ * STRUCTURE_ZONE_SIZE + STRUCTURE_ZONE_SIZE / 2;
-  const wallHalf = 16;
+  const wallHalf = 24;
   const wallLen = wallHalf * 2 + 1;
 
   for (let x = -wallHalf; x <= wallHalf; x++) {
@@ -591,11 +875,11 @@ function generateCapitalCity(
   makeCityGate(blocks, cx, cy, cz, cityCenterX - wallHalf, cityBaseY, cityCenterZ, false);
   makeCityGate(blocks, cx, cy, cz, cityCenterX + wallHalf, cityBaseY, cityCenterZ, false);
 
-  for (let x = -14; x <= 14; x++) {
-    for (let z = -14; z <= 14; z++) {
-      if (Math.abs(x) <= 1 && Math.abs(z) <= 1) continue;
-      const isRoadX = Math.abs(x) % 6 === 0 && Math.abs(x) <= 12;
-      const isRoadZ = Math.abs(z) % 6 === 0 && Math.abs(z) <= 12;
+  for (let x = -20; x <= 20; x++) {
+    for (let z = -20; z <= 20; z++) {
+      if (Math.abs(x) <= 2 && Math.abs(z) <= 2) continue;
+      const isRoadX = Math.abs(x) % 8 === 0 && Math.abs(x) <= 16;
+      const isRoadZ = Math.abs(z) % 8 === 0 && Math.abs(z) <= 16;
       if (isRoadX || isRoadZ) {
         fillBlock(blocks, cx, cy, cz, cityCenterX + x, cityBaseY, cityCenterZ + z, BlockType.STONE_PATH);
       }
@@ -610,8 +894,8 @@ function generateCapitalCity(
   for (let qx = -1; qx <= 1; qx++) {
     for (let qz = -1; qz <= 1; qz++) {
       if (qx === 0 && qz === 0) continue;
-      const bx = qx * 7;
-      const bz = qz * 7;
+      const bx = qx * 14;
+      const bz = qz * 10;
       const bh = hashFloat(cityCX + bx * 100, cityCZ + bz * 100);
       if (bh < 0.4) {
         buildingsInCity.push({ fn: makeHouse, ox: cityCenterX + bx, oz: cityCenterZ + bz });
@@ -623,15 +907,15 @@ function generateCapitalCity(
     }
   }
 
-  makePalace(blocks, cx, cy, cz, cityCenterX - 5, cityBaseY, cityCenterZ - 3, rngState);
+  makePalace(blocks, cx, cy, cz, cityCenterX - 11, cityBaseY, cityCenterZ - 7, rngState);
 
   for (const b of buildingsInCity) {
     b.fn(blocks, cx, cy, cz, b.ox, cityBaseY, b.oz, rngState);
   }
 
   const lampPositions = [
+    [-20, -20], [-20, 20], [20, -20], [20, 20],
     [-12, -12], [-12, 12], [12, -12], [12, 12],
-    [-8, -8], [-8, 8], [8, -8], [8, 8],
   ];
   for (const [lx, lz] of lampPositions) {
     makeLampPosts(blocks, cx, cy, cz, cityCenterX + lx, cityBaseY, cityCenterZ + lz);
@@ -646,11 +930,11 @@ function generateManorComplex(
   const centerZ = zoneCZ * STRUCTURE_ZONE_SIZE + STRUCTURE_ZONE_SIZE / 2;
   const seed = hash2D(zoneCX + 50000, zoneCZ + 60000);
 
-  makeManor(blocks, cx, cy, cz, centerX - 5, baseY, centerZ - 4, seed);
+  makeManor(blocks, cx, cy, cz, centerX - 10, baseY, centerZ - 8, seed);
 
   for (let i = 0; i < 3; i++) {
     const angle = (i / 3) * Math.PI * 2;
-    const dist = 10 + (hashFloat(zoneCX + i * 1000, zoneCZ + i * 2000) * 3);
+    const dist = 20 + (hashFloat(zoneCX + i * 1000, zoneCZ + i * 2000) * 5);
     const hx = centerX + Math.floor(Math.cos(angle) * dist);
     const hz = centerZ + Math.floor(Math.sin(angle) * dist);
     const hType = hashFloat(zoneCX + i * 3000, zoneCZ + i * 4000);
@@ -658,18 +942,6 @@ function generateManorComplex(
       makeHut(blocks, cx, cy, cz, hx, baseY, hz, seed);
     } else {
       makeHouse(blocks, cx, cy, cz, hx, baseY, hz, seed);
-    }
-  }
-
-  for (let i = -6; i <= 6; i++) {
-    for (let j = -6; j <= 6; j++) {
-      if (Math.abs(i) <= 5 && Math.abs(j) <= 5) continue;
-      if (Math.abs(i) > 5 || Math.abs(j) > 5) {
-        const isGate = (Math.abs(i) <= 1 && Math.abs(j) === 6) || (Math.abs(i) === 6 && Math.abs(j) <= 1);
-        if (!isGate) {
-          fillBlock(blocks, cx, cy, cz, centerX + i, baseY + 1, centerZ + j, BlockType.FENCE);
-        }
-      }
     }
   }
 }

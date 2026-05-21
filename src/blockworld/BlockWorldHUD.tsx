@@ -29,6 +29,19 @@ const HOTBAR_BLOCKS: BlockType[] = [
   BlockType.OAK_FENCE,
   BlockType.SPRUCE_FENCE,
   BlockType.GLASS_PANE,
+
+  BlockType.GLASS,
+  BlockType.BOOKSHELF,
+  BlockType.CLAY,
+  BlockType.MOSSY_COBBLE,
+  BlockType.GLOWSTONE,
+  BlockType.DARK_PLANK,
+  BlockType.RED_ROOF,
+  BlockType.WOOL_RED,
+  BlockType.WOOL_BLUE,
+  BlockType.SANDSTONE_BRICK,
+  BlockType.CHISELED_STONE,
+  BlockType.THATCH,
 ];
 
 const BLOCK_NAMES: Record<number, string> = {
@@ -88,6 +101,19 @@ const BLOCK_NAMES: Record<number, string> = {
 
   [BlockType.GLASS_PANE]: 'Glass Pane',
   [BlockType.IRON_BARS]: 'Iron Bars',
+
+  [BlockType.GLASS]: 'Glass',
+  [BlockType.BOOKSHELF]: 'Bookshelf',
+  [BlockType.CLAY]: 'Clay',
+  [BlockType.MOSSY_COBBLE]: 'Mossy Cobble',
+  [BlockType.GLOWSTONE]: 'Glowstone',
+  [BlockType.DARK_PLANK]: 'Dark Plank',
+  [BlockType.RED_ROOF]: 'Red Roof',
+  [BlockType.WOOL_RED]: 'Red Wool',
+  [BlockType.WOOL_BLUE]: 'Blue Wool',
+  [BlockType.SANDSTONE_BRICK]: 'Sandstone Brick',
+  [BlockType.CHISELED_STONE]: 'Chiseled Stone',
+  [BlockType.THATCH]: 'Thatch',
 };
 
 const styles: Record<string, React.CSSProperties> = {

@@ -4,7 +4,7 @@ import { BlockType } from './BlockTypes';
 export type CameraMode = 'fps' | 'tps';
 
 export const blockWorldPlayer = {
-  position: new THREE.Vector3(2000, 50, 5000),
+  position: new THREE.Vector3(2200, 48, 5100),
   yaw: 0,
   pitch: 0,
   velocity: new THREE.Vector3(),

@@ -35,6 +35,7 @@ function isOccludingForAO(block: BlockType): boolean {
     && block !== BlockType.SPRUCE_LEAVES && block !== BlockType.BIRCH_LEAVES
     && block !== BlockType.CHERRY_LEAVES
     && block !== BlockType.WINDOW && block !== BlockType.FENCE && block !== BlockType.LANTERN
+    && block !== BlockType.DOOR
     && !isSlab(block) && !isStairs(block) && !isFence(block) && !isPane(block);
 }
 

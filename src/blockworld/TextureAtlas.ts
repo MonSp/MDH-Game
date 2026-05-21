@@ -123,6 +123,19 @@ export function getTextureAtlas(): THREE.CanvasTexture {
 
     [BlockType.GLASS_PANE]: 'solid',
     [BlockType.IRON_BARS]: 'noisy',
+
+    [BlockType.GLASS]: 'solid',
+    [BlockType.BOOKSHELF]: 'striped',
+    [BlockType.CLAY]: 'solid',
+    [BlockType.MOSSY_COBBLE]: 'speckled',
+    [BlockType.GLOWSTONE]: 'speckled',
+    [BlockType.DARK_PLANK]: 'striped',
+    [BlockType.RED_ROOF]: 'checker',
+    [BlockType.WOOL_RED]: 'solid',
+    [BlockType.WOOL_BLUE]: 'solid',
+    [BlockType.SANDSTONE_BRICK]: 'checker',
+    [BlockType.CHISELED_STONE]: 'noisy',
+    [BlockType.THATCH]: 'striped',
   };
 
   const blockTypes = [
@@ -182,6 +195,19 @@ export function getTextureAtlas(): THREE.CanvasTexture {
 
     BlockType.GLASS_PANE,
     BlockType.IRON_BARS,
+
+    BlockType.GLASS,
+    BlockType.BOOKSHELF,
+    BlockType.CLAY,
+    BlockType.MOSSY_COBBLE,
+    BlockType.GLOWSTONE,
+    BlockType.DARK_PLANK,
+    BlockType.RED_ROOF,
+    BlockType.WOOL_RED,
+    BlockType.WOOL_BLUE,
+    BlockType.SANDSTONE_BRICK,
+    BlockType.CHISELED_STONE,
+    BlockType.THATCH,
   ];
 
   for (let i = 0; i < blockTypes.length; i++) {

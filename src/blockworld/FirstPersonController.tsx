@@ -237,6 +237,21 @@ export const FirstPersonController: React.FC = () => {
         const py = result.placeChunkY * CHUNK_SIZE + result.placeBlockY;
         const pz = result.placeChunkZ * CHUNK_SIZE + result.placeBlockZ;
 
+        const hitWx = result.hitChunkX * CHUNK_SIZE + result.hitBlockX;
+        const hitWy = result.hitChunkY * CHUNK_SIZE + result.hitBlockY;
+        const hitWz = result.hitChunkZ * CHUNK_SIZE + result.hitBlockZ;
+        const hitBlock = result.hitType;
+
+        if (hitBlock === BlockType.DOOR) {
+          blockWorldActions.setBlock(hitWx, hitWy, hitWz, BlockType.AIR);
+          return;
+        }
+
+        if (isDoorFrameSpot(px, py, pz)) {
+          blockWorldActions.setBlock(px, py, pz, BlockType.DOOR);
+          return;
+        }
+
         const originX = blockWorldPlayer.position.x;
         const originY = blockWorldPlayer.position.y + PLAYER_HEIGHT;
         const originZ = blockWorldPlayer.position.z;
@@ -551,6 +566,38 @@ function doRaycast(): ReturnType<typeof raycastBlock> {
     reachDist,
     getChunkWrapped,
   );
+}
+
+function isDoorFrameSpot(wx: number, wy: number, wz: number): boolean {
+  const blockAt = (x: number, y: number, z: number): BlockType => {
+    const { cx, cy, cz } = worldToChunk(
+      Math.floor(x), Math.floor(y), Math.floor(z)
+    );
+    const chunk = getChunkWrapped(cx, cy, cz);
+    if (!chunk) return BlockType.AIR;
+    const lbx = ((Math.floor(x) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lby = ((Math.floor(y) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    const lbz = ((Math.floor(z) % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+    return chunk.getBlock(lbx, lby, lbz) as BlockType;
+  };
+
+  if (blockAt(wx, wy, wz) !== BlockType.AIR) return false;
+
+  const below = blockAt(wx, wy - 1, wz);
+  if (!isCollidable(below) || below === BlockType.DOOR) return false;
+
+  for (const [dx, dz] of [[1, 0], [0, 1]] as const) {
+    let hasLeftWall = false, hasRightWall = false;
+    for (let dist = 1; dist <= 3; dist++) {
+      const left = blockAt(wx - dx * dist, wy, wz - dz * dist);
+      const right = blockAt(wx + dx * dist, wy, wz + dz * dist);
+      if (isCollidable(left) && left !== BlockType.DOOR) hasLeftWall = true;
+      if (isCollidable(right) && right !== BlockType.DOOR) hasRightWall = true;
+      if (hasLeftWall && hasRightWall) return true;
+    }
+  }
+
+  return false;
 }
 
 function checkCollision(px: number, py: number, pz: number): boolean {

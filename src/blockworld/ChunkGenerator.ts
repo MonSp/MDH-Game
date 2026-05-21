@@ -184,12 +184,12 @@ function flattenBuildingTerrain(
 
     let radius: number;
     switch (b.kind) {
-      case 'capital': radius = 21; break;
+      case 'capital': radius = 30; break;
       case 'city':
-      case 'manor': radius = 12; break;
+      case 'manor': radius = 18; break;
       case 'fortress':
-      case 'watchtower': radius = 10; break;
-      default: radius = 10;
+      case 'watchtower': radius = 12; break;
+      default: radius = 12;
     }
     flattenAround(blocks, cx, cy, cz, centerX, centerZ, radius);
   }
@@ -208,10 +208,10 @@ function flattenBuildingTerrain(
       const centerZ = zcz * STRUCTURE_ZONE_SIZE + STRUCTURE_ZONE_SIZE / 2;
 
       let radius: number;
-      if (kind === StructureKind.CAPITAL_CITY) radius = 21;
-      else if (kind === StructureKind.MANOR) radius = 12;
-      else if (kind === StructureKind.TEMPLE || kind === StructureKind.PAGODA) radius = 8;
-      else radius = 9;
+      if (kind === StructureKind.CAPITAL_CITY) radius = 30;
+      else if (kind === StructureKind.MANOR) radius = 18;
+      else if (kind === StructureKind.TEMPLE || kind === StructureKind.PAGODA) radius = 14;
+      else radius = 12;
 
       flattenAround(blocks, cx, cy, cz, centerX, centerZ, radius);
     }
