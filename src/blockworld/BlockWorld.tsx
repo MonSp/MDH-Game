@@ -13,11 +13,13 @@ import { BlockMiningOverlay } from './BlockMiningOverlay';
 import { BlockBreakParticles } from './BlockBreakParticles';
 import { PostProcessing } from './PostProcessing';
 import { BlockWorldEntities } from './BlockWorldEntities';
+import { ChunkCache } from './ChunkCache';
 
-const HORIZONTAL_VIEW_CHUNKS = 8;
-const VERTICAL_VIEW_CHUNKS = 3;
-const LOD0_DIST = 4;
-const LOD1_DIST = 6;
+const HORIZONTAL_VIEW_CHUNKS = 16;
+const VERTICAL_VIEW_CHUNKS = 4;
+const LOD0_DIST = 6;
+const LOD1_DIST = 10;
+const MAX_CHUNK_LOADS_PER_FRAME = 80;
 
 interface LoadedChunk {
   data: ChunkData;
@@ -53,6 +55,8 @@ export const BlockWorld: React.FC = () => {
   chunksRef.current = chunks;
 
   const chunkDataMap = useRef(new Map<string, ChunkData>());
+  const chunkCache = useRef(new ChunkCache(5000));
+  const dirtyChunks = useRef(new Set<string>());
   const workerRef = useRef<ChunkWorkerManager | null>(null);
   const loadingSet = useRef(new Set<string>());
   const chunkGenRef = useRef(new Map<string, number>());
@@ -136,6 +140,7 @@ export const BlockWorld: React.FC = () => {
     if (data.getBlock(bx, by, bz) === type) return;
 
     data.setBlock(bx, by, bz, type);
+    dirtyChunks.current.add(key);
 
     const chunksToRemesh = new Set<string>();
     chunksToRemesh.add(key);
@@ -185,6 +190,52 @@ export const BlockWorld: React.FC = () => {
     }
     if (loadingSet.current.has(key)) return;
 
+    const cached = chunkCache.current.get(key);
+    if (cached) {
+      chunkCache.current.delete(key);
+      chunkDataMap.current.set(key, cached.data);
+
+      const meshMatches = cached.meshData && cached.lod <= lod;
+
+      setChunks(prev => {
+        const next = new Map(prev);
+        next.set(key, { data: cached.data, meshData: meshMatches ? cached.meshData : null, lod, loading: !meshMatches });
+        return next;
+      });
+
+      if (!meshMatches) {
+        const gen = (chunkGenRef.current.get(key) || 0) + 1;
+        chunkGenRef.current.set(key, gen);
+        loadingSet.current.add(key);
+        workerRef.current!.enqueue(cached.data, buildNeighbors(cx, cy, cz), lod).then(meshData => {
+          loadingSet.current.delete(key);
+          if (chunkGenRef.current.get(key) !== gen) return;
+          setChunks(prev => {
+            const next = new Map(prev);
+            const e = next.get(key);
+            if (e) next.set(key, { ...e, meshData, loading: false });
+            return next;
+          });
+          const offsets = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
+          for (const [dx, dy, dz] of offsets) {
+            const nk = chunkKey(cx + dx, cy + dy, cz + dz);
+            if (chunkDataMap.current.has(nk) && !loadingSet.current.has(nk)) {
+              remeshChunkRef.current(cx + dx, cy + dy, cz + dz);
+            }
+          }
+        });
+      } else {
+        const offsets = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
+        for (const [dx, dy, dz] of offsets) {
+          const nk = chunkKey(cx + dx, cy + dy, cz + dz);
+          if (chunkDataMap.current.has(nk) && !loadingSet.current.has(nk)) {
+            remeshChunkRef.current(cx + dx, cy + dy, cz + dz);
+          }
+        }
+      }
+      return;
+    }
+
     const gen = (chunkGenRef.current.get(key) || 0) + 1;
     chunkGenRef.current.set(key, gen);
     loadingSet.current.add(key);
@@ -227,6 +278,13 @@ export const BlockWorld: React.FC = () => {
       loadingSet.current.delete(key);
     }
     chunkGenRef.current.delete(key);
+
+    const chunk = chunksRef.current.get(key)!;
+    if (!dirtyChunks.current.has(key) && !chunk.data.isEmpty()) {
+      chunkCache.current.set(key, { data: chunk.data, meshData: chunk.meshData, lod: chunk.lod });
+    }
+
+    dirtyChunks.current.delete(key);
     chunkDataMap.current.delete(key);
     setChunks(prev => {
       const next = new Map(prev);
@@ -236,6 +294,7 @@ export const BlockWorld: React.FC = () => {
   }, []);
 
   const frameRef = useRef(0);
+
   useFrame((_, delta) => {
     frameRef.current += delta;
     const waterMat = (ChunkMesh as any).__waterMaterial;
@@ -270,11 +329,30 @@ export const BlockWorld: React.FC = () => {
       }
     }
 
+    const newChunks: { cx: number; cy: number; cz: number; lod: MeshLOD; dist: number }[] = [];
     for (const [key, dist] of desiredKeys) {
-      if (!loadingSet.current.has(key)) {
-        const [cxStr, cyStr, czStr] = key.split(',');
+      if (loadingSet.current.has(key)) continue;
+      const [cxStr, cyStr, czStr] = key.split(',');
+      if (chunksRef.current.has(key)) {
         loadChunk(Number(cxStr), Number(cyStr), Number(czStr), getLOD(dist));
+        continue;
       }
+      newChunks.push({
+        cx: Number(cxStr),
+        cy: Number(cyStr),
+        cz: Number(czStr),
+        lod: getLOD(dist),
+        dist,
+      });
+    }
+
+    newChunks.sort((a, b) => a.dist - b.dist);
+
+    let loaded = 0;
+    for (const { cx, cy, cz, lod } of newChunks) {
+      if (loaded >= MAX_CHUNK_LOADS_PER_FRAME) break;
+      loadChunk(cx, cy, cz, lod);
+      loaded++;
     }
   });
 
