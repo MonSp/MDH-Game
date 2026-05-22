@@ -10,6 +10,8 @@
 #include <functional>
 #include <atomic>
 
+#include "LocalLLMEngine.h"
+
 #ifdef USE_CURL
 #include <curl/curl.h>
 #endif
@@ -79,6 +81,15 @@ public:
         maxConcurrentRequests_ = limit;
     }
 
+    void configureLocalEngine(const LocalLLMConfig& config) {
+        localLLMConfig_ = config;
+        localEngine_ = &LocalLLMEngine::getInstance();
+    }
+
+    LocalLLMConfig getLocalLLMConfig() const {
+        return localLLMConfig_;
+    }
+
     size_t getPendingRequestCount() const {
         return pendingRequests_.load();
     }
@@ -104,7 +115,8 @@ public:
 private:
     LLMHttpClient() : initialized_(false), pendingRequests_(0),
         provider_(LLMProvider::OPENAI),
-        temperature_(0.7f), maxTokens_(2000), maxConcurrentRequests_(10) {}
+        temperature_(0.7f), maxTokens_(2000), maxConcurrentRequests_(10),
+        stopWorkers_(false) {}
 
     ~LLMHttpClient() {
         shutdown();
@@ -145,8 +157,16 @@ private:
         response.request_id = request.request_id;
         auto startTime = std::chrono::high_resolution_clock::now();
 
-        response.success = false;
-        response.error = "HTTP client not available - curl library not installed";
+#ifdef USE_CURL
+        response.success = doHttpRequest(request, response);
+#else
+        if (provider_ == LLMProvider::LOCAL) {
+            response = executeLocalInference(request);
+        } else {
+            response.success = false;
+            response.error = "HTTP client not available - curl library not installed";
+        }
+#endif
 
         auto endTime = std::chrono::high_resolution_clock::now();
         response.latency_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -154,6 +174,41 @@ private:
 
         invokeCallback(request, response);
     }
+
+    LLMResponse executeLocalInference(const LLMRequest& request) {
+        LLMResponse response;
+        response.request_id = request.request_id;
+
+        if (!localEngine_) {
+            response.success = false;
+            response.error = "Local LLM engine not configured";
+            return response;
+        }
+
+        if (!localEngine_->isModelLoaded()) {
+            if (!localEngine_->initialize(localLLMConfig_)) {
+                response.success = false;
+                response.error = "Local LLM engine init failed: " + localEngine_->getLastError();
+                return response;
+            }
+        }
+
+        LocalLLMResult result = localEngine_->generate(
+            request.system_prompt, request.user_prompt);
+
+        response.success = true;
+        response.content = result.text;
+        return response;
+    }
+
+#ifdef USE_CURL
+    bool doHttpRequest(const LLMRequest& request, LLMResponse& response) {
+        // placeholder for curl-based HTTP request
+        response.success = false;
+        response.error = "curl HTTP not yet implemented";
+        return false;
+    }
+#endif
 
     void invokeCallback(const LLMRequest& request, const LLMResponse& response) {
         if (response.success && request.callback) {
@@ -184,6 +239,9 @@ private:
     float temperature_;
     int maxTokens_;
     size_t maxConcurrentRequests_;
+
+    LocalLLMEngine* localEngine_ = nullptr;
+    LocalLLMConfig localLLMConfig_;
 
     std::atomic<bool> stopWorkers_;
     std::vector<std::thread> workerThreads_;

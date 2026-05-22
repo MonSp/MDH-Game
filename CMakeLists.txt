@@ -48,4 +48,24 @@ add_executable(game_engine
     ${LLM_FILES}
 )
 
-target_link_libraries(game_engine)
+target_link_libraries(game_engine
+    pthread
+)
+
+# ============================================================
+# 本地 LLM 推理后端 —— llama.cpp
+# 启用步骤：
+#   1. git clone https://github.com/ggerganov/llama.cpp.git third_party/llama.cpp
+#   2. cd third_party/llama.cpp && mkdir build && cd build
+#   3. cmake .. -DLLAMA_CURL=OFF && make -j$(nproc)
+#   4. 取消下面 4 行的注释
+#   5. 在 LocalLLMEngine.h 中取消 #define LLAMA_CPP_BACKEND 的注释
+# ============================================================
+# set(LLAMA_DIR "${CMAKE_SOURCE_DIR}/third_party/llama.cpp/build" CACHE PATH "llama.cpp build directory")
+# target_include_directories(game_engine PRIVATE
+#     ${LLAMA_DIR}/../include
+#     ${LLAMA_DIR}/../common
+#     ${LLAMA_DIR}/../ggml/include
+# )
+# target_link_libraries(game_engine ${LLAMA_DIR}/libllama.so)
+# target_compile_definitions(game_engine PRIVATE LLAMA_CPP_BACKEND)

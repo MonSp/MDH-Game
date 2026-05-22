@@ -39,6 +39,12 @@ public:
         }
     }
 
+    void configureLocalEngine(const LocalLLMConfig& config) {
+        if (llmService_) {
+            llmService_->configureLocalEngine(config);
+        }
+    }
+
     void requestPlanForNPC(ECS::EntityId entityId, LLMTier tier) {
         auto* identity = ECS::Registry::getInstance().getComponent<IdentityComponent>(entityId);
         auto* personality = ECS::Registry::getInstance().getComponent<PersonalityComponent>(entityId);

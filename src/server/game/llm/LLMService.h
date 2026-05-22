@@ -93,6 +93,17 @@ public:
         httpClient_->setConcurrencyLimit(limit);
     }
 
+    void configureLocalEngine(const LocalLLMConfig& config) {
+        httpClient_->configureLocalEngine(config);
+    }
+
+    std::string getLocalLLMStatus() const {
+        auto& engine = LocalLLMEngine::getInstance();
+        if (!engine.isInitialized()) return "not_initialized";
+        if (!engine.isModelLoaded()) return "model_not_loaded";
+        return "running";
+    }
+
 private:
     LLMService() : initialized_(false), maxConcurrentRequests_(8), httpClient_(nullptr) {
         httpClient_ = &LLMHttpClient::getInstance();

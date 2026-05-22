@@ -3,6 +3,7 @@
 #include "../../ecs/components/LLMComponent.h"
 #include "../../ecs/Registry.h"
 #include "../../llm/LLMPlanningClient.h"
+#include "../../llm/LocalLLMEngine.h"
 #include <vector>
 #include <algorithm>
 #include <chrono>
@@ -24,8 +25,9 @@ public:
         std::string apiKey = "";
         std::string model = "gpt-4";
         std::string localEndpoint = "http://localhost:11434";
+        LocalLLMConfig localConfig;
 
-        if (loadConfigFromFile(actualConfigPath, provider, apiKey, model, localEndpoint)) {
+        if (loadConfigFromFile(actualConfigPath, provider, apiKey, model, localEndpoint, localConfig)) {
             std::cout << "LLM config loaded from: " << actualConfigPath << std::endl;
         } else {
             std::cout << "Using default LLM config (no config file found)" << std::endl;
@@ -33,6 +35,12 @@ public:
 
         llmClient_ = &LLMPlanningClient::getInstance();
         llmClient_->initialize(provider, apiKey, model, localEndpoint, false);
+
+        if (provider == "local" && !localConfig.model_path.empty()) {
+            llmClient_->configureLocalEngine(localConfig);
+            std::cout << "Local LLM engine configured with model: "
+                      << localConfig.model_path << std::endl;
+        }
     }
 
     void shutdown() {
@@ -338,7 +346,8 @@ private:
 
     bool loadConfigFromFile(const std::string& path, std::string& provider,
                            std::string& apiKey, std::string& model,
-                           std::string& localEndpoint) const {
+                           std::string& localEndpoint,
+                           LocalLLMConfig& localConfig) const {
         std::ifstream file(path);
         if (!file.is_open()) {
             return false;
@@ -367,6 +376,20 @@ private:
                 model = value;
             } else if (key == "local_endpoint") {
                 localEndpoint = value;
+            } else if (key == "local_model_path") {
+                localConfig.model_path = value;
+            } else if (key == "local_context_size") {
+                localConfig.context_size = std::stoi(value);
+            } else if (key == "local_max_tokens") {
+                localConfig.max_tokens = std::stoi(value);
+            } else if (key == "local_threads") {
+                localConfig.thread_count = std::stoi(value);
+            } else if (key == "local_gpu_layers") {
+                localConfig.gpu_layers = std::stoi(value);
+            } else if (key == "local_temperature") {
+                localConfig.temperature = std::stof(value);
+            } else if (key == "local_chat_template") {
+                localConfig.chat_template = value;
             }
         }
 
