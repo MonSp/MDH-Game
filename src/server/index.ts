@@ -12,7 +12,8 @@ import {
   ResourceManager,
   EconomyService,
   ItemService,
-  WorldGenService
+  WorldGenService,
+  ECSEngineService
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
 import { MapGeneratorService } from './services/MapGeneratorService';
@@ -666,7 +667,25 @@ function initializeGame(): void {
   ResourceManager.getInstance().initialize(GAME_CONFIG.MAP_WIDTH, GAME_CONFIG.MAP_HEIGHT, 50);
   WorldGenService.getInstance().initialize();
 
-  // Start NPC simulation world
+  const ecsEngine = ECSEngineService.getInstance();
+  ecsEngine.initialize(8);
+
+  if (ecsEngine.isAvailable) {
+    const totalNPCs = 10000;
+    for (let layer = 9; layer >= 1; layer--) {
+      const count = Math.floor(totalNPCs / 9);
+      const result = ecsEngine.createNPCs(count, layer);
+      if (result) {
+        console.log(`[ECS Engine] Layer ${layer}: created ${result.created} NPCs, total = ${result.totalNPCs}`);
+      }
+    }
+    const stats = ecsEngine.getStats();
+    if (stats) {
+      console.log(`[ECS Engine] ${stats.npcCount} NPCs ready`);
+    }
+  }
+
+  // Start NPC simulation world (fallback / LLM dialogue layer)
   const npcWorld = NPCWorldService.getInstance();
   npcWorld.setClanIds(npcWorld.generateDefaultClanIds(9));
   npcWorld.initialize();
@@ -721,56 +740,50 @@ function startGameLoop(): void {
     );
   }, 5000);
 
-  // Phase 1.1c + 1.1d: NPC behavior processing every 2 seconds
-  // Evaluates behavior trees, executes actions, updates NPC states before sync
+  // NPC behavior processing via C++ ECS engine (every 100ms = ~10 FPS simulation)
+  // Falls back to TS-based processing if C++ addon is unavailable
   setInterval(() => {
-    const npcWorld = NPCWorldService.getInstance();
-    const llmIntegration = LLMIntegrationManager.getInstance();
-    for (const [npcId, state] of npcWorld.getAllNPCs()) {
-      try {
-        // Skip dead NPCs
-        if (state.npc.hp <= 0) continue;
-
-        // Respect NPCWorldService planQueue — don't override active plans
-        if (state.planQueue.length > 0 && state.activityUntil > Date.now()) continue;
-
-        // Get behavior from LLM planning or fallback
-        const oldBehavior = state.activity;
-        const behavior = llmIntegration.getBehaviorForNPC(npcId, state.npc);
-
-        // Phase 1.1e: Emit activity change events for memory feedback
-        if (behavior !== oldBehavior) {
-          EventBus.emit(NPCEvent.ACTIVITY_CHANGED, { npcId, activity: behavior, previous: oldBehavior });
-        }
-
-        // Update NPC activity in world state
-        state.activity = behavior;
-
-        // Simple behavior execution: move NPC based on activity
-        if (behavior === 'patrol' || behavior === 'explore' || behavior === 'logistics' || behavior === 'compete') {
-          const dx = Math.floor(Math.random() * 3) - 1;
-          const dy = Math.floor(Math.random() * 3) - 1;
-          state.npc.position.x = Math.max(0, Math.min(GAME_CONFIG.MAP_WIDTH, state.npc.position.x + dx));
-          state.npc.position.y = Math.max(0, Math.min(GAME_CONFIG.MAP_HEIGHT, state.npc.position.y + dy));
-          EventBus.emit(NPCEvent.STATE_CHANGED, { npcId, position: { ...state.npc.position }, activity: behavior });
-        } else if (behavior === 'trade' || behavior === 'work') {
-          if (Math.random() < 0.3) {
-            const gained = Math.floor(Math.random() * 5) + 1;
-            state.npc.resources.spiritStones += gained;
-            EventBus.emit(NPCEvent.TRADE_COMPLETE, { npcId, profit: gained });
+    const ecsEngine = ECSEngineService.getInstance();
+    if (ecsEngine.isAvailable) {
+      ecsEngine.updateFrame();
+    } else {
+      const npcWorld = NPCWorldService.getInstance();
+      const llmIntegration = LLMIntegrationManager.getInstance();
+      for (const [npcId, state] of npcWorld.getAllNPCs()) {
+        try {
+          if (state.npc.hp <= 0) continue;
+          if (state.planQueue.length > 0 && state.activityUntil > Date.now()) continue;
+          const oldBehavior = state.activity;
+          const behavior = llmIntegration.getBehaviorForNPC(npcId, state.npc);
+          if (behavior !== oldBehavior) {
+            EventBus.emit(NPCEvent.ACTIVITY_CHANGED, { npcId, activity: behavior, previous: oldBehavior });
           }
-        } else if (behavior === 'rest' || behavior === 'retreat') {
-          if (state.npc.hp < state.npc.maxHp) {
-            const healed = Math.floor(state.npc.maxHp * 0.05);
-            state.npc.hp = Math.min(state.npc.maxHp, state.npc.hp + healed);
-            EventBus.emit(NPCEvent.STATE_CHANGED, { npcId, hp: state.npc.hp, activity: behavior });
+          state.activity = behavior;
+          if (behavior === 'patrol' || behavior === 'explore' || behavior === 'logistics' || behavior === 'compete') {
+            const dx = Math.floor(Math.random() * 3) - 1;
+            const dy = Math.floor(Math.random() * 3) - 1;
+            state.npc.position.x = Math.max(0, Math.min(GAME_CONFIG.MAP_WIDTH, state.npc.position.x + dx));
+            state.npc.position.y = Math.max(0, Math.min(GAME_CONFIG.MAP_HEIGHT, state.npc.position.y + dy));
+            EventBus.emit(NPCEvent.STATE_CHANGED, { npcId, position: { ...state.npc.position }, activity: behavior });
+          } else if (behavior === 'trade' || behavior === 'work') {
+            if (Math.random() < 0.3) {
+              const gained = Math.floor(Math.random() * 5) + 1;
+              state.npc.resources.spiritStones += gained;
+              EventBus.emit(NPCEvent.TRADE_COMPLETE, { npcId, profit: gained });
+            }
+          } else if (behavior === 'rest' || behavior === 'retreat') {
+            if (state.npc.hp < state.npc.maxHp) {
+              const healed = Math.floor(state.npc.maxHp * 0.05);
+              state.npc.hp = Math.min(state.npc.maxHp, state.npc.hp + healed);
+              EventBus.emit(NPCEvent.STATE_CHANGED, { npcId, hp: state.npc.hp, activity: behavior });
+            }
           }
+        } catch (err) {
+          // Silently skip NPCs that fail behavior processing
         }
-      } catch (err) {
-        // Silently skip NPCs that fail behavior processing
       }
     }
-  }, 2000);
+  }, 100);
 
   // NPCRole → Chinese display string
   function mapRole(role: string): string {
@@ -791,11 +804,12 @@ function startGameLoop(): void {
     return map[realm] || '练气';
   }
 
-  // NPC state sync to connected clients every 2 seconds
+  // NPC state sync to connected clients — driven by C++ ECS engine
+  // Falls back to NPCWorldService if C++ addon is unavailable
   let prevNpcIds: Set<string> = new Set();
   setInterval(() => {
-    const npcWorld = NPCWorldService.getInstance();
-    const npcStates: Array<{
+    const ecsEngine = ECSEngineService.getInstance();
+    let npcStates: Array<{
       id: string; name: string; activity: string; emotion: string;
       x: number; y: number; hp: number; maxHp: number; power: number;
       clanId: string; role: string; realm: string;
@@ -803,32 +817,60 @@ function startGameLoop(): void {
       ambition: number; caution: number; loyalty: number; greed: number;
       spiritStone: number;
     }> = [];
-    for (const [id, state] of npcWorld.getAllNPCs()) {
-      npcStates.push({
-        id,
-        name: state.npc.name,
-        activity: state.activity,
-        emotion: state.emotion,
-        x: state.npc.position.x,
-        y: state.npc.position.y,
-        hp: state.npc.hp,
-        maxHp: state.npc.maxHp,
-        power: state.npc.power,
-        clanId: state.npc.clanId,
-        role: mapRole(state.npc.role),
-        realm: mapRealm(state.npc.realm),
-        mp: state.npc.mp,
-        maxMp: state.npc.maxMp,
-        ambition: state.npc.personality.ambition,
-        caution: state.npc.personality.caution,
-        loyalty: state.npc.personality.loyalty,
-        greed: state.npc.personality.greed,
-        spiritStone: state.npc.resources.spiritStones,
-      });
+
+    if (ecsEngine.isAvailable) {
+      const ecsNpcs = ecsEngine.getAllNPCStates();
+      npcStates = ecsNpcs.map(n => ({
+        id: n.id,
+        name: n.name,
+        activity: n.activity,
+        emotion: '平静',
+        x: n.x,
+        y: n.y,
+        hp: n.hp,
+        maxHp: n.maxHp,
+        power: n.power,
+        clanId: n.clanId,
+        role: n.role,
+        realm: n.realm,
+        mp: n.mp,
+        maxMp: n.maxMp,
+        ambition: n.ambition,
+        caution: n.caution,
+        loyalty: n.loyalty,
+        greed: n.greed,
+        spiritStone: n.spiritStones,
+      }));
+    } else {
+      const npcWorld = NPCWorldService.getInstance();
+      for (const [id, state] of npcWorld.getAllNPCs()) {
+        npcStates.push({
+          id,
+          name: state.npc.name,
+          activity: state.activity,
+          emotion: state.emotion,
+          x: state.npc.position.x,
+          y: state.npc.position.y,
+          hp: state.npc.hp,
+          maxHp: state.npc.maxHp,
+          power: state.npc.power,
+          clanId: state.npc.clanId,
+          role: mapRole(state.npc.role),
+          realm: mapRealm(state.npc.realm),
+          mp: state.npc.mp,
+          maxMp: state.npc.maxMp,
+          ambition: state.npc.personality.ambition,
+          caution: state.npc.personality.caution,
+          loyalty: state.npc.personality.loyalty,
+          greed: state.npc.personality.greed,
+          spiritStone: state.npc.resources.spiritStones,
+        });
+      }
     }
     io.emit('npc:state-sync', { npcStates, tick: Date.now() });
 
-    // Phase 1.3: NPC interaction event sync
+    // Phase 1.3: NPC interaction event sync (from NPCWorldService)
+    const npcWorld = NPCWorldService.getInstance();
     const interactions = npcWorld.consumeRecentInteractions();
     if (interactions.length > 0) {
       io.emit('npc:interactions', { interactions, tick: Date.now() });
@@ -844,7 +886,7 @@ function startGameLoop(): void {
       io.emit('npc:removed', { ids: removedIds, tick: Date.now() });
     }
     prevNpcIds = currentIds;
-  }, 2000);
+  }, 500);
 }
 
 httpServer.listen(PORT, () => {

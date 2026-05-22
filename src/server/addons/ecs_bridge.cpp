@@ -1,0 +1,256 @@
+#include <node_api.h>
+#include <string>
+#include <vector>
+#include <cstring>
+#include "game/ecs/Registry.h"
+#include "game/ecs/systems/WorldUpdateLoop.h"
+#include "game/ecs/components/IdentityComponent.h"
+#include "game/ecs/components/StatsComponent.h"
+#include "game/ecs/components/PositionComponent.h"
+#include "game/ecs/components/BehaviorComponent.h"
+#include "game/ecs/components/PersonalityComponent.h"
+#include "game/ecs/components/ResourcesComponent.h"
+#include "game/ecs/components/LifecycleComponent.h"
+#include "game/npc/NPCCreationSystem.h"
+#include "game/ecs/systems/LLMPlanningSystem.h"
+#include "game/llm/LLMHttpClient.h"
+
+static napi_status setStr(napi_env env, napi_value obj, const char* key, const std::string& val) {
+    napi_value jsStr;
+    napi_status s = napi_create_string_utf8(env, val.c_str(), val.length(), &jsStr);
+    if (s != napi_ok) return s;
+    return napi_set_named_property(env, obj, key, jsStr);
+}
+
+static napi_status setInt(napi_env env, napi_value obj, const char* key, int32_t val) {
+    napi_value jsNum;
+    napi_status s = napi_create_int32(env, val, &jsNum);
+    if (s != napi_ok) return s;
+    return napi_set_named_property(env, obj, key, jsNum);
+}
+
+static napi_status setInt64ToDouble(napi_env env, napi_value obj, const char* key, int64_t val) {
+    napi_value jsNum;
+    napi_status s = napi_create_double(env, static_cast<double>(val), &jsNum);
+    if (s != napi_ok) return s;
+    return napi_set_named_property(env, obj, key, jsNum);
+}
+
+static napi_status setFloat(napi_env env, napi_value obj, const char* key, float val) {
+    napi_value jsNum;
+    napi_status s = napi_create_double(env, static_cast<double>(val), &jsNum);
+    if (s != napi_ok) return s;
+    return napi_set_named_property(env, obj, key, jsNum);
+}
+
+static const char* realmToString(RealmLevel r) {
+    switch (r) {
+        case RealmLevel::Mortal: return "凡人";
+        case RealmLevel::QiRefining: return "练气";
+        case RealmLevel::FoundationBuilding: return "筑基";
+        case RealmLevel::GoldenCore: return "金丹";
+        case RealmLevel::YuanInfant: return "元婴";
+        case RealmLevel::Transcension: return "化神";
+        default: return "练气";
+    }
+}
+
+static const char* roleToString(NPCRole r) {
+    switch (r) {
+        case NPCRole::FamilyHead: return "家主";
+        case NPCRole::Elder: return "长老";
+        case NPCRole::CoreDisciple: return "核心子弟";
+        case NPCRole::InnerDisciple: return "内门子弟";
+        case NPCRole::BranchDisciple: return "支脉子弟";
+        case NPCRole::LawEnforcementElder: return "执法堂长老";
+        default: return "内门子弟";
+    }
+}
+
+static const char* activityToString(NPCActivity a) {
+    switch (a) {
+        case NPCActivity::Patrol: return "patrol";
+        case NPCActivity::Retreat: return "retreat";
+        case NPCActivity::Logistics: return "logistics";
+        case NPCActivity::Compete: return "compete";
+        case NPCActivity::Work: return "work";
+        case NPCActivity::Rest: return "rest";
+        case NPCActivity::Trade: return "trade";
+        case NPCActivity::Flee: return "flee";
+        case NPCActivity::Chase: return "chase";
+        case NPCActivity::Dead: return "dead";
+        default: return "rest";
+    }
+}
+
+static napi_value Initialize(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    uint32_t threadCount = 8;
+    if (argc >= 1) napi_get_value_uint32(env, args[0], &threadCount);
+
+    WorldUpdateLoop::getInstance().initialize(threadCount);
+
+    napi_value result;
+    napi_get_boolean(env, true, &result);
+    return result;
+}
+
+static napi_value CreateNPCs(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value args[2];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    uint32_t count = 1000;
+    uint32_t layer = 9;
+    if (argc >= 1) napi_get_value_uint32(env, args[0], &count);
+    if (argc >= 2) napi_get_value_uint32(env, args[1], &layer);
+
+    NPCCreationSystem::getInstance().createBatchNPCs(count, static_cast<uint8_t>(layer));
+
+    napi_value result;
+    napi_create_object(env, &result);
+    setInt(env, result, "created", static_cast<int32_t>(count));
+    setInt(env, result, "layer", static_cast<int32_t>(layer));
+    setInt(env, result, "totalNPCs", static_cast<int32_t>(NPCCreationSystem::getInstance().getNPCCount()));
+    return result;
+}
+
+static napi_value GetAllNPCStates(napi_env env, napi_callback_info info) {
+    napi_get_cb_info(env, info, nullptr, nullptr, nullptr, nullptr);
+
+    auto& registry = ECS::Registry::getInstance();
+    auto entities = registry.getEntitiesWithComponent<IdentityComponent>();
+
+    std::vector<ECS::EntityId> activeEntities;
+    activeEntities.reserve(entities.size());
+    for (auto id : entities) {
+        auto* lifecycle = registry.getComponent<LifecycleComponent>(id);
+        if (lifecycle && lifecycle->lifeState == NPCLifeState::Active) {
+            activeEntities.push_back(id);
+        }
+    }
+
+    napi_value arr;
+    napi_create_array_with_length(env, activeEntities.size(), &arr);
+
+    for (size_t i = 0; i < activeEntities.size(); i++) {
+        auto entityId = activeEntities[i];
+        napi_value obj;
+        napi_create_object(env, &obj);
+
+        auto* identity = registry.getComponent<IdentityComponent>(entityId);
+        auto* stats = registry.getComponent<StatsComponent>(entityId);
+        auto* position = registry.getComponent<PositionComponent>(entityId);
+        auto* behavior = registry.getComponent<BehaviorComponent>(entityId);
+        auto* personality = registry.getComponent<PersonalityComponent>(entityId);
+        auto* resources = registry.getComponent<ResourcesComponent>(entityId);
+
+        if (identity) {
+            setStr(env, obj, "id", identity->id);
+            setStr(env, obj, "name", identity->name);
+            setStr(env, obj, "clanId", identity->clanId);
+            setStr(env, obj, "nation", identity->nation);
+            setStr(env, obj, "role", roleToString(identity->role));
+            setInt(env, obj, "layer", static_cast<int32_t>(identity->layer));
+        }
+
+        if (stats) {
+            setStr(env, obj, "realm", realmToString(stats->realm));
+            setInt(env, obj, "hp", stats->hp);
+            setInt(env, obj, "maxHp", stats->maxHp);
+            setInt(env, obj, "mp", stats->mp);
+            setInt(env, obj, "maxMp", stats->maxMp);
+            setInt(env, obj, "power", stats->power);
+        }
+
+        if (position) {
+            setFloat(env, obj, "x", position->x);
+            setFloat(env, obj, "y", position->y);
+        }
+
+        if (behavior) {
+            setStr(env, obj, "activity", activityToString(behavior->currentActivity));
+        }
+
+        if (personality) {
+            setFloat(env, obj, "ambition", personality->ambition);
+            setFloat(env, obj, "caution", personality->caution);
+            setFloat(env, obj, "loyalty", personality->loyalty);
+            setFloat(env, obj, "greed", personality->greed);
+        }
+
+        if (resources) {
+            setInt64ToDouble(env, obj, "spiritStones", resources->spiritStones);
+        }
+
+        napi_set_element(env, arr, i, obj);
+    }
+
+    return arr;
+}
+
+static napi_value UpdateFrame(napi_env env, napi_callback_info info) {
+    napi_get_cb_info(env, info, nullptr, nullptr, nullptr, nullptr);
+
+    WorldUpdateLoop::getInstance().updateOnce();
+
+    napi_value result;
+    napi_get_boolean(env, true, &result);
+    return result;
+}
+
+static napi_value GetStats(napi_env env, napi_callback_info info) {
+    napi_get_cb_info(env, info, nullptr, nullptr, nullptr, nullptr);
+
+    napi_value result;
+    napi_create_object(env, &result);
+
+    setInt(env, result, "npcCount",
+        static_cast<int32_t>(NPCCreationSystem::getInstance().getNPCCount()));
+    setFloat(env, result, "avgFrameTime",
+        WorldUpdateLoop::getInstance().getAverageFrameTime());
+    setInt(env, result, "frameCount",
+        static_cast<int32_t>(WorldUpdateLoop::getInstance().getFrameCount()));
+
+    return result;
+}
+
+static napi_value Stop(napi_env env, napi_callback_info info) {
+    napi_get_cb_info(env, info, nullptr, nullptr, nullptr, nullptr);
+
+    LLMPlanningSystem::getInstance().shutdown();
+    WorldUpdateLoop::getInstance().stop();
+
+    napi_value result;
+    napi_get_boolean(env, true, &result);
+    return result;
+}
+
+static napi_value Init(napi_env env, napi_value exports) {
+    napi_value fn;
+
+    napi_create_function(env, "initialize", NAPI_AUTO_LENGTH, Initialize, nullptr, &fn);
+    napi_set_named_property(env, exports, "initialize", fn);
+
+    napi_create_function(env, "createNPCs", NAPI_AUTO_LENGTH, CreateNPCs, nullptr, &fn);
+    napi_set_named_property(env, exports, "createNPCs", fn);
+
+    napi_create_function(env, "updateFrame", NAPI_AUTO_LENGTH, UpdateFrame, nullptr, &fn);
+    napi_set_named_property(env, exports, "updateFrame", fn);
+
+    napi_create_function(env, "getAllNPCStates", NAPI_AUTO_LENGTH, GetAllNPCStates, nullptr, &fn);
+    napi_set_named_property(env, exports, "getAllNPCStates", fn);
+
+    napi_create_function(env, "getStats", NAPI_AUTO_LENGTH, GetStats, nullptr, &fn);
+    napi_set_named_property(env, exports, "getStats", fn);
+
+    napi_create_function(env, "stop", NAPI_AUTO_LENGTH, Stop, nullptr, &fn);
+    napi_set_named_property(env, exports, "stop", fn);
+
+    return exports;
+}
+
+NAPI_MODULE(NODE_GYP_MODULE_NAME, Init)

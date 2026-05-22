@@ -32,7 +32,7 @@ public:
         }
 
         llmClient_ = &LLMPlanningClient::getInstance();
-        llmClient_->initialize(provider, apiKey, model, localEndpoint);
+        llmClient_->initialize(provider, apiKey, model, localEndpoint, false);
     }
 
     void shutdown() {

@@ -32,6 +32,7 @@ public:
         running_ = false;
         frameCount_ = 0;
         totalFrameTimeMs_ = 0.0;
+        lastTime_ = std::chrono::high_resolution_clock::now();
     }
 
     void start() {
@@ -60,7 +61,7 @@ public:
 
         auto frameStart = std::chrono::high_resolution_clock::now();
 
-        LLMPlanningSystem::getInstance().updatePlanningRequests(currentTimeMs);
+        // LLMPlanningSystem::getInstance().updatePlanningRequests(currentTimeMs);
 
         NPChunkUpdateSystem::getInstance().updateAllNPCs(deltaTime, currentTimeMs);
 

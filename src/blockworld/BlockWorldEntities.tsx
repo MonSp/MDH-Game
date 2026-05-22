@@ -4,10 +4,9 @@ import { Sparkles } from '@react-three/drei';
 import { useGameStore, NPC, WildMonster, SquadMember } from '../store/gameStore';
 import { generateCharacterStyle, getRealmAura } from '../utils/appearance';
 import { getTerrainHeight } from './ChunkGenerator';
-import { PixelCharacterSprite } from '../components/PixelCharacterSprite';
-import { PixelMonsterSprite } from '../components/PixelMonsterSprite';
-import { PixelResourceSprite } from '../components/PixelResourceSprite';
 import { CombatParticles, BloodParticles, SkillParticles, triggerScreenShake } from '../components/PixelParticleEffects';
+import { VoxelEntityRenderer, getModelHeight } from './VoxelEntityRenderer';
+import { buildHumanoidModel, buildPlayerModel, getMonsterVoxelModel, VOXEL_SIZE } from './VoxelModels';
 
 let _selectedNpcId: string | null = null;
 let _setSelectedNpcId: ((id: string | null) => void) | null = null;
@@ -28,28 +27,13 @@ export function getSelectedNpc(): NPC | null {
 
 const VIEW_RADIUS = 12;
 
-const CultivatorModel = ({ appearance, isMoving = false, isFloating = false }: { appearance: any; isMoving?: boolean; isFloating?: boolean }) => {
-  const { height } = appearance;
-  const s = height * 0.6;
-  return (
-    <group scale={[s * 1.0, s * 1.0, s * 1.0]}>
-      <PixelCharacterSprite
-        realm={appearance.realm || '凡人'}
-        bodyType={appearance.bodyType || '凡体'}
-        role={appearance.role || '内门子弟'}
-        isMoving={isMoving}
-        isFloating={isFloating}
-        scale={s}
-      />
-    </group>
-  );
-};
-
 const REALM_LIST = ['凡人', '练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫'];
 
 const NPC_MESH = ({ npc }: { npc: NPC }) => {
   const [hovered, setHovered] = useState(false);
   const appearance = useMemo(() => generateCharacterStyle(npc.realm, '凡体', npc.role), [npc]);
+  const voxelModel = useMemo(() => buildHumanoidModel(npc.realm, npc.role), [npc.realm, npc.role]);
+  const modelHeight = useMemo(() => getModelHeight(voxelModel), [voxelModel]);
 
   const terrainY = getTerrainHeight(npc.position.x, npc.position.y);
   const realmIndex = useMemo(() => REALM_LIST.indexOf(npc.realm), [npc.realm]);
@@ -81,7 +65,10 @@ const NPC_MESH = ({ npc }: { npc: NPC }) => {
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
       >
-        <CultivatorModel appearance={appearance} isMoving={isMoving} />
+        <VoxelEntityRenderer
+          model={voxelModel}
+          position={[0, 0, 0]}
+        />
       </group>
 
       {realmIndex >= 3 && (
@@ -95,7 +82,7 @@ const NPC_MESH = ({ npc }: { npc: NPC }) => {
         />
       )}
 
-      <Html position={[0, appearance.height * 0.6 + 0.15, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, modelHeight + 0.3, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center">
           <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] text-white/80 whitespace-nowrap shadow-sm mb-1">
             {npc.activity}
@@ -120,6 +107,9 @@ const MONSTER_MESH = ({ monster }: { monster: WildMonster }) => {
   const monsterRealmIndex = useMemo(() => REALM_LIST.indexOf(monster.realm), [monster.realm]);
   const terrainY = getTerrainHeight(monster.position.x, monster.position.y);
 
+  const voxelModel = useMemo(() => getMonsterVoxelModel(monster.name), [monster.name]);
+  const modelHeight = useMemo(() => getModelHeight(voxelModel), [voxelModel]);
+
   const [damageNumbers, setDamageNumbers] = useState<{ id: number; value: number; color: string }[]>([]);
   const [showCombat, setShowCombat] = useState(false);
   const [combatPos, setCombatPos] = useState<[number, number, number]>([0, 0, 0]);
@@ -135,7 +125,7 @@ const MONSTER_MESH = ({ monster }: { monster: WildMonster }) => {
       const id = damageIdRef.current++;
       const color = dmg > monster.attack ? '#ffffff' : '#ff6666';
       setDamageNumbers(prev => [...prev, { id, value: dmg, color }]);
-      setCombatPos([(Math.random() - 0.5) * 0.3, 0.5, (Math.random() - 0.5) * 0.3]);
+      setCombatPos([(Math.random() - 0.5) * 0.3, modelHeight * 0.5, (Math.random() - 0.5) * 0.3]);
       setShowCombat(true);
       triggerScreenShake(0.5);
       setTimeout(() => { if (mountedRef.current) setShowCombat(false); }, 800);
@@ -143,7 +133,7 @@ const MONSTER_MESH = ({ monster }: { monster: WildMonster }) => {
     }
     prevHpRef.current = monster.hp;
     return () => { mountedRef.current = false; };
-  }, [monster.hp, monster.attack]);
+  }, [monster.hp, monster.attack, modelHeight]);
 
   return (
     <group position={[monster.position.x, terrainY, monster.position.y]}>
@@ -154,7 +144,10 @@ const MONSTER_MESH = ({ monster }: { monster: WildMonster }) => {
         </mesh>
       )}
 
-      <PixelMonsterSprite type={monster.name} realm={monster.realm} scale={1.1} />
+      <VoxelEntityRenderer
+        model={voxelModel}
+        position={[0, 0, 0]}
+      />
 
       {showCombat && <CombatParticles position={combatPos} count={8} color="#ff6b35" duration={800} />}
       {showCombat && <BloodParticles position={combatPos} count={12} duration={600} />}
@@ -171,7 +164,7 @@ const MONSTER_MESH = ({ monster }: { monster: WildMonster }) => {
         />
       )}
 
-      <Html position={[0, 1.5, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, modelHeight + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="flex flex-col items-center relative">
           {damageNumbers.map(dn => (
             <div key={dn.id} className="absolute -top-4 left-1/2 -translate-x-1/2 text-xs font-bold animate-float-up pointer-events-none whitespace-nowrap"
@@ -210,6 +203,34 @@ const RESOURCE_MESH = ({ res }: { res: any }) => {
     setTimeout(() => setGathering(false), 1200);
   };
 
+  const resourceModel = useMemo(() => {
+    const blocks = [];
+    if (res.type === '灵田') {
+      for (let x = -1; x <= 1; x++) {
+        for (let z = -1; z <= 1; z++) {
+          blocks.push({ x, y: 0, z, color: '#4ade80' });
+        }
+      }
+      blocks.push({ x: 0, y: 1, z: 0, color: '#a3e635' });
+    } else if (res.type === '矿脉') {
+      for (let x = -1; x <= 1; x++) {
+        for (let z = -1; z <= 1; z++) {
+          blocks.push({ x, y: 0, z, color: '#57534e' });
+        }
+      }
+      blocks.push({ x: 0, y: 1, z: 0, color: '#fbbf24' });
+      blocks.push({ x: 1, y: 1, z: 0, color: '#fbbf24' });
+    } else {
+      blocks.push({ x: 0, y: 0, z: 0, color: '#78716c' });
+      blocks.push({ x: 0, y: 1, z: 0, color: '#a8a29e' });
+      blocks.push({ x: 1, y: 0, z: 0, color: '#57534e' });
+      blocks.push({ x: -1, y: 0, z: 0, color: '#c084fc' });
+    }
+    return { blocks, totalHeight: 2 };
+  }, [res.type]);
+
+  const resHeight = getModelHeight(resourceModel);
+
   return (
     <group position={[res.position.x, terrainY + 0.4, res.position.y]}>
       <group
@@ -217,10 +238,14 @@ const RESOURCE_MESH = ({ res }: { res: any }) => {
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
       >
-        <PixelResourceSprite type={res.type} scale={0.8} />
+        <VoxelEntityRenderer
+          model={resourceModel}
+          position={[0, 0, 0]}
+          scale={0.6}
+        />
       </group>
       {hovered && (
-        <Html position={[0, 1, 0]} center style={{ pointerEvents: 'none' }}>
+        <Html position={[0, resHeight * 0.6 + 0.5, 0]} center style={{ pointerEvents: 'none' }}>
           <div className="bg-zinc-900/90 border border-zinc-700 px-2 py-1 rounded text-xs whitespace-nowrap shadow-lg">
             <div className="text-emerald-400 font-bold">{res.type}</div>
             <div className="text-zinc-400">点击采集</div>
@@ -239,6 +264,9 @@ const SQUAD_MEMBER_MESH = ({ member }: { member: SquadMember }) => {
     return style;
   }, [member.realm]);
 
+  const voxelModel = useMemo(() => buildHumanoidModel(member.realm || '凡人', '核心子弟'), [member.realm]);
+  const modelHeight = useMemo(() => getModelHeight(voxelModel), [voxelModel]);
+
   const terrainY = getTerrainHeight(member.position.x, member.position.y);
 
   return (
@@ -248,9 +276,12 @@ const SQUAD_MEMBER_MESH = ({ member }: { member: SquadMember }) => {
         <meshBasicMaterial color={appearance.auraColor} transparent opacity={appearance.auraOpacity} />
       </mesh>
 
-      <CultivatorModel appearance={appearance} />
+      <VoxelEntityRenderer
+        model={voxelModel}
+        position={[0, 0, 0]}
+      />
 
-      <Html position={[0, appearance.height * 0.6 + 0.15, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html position={[0, modelHeight + 0.2, 0]} center style={{ pointerEvents: 'none' }}>
         <div className="bg-black/50 px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap shadow-sm flex items-center space-x-1">
           <span className="text-amber-400">{member.role}</span>
           <span className="text-white/80">{member.name}</span>

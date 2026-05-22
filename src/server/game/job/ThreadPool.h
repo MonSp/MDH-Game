@@ -7,6 +7,7 @@
 #include <functional>
 #include <atomic>
 #include <queue>
+#include <condition_variable>
 
 struct ThreadPoolConfig {
     uint32_t threadCount;
@@ -23,6 +24,11 @@ public:
             queues_[i]->setMaxSize(config.queueSize);
         }
 
+        cvs_.reserve(config.threadCount);
+        for (uint32_t i = 0; i < config.threadCount; ++i) {
+            cvs_.push_back(std::make_unique<std::condition_variable>());
+        }
+
         for (uint32_t i = 0; i < config.threadCount; ++i) {
             threads_.emplace_back([this, i]() {
                 this->workerLoop(i);
@@ -33,7 +39,7 @@ public:
     ~ThreadPool() {
         stop_.store(true);
         for (auto& cv : cvs_) {
-            cv.notify_all();
+            cv->notify_all();
         }
         for (auto& thread : threads_) {
             if (thread.joinable()) {
@@ -95,7 +101,7 @@ private:
                 task();
             } else {
                 std::unique_lock<std::mutex> lock(mtx_);
-                cvs_[threadIndex].wait_for(lock, std::chrono::milliseconds(1));
+                cvs_[threadIndex]->wait_for(lock, std::chrono::milliseconds(1));
             }
         }
     }
@@ -104,6 +110,6 @@ private:
     std::atomic<bool> stop_;
     std::vector<std::thread> threads_;
     std::vector<std::unique_ptr<TaskQueue>> queues_;
-    std::vector<std::condition_variable> cvs_;
+    std::vector<std::unique_ptr<std::condition_variable>> cvs_;
     std::mutex mtx_;
 };

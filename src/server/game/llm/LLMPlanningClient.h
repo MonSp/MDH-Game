@@ -15,9 +15,10 @@ public:
     }
 
     void initialize(const std::string& provider, const std::string& apiKey,
-                   const std::string& model, const std::string& localEndpoint = "") {
+                   const std::string& model, const std::string& localEndpoint = "",
+                   bool startWorkers = true) {
         llmService_ = &LLMService::getInstance();
-        if (!llmService_->initialize(provider, apiKey, model, localEndpoint)) {
+        if (!llmService_->initialize(provider, apiKey, model, localEndpoint, startWorkers)) {
             return;
         }
 

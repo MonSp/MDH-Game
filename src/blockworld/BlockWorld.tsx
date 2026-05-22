@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { CHUNK_SIZE, chunkKey, worldToChunk, BlockType } from './BlockTypes';
 import { ChunkData } from './ChunkData';
 import { generateChunk } from './ChunkGenerator';
@@ -14,6 +15,10 @@ import { BlockBreakParticles } from './BlockBreakParticles';
 import { PostProcessing } from './PostProcessing';
 import { BlockWorldEntities } from './BlockWorldEntities';
 import { ChunkCache } from './ChunkCache';
+import { useGameStore } from '../store/gameStore';
+import { VoxelEntityRenderer } from './VoxelEntityRenderer';
+import { buildPlayerModel } from './VoxelModels';
+import { getRealmAura } from '../utils/appearance';
 
 const HORIZONTAL_VIEW_CHUNKS = 16;
 const VERTICAL_VIEW_CHUNKS = 4;
@@ -378,8 +383,32 @@ export const BlockWorld: React.FC = () => {
         <BlockMiningOverlay />
         <BlockBreakParticles />
         <BlockWorldEntities />
+        <PlayerVoxelModel />
       </group>
       <PostProcessing />
     </>
+  );
+};
+
+const PlayerVoxelModel: React.FC = () => {
+  const player = useGameStore(s => s.player);
+  const realmAura = useMemo(() => player ? getRealmAura(player.realm) : null, [player]);
+  const voxelModel = useMemo(() => player ? buildPlayerModel(player.realm, '玩家') : null, [player]);
+
+  if (!player || !voxelModel || blockWorldPlayer.cameraMode === 'fps') return null;
+
+  return (
+    <group
+      position={[blockWorldPlayer.position.x, blockWorldPlayer.position.y, blockWorldPlayer.position.z]}
+      rotation={new THREE.Euler(0, blockWorldPlayer.yaw, 0)}
+    >
+      {realmAura && (
+        <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[realmAura.auraSize, 32]} />
+          <meshBasicMaterial color={realmAura.auraColor} transparent opacity={realmAura.auraOpacity} />
+        </mesh>
+      )}
+      <VoxelEntityRenderer model={voxelModel} position={[0, 0, 0]} />
+    </group>
   );
 };

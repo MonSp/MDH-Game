@@ -13,7 +13,8 @@ public:
     }
 
     bool initialize(const std::string& provider, const std::string& apiKey,
-                   const std::string& model, const std::string& localEndpoint = "") {
+                   const std::string& model, const std::string& localEndpoint = "",
+                   bool startWorkers = true) {
         if (!httpClient_->initialize()) {
             return false;
         }
@@ -29,11 +30,13 @@ public:
         httpClient_->setModel(model);
         httpClient_->setConcurrencyLimit(maxConcurrentRequests_);
 
-        size_t threadCount = std::thread::hardware_concurrency();
-        if (threadCount > maxConcurrentRequests_) {
-            threadCount = maxConcurrentRequests_;
+        if (startWorkers) {
+            size_t threadCount = std::thread::hardware_concurrency();
+            if (threadCount > maxConcurrentRequests_) {
+                threadCount = maxConcurrentRequests_;
+            }
+            httpClient_->startWorkerThreads(threadCount);
         }
-        httpClient_->startWorkerThreads(threadCount);
 
         initialized_ = true;
         return true;

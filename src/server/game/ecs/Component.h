@@ -7,11 +7,17 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
+#include <atomic>
 
 namespace ECS {
 
 using EntityId = uint64_t;
 using ComponentTypeId = uint32_t;
+
+inline ComponentTypeId generateComponentTypeId() {
+    static std::atomic<ComponentTypeId> counter{0};
+    return counter.fetch_add(1);
+}
 
 class IComponent {
 public:
@@ -23,20 +29,14 @@ template<typename T>
 class ComponentBase : public IComponent {
 public:
     static ComponentTypeId getStaticTypeId() {
-        static uint32_t id = nextTypeId++;
+        static ComponentTypeId id = generateComponentTypeId();
         return id;
     }
 
     ComponentTypeId getTypeId() const override {
         return T::getStaticTypeId();
     }
-
-private:
-    static uint32_t nextTypeId;
 };
-
-template<typename T>
-uint32_t ComponentBase<T>::nextTypeId = 0;
 
 template<typename T>
 class Component : public ComponentBase<T> {
