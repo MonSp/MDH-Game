@@ -8,12 +8,13 @@
 #include <cstdint>
 
 // 启用 llama.cpp 后端：编译时需链接 libllama，并在 CMakeLists.txt 中定义 LLAMA_CPP_BACKEND
-// 如不启用，引擎将以 NONE 模式编译（不产生任何依赖）
-// #define LLAMA_CPP_BACKEND
+#ifndef LLAMA_CPP_BACKEND
+#define LLAMA_CPP_BACKEND
+#endif
 
 #ifdef LLAMA_CPP_BACKEND
-// #include "llama.h"
-// #include "common.h"
+#include "llama.h"
+#include "common.h"
 #endif
 
 /*
