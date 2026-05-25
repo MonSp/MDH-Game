@@ -9,6 +9,8 @@
 #include "../ecs/components/LifecycleComponent.h"
 #include "../ecs/components/ResourcesComponent.h"
 #include "../ecs/components/SocialComponent.h"
+#include "../ecs/components/BehaviorTreeComponent.h"
+#include "../bt/BehaviorTreeTemplate.h"
 #include <string>
 #include <vector>
 #include <random>
@@ -61,6 +63,11 @@ public:
         delete lifecycle;
         delete resources;
         delete social;
+
+        auto* bt = registry.getComponent<BehaviorTreeComponent>(entityId);
+        if (bt) {
+            bt->tmpl = BehaviorTreePresets::getTemplateForRole(static_cast<uint8_t>(role));
+        }
 
         return entityId;
     }

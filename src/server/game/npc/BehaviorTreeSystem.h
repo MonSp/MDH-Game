@@ -12,6 +12,7 @@
 #include "../ecs/components/RelationshipComponent.h"
 #include "../ecs/components/RoleCommandComponent.h"
 #include "../ecs/components/CultivationComponent.h"
+#include "../bt/BTEvaluator.h"
 #include "../ecs/Registry.h"
 #include <cstdlib>
 #include <ctime>
@@ -28,15 +29,32 @@ public:
         auto& registry = ECS::Registry::getInstance();
         auto* stats = registry.getComponent<StatsComponent>(entityId);
         auto* behavior = registry.getComponent<BehaviorComponent>(entityId);
-        auto* personality = registry.getComponent<PersonalityComponent>(entityId);
-        auto* identity = registry.getComponent<IdentityComponent>(entityId);
-        auto* social = registry.getComponent<SocialComponent>(entityId);
+        auto* bt = registry.getComponent<BehaviorTreeComponent>(entityId);
+        auto* bb = registry.getComponent<BlackboardCache>(entityId);
         auto* llmPlan = registry.getComponent<LLMPlanComponent>(entityId);
         auto* cmd = registry.getComponent<RoleCommandComponent>(entityId);
-        auto* cult = registry.getComponent<CultivationComponent>(entityId);
-        auto* rel = registry.getComponent<RelationshipComponent>(entityId);
 
-        if (!stats || !behavior || !personality || !identity) return;
+        if (!stats || !behavior) return;
+
+        if (llmPlan && llmPlan->tier != LLMTier::T3 &&
+            llmPlan->status == PlanStatus::ACTIVE) {
+            ActionType action = llmPlan->getCurrentAction();
+            behavior->changeActivity(translateActionType(action));
+            return;
+        }
+
+        if (bt && bt->tmpl) {
+            BTEvaluator::evaluate(entityId, currentTime);
+            return;
+        }
+
+        auto* identity = registry.getComponent<IdentityComponent>(entityId);
+        auto* personality = registry.getComponent<PersonalityComponent>(entityId);
+        auto* social = registry.getComponent<SocialComponent>(entityId);
+        auto* rel = registry.getComponent<RelationshipComponent>(entityId);
+        auto* cult = registry.getComponent<CultivationComponent>(entityId);
+
+        if (!identity || !personality) return;
 
         if (evaluateSurvival(stats, behavior)) return;
         if (evaluateCommand(cmd, behavior, personality, currentTime)) return;

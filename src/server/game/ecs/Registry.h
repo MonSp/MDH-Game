@@ -10,6 +10,8 @@
 #include "components/LifecycleComponent.h"
 #include "components/ResourcesComponent.h"
 #include "components/LLMComponent.h"
+#include "components/BehaviorTreeComponent.h"
+#include "../bt/BlackboardCache.h"
 #include "components/SocialComponent.h"
 #include "components/RelationshipComponent.h"
 #include "components/RoleCommandComponent.h"
@@ -43,6 +45,8 @@ public:
             relationship_.emplace_back();
             roleCommand_.emplace_back();
             cultivation_.emplace_back();
+            bt_.emplace_back();
+            blackboard_.emplace_back();
             hasLLMPlan_.push_back(false);
             entityIds_.push_back(0);
             activeSlots_.push_back(false);
@@ -61,6 +65,8 @@ public:
             relationship_[slot] = RelationshipComponent();
             roleCommand_[slot] = RoleCommandComponent();
             cultivation_[slot] = CultivationComponent();
+            bt_[slot] = BehaviorTreeComponent();
+            blackboard_[slot] = BlackboardCache();
             hasLLMPlan_[slot] = false;
         }
 
@@ -164,6 +170,8 @@ public:
         relationship_.clear();
         roleCommand_.clear();
         cultivation_.clear();
+        bt_.clear();
+        blackboard_.clear();
         hasLLMPlan_.clear();
         entityIds_.clear();
         activeSlots_.clear();
@@ -181,6 +189,12 @@ public:
     template<typename T>
     void removeComponent(EntityId) {}
 
+    template<typename T> std::vector<T>& getArray_() { return getArray<T>(); }
+    template<typename T> const std::vector<T>& getArray_() const { return getArray<T>(); }
+
+    std::vector<bool> activeSlots_;
+    std::vector<EntityId> entityIds_;
+
 private:
     Registry() = default;
 
@@ -197,6 +211,8 @@ private:
         if constexpr (std::is_same_v<T, RelationshipComponent>)    return relationship_;
         if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
+        if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
+        if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
     }
 
     template<typename T> const std::vector<T>& getArray() const {
@@ -212,6 +228,8 @@ private:
         if constexpr (std::is_same_v<T, RelationshipComponent>)    return relationship_;
         if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
+        if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
+        if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
     }
 
     std::vector<IdentityComponent> identity_;
@@ -226,10 +244,10 @@ private:
     std::vector<RelationshipComponent> relationship_;
     std::vector<RoleCommandComponent> roleCommand_;
     std::vector<CultivationComponent> cultivation_;
+    std::vector<BehaviorTreeComponent> bt_;
+    std::vector<BlackboardCache> blackboard_;
     std::vector<bool> hasLLMPlan_;
 
-    std::vector<EntityId> entityIds_;
-    std::vector<bool> activeSlots_;
     std::unordered_map<EntityId, size_t> entityToSlot_;
 
     EntityId nextEntityId_ = 0;
