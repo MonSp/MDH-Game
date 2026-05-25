@@ -2,6 +2,7 @@ import { createNoise2D, createNoise3D } from 'simplex-noise';
 import { CHUNK_SIZE, BlockType } from './BlockTypes';
 import { ChunkData } from './ChunkData';
 import { generateStructures, generateGameBuildings, type GameBuildingSpec, getZoneKind, StructureKind, STRUCTURE_ZONE_SIZE } from './StructureGenerator';
+import { isWasmReady, getWasmGetTerrainHeight, getWasmGenerateChunk } from './WasmLoader';
 
 const TERRAIN_BASE_HEIGHT = 40;
 const TERRAIN_AMPLITUDE = 20;
@@ -24,7 +25,12 @@ const rand = seededRandom('taigu_world_seed_2025');
 const noise2D = createNoise2D(rand);
 const noise3D = createNoise3D(rand);
 
+export { isWasmReady };
+
 export function getTerrainHeight(wx: number, wz: number): number {
+  const wasmFn = getWasmGetTerrainHeight();
+  if (wasmFn) return wasmFn(wx, wz);
+
   const continent = noise2D(wx * 0.003, wz * 0.003) * 0.5 + 0.5;
   const hill = noise2D(wx * 0.015, wz * 0.015) * 0.5 + 0.5;
   const detail = noise2D(wx * 0.04, wz * 0.04) * 0.5 + 0.5;
@@ -60,17 +66,14 @@ function generateWorldResources(blocks: Uint8Array, cx: number, cy: number, cz: 
         const h = resourceHashFloat(wx, wz);
         const hDeep = resourceHashFloat(wx + 7000, wz + 9000);
 
-        // Spirit field: grass surface in plains (y=30~44), ~3% coverage
         if (block === BlockType.GRASS && wy >= 30 && wy <= 44 && h < 0.03) {
           blocks[idx] = BlockType.SPIRIT_FIELD;
         }
 
-        // Spirit ore: stone underground (y=20~30), ~1.5% coverage, often in clusters
         if (block === BlockType.STONE && wy >= 20 && wy <= 30 && h < 0.015) {
           blocks[idx] = BlockType.SPIRIT_ORE;
         }
 
-        // Spirit ore cluster: if adjacent block is already SPIRIT_ORE, higher chance
         if (block === BlockType.STONE && wy >= 20 && wy <= 30) {
           const adjOre =
             (lx > 0 && blocks[idx - 1] === BlockType.SPIRIT_ORE) ||
@@ -82,7 +85,6 @@ function generateWorldResources(blocks: Uint8Array, cx: number, cy: number, cz: 
           }
         }
 
-        // Fish spot: adjacent to water, on grass/sand surface, ~2% 
         if (block === BlockType.GRASS && hDeep < 0.02) {
           const adjWater =
             (lz > 0 && blocks[idx - CHUNK_SIZE] === BlockType.WATER) ||
@@ -94,7 +96,6 @@ function generateWorldResources(blocks: Uint8Array, cx: number, cy: number, cz: 
           }
         }
 
-        // Lumber field: dense forest marker, grass/dirt surface in forest areas, ~3%
         if ((block === BlockType.GRASS || block === BlockType.DIRT) &&
             wy >= 30 && wy <= 48 && h < 0.06 && h > 0.03) {
           const treeNearby =
@@ -104,6 +105,45 @@ function generateWorldResources(blocks: Uint8Array, cx: number, cy: number, cz: 
             (lz < CHUNK_SIZE - 2 && (blocks[idx + CHUNK_SIZE] === BlockType.OAK_LOG || blocks[idx + CHUNK_SIZE * 2] === BlockType.OAK_LOG));
           if (treeNearby) {
             blocks[idx] = BlockType.LUMBER_FIELD;
+          }
+        }
+      }
+    }
+  }
+}
+
+function generateTerrainBlocksJS(blocks: Uint8Array, cx: number, cy: number, cz: number) {
+  for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+      const wx = cx * CHUNK_SIZE + lx;
+      const wz = cz * CHUNK_SIZE + lz;
+      const surfaceHeight = getTerrainHeight(wx, wz);
+      const waterSurface = WATER_LEVEL;
+
+      for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+        const wy = cy * CHUNK_SIZE + ly;
+        const idx = ly * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx;
+
+        if (wy > surfaceHeight) {
+          if (wy <= waterSurface) {
+            blocks[idx] = BlockType.WATER;
+          }
+          continue;
+        }
+
+        if (wy === surfaceHeight) {
+          blocks[idx] = BlockType.GRASS;
+        } else if (wy > surfaceHeight - DIRT_DEPTH) {
+          blocks[idx] = BlockType.DIRT;
+        } else {
+          if (wy > 30) {
+            const caveNoise = noise3D(wx * 0.07, wy * 0.07, wz * 0.07);
+            const depthFactor = (surfaceHeight - wy) / 20;
+            if (caveNoise > 0.55 - depthFactor * 0.15) {
+              blocks[idx] = BlockType.STONE;
+            }
+          } else {
+            blocks[idx] = BlockType.STONE;
           }
         }
       }
@@ -225,40 +265,11 @@ export function generateChunk(cx: number, cy: number, cz: number): ChunkData {
     return chunk;
   }
 
-  for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-    for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-      const wx = cx * CHUNK_SIZE + lx;
-      const wz = cz * CHUNK_SIZE + lz;
-      const surfaceHeight = getTerrainHeight(wx, wz);
-      const waterSurface = WATER_LEVEL;
-
-      for (let ly = 0; ly < CHUNK_SIZE; ly++) {
-        const wy = cy * CHUNK_SIZE + ly;
-
-        if (wy > surfaceHeight) {
-          if (wy <= waterSurface) {
-            chunk.setBlock(lx, ly, lz, BlockType.WATER);
-          }
-          continue;
-        }
-
-        if (wy === surfaceHeight) {
-          chunk.setBlock(lx, ly, lz, BlockType.GRASS);
-        } else if (wy > surfaceHeight - DIRT_DEPTH) {
-          chunk.setBlock(lx, ly, lz, BlockType.DIRT);
-        } else {
-          if (wy > 30) {
-            const caveNoise = noise3D(wx * 0.07, wy * 0.07, wz * 0.07);
-            const depthFactor = (surfaceHeight - wy) / 20;
-            if (caveNoise > 0.55 - depthFactor * 0.15) {
-              chunk.setBlock(lx, ly, lz, BlockType.STONE);
-            }
-          } else {
-            chunk.setBlock(lx, ly, lz, BlockType.STONE);
-          }
-        }
-      }
-    }
+  const wasmGen = getWasmGenerateChunk();
+  if (wasmGen) {
+    wasmGen(cx, cy, cz, chunk.blocks);
+  } else {
+    generateTerrainBlocksJS(chunk.blocks, cx, cy, cz);
   }
 
   const BLOCK_SCALE = 100;

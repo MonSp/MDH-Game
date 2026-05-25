@@ -18,6 +18,9 @@ data/*
 phase*
 logs/*
 tools/orx-baker/output*
+tools/blockworld-wasm/build/
+src/blockworld/blockworld_wasm.js
+public/blockworld_wasm.wasm
 
 public/atlas/*
 

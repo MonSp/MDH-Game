@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CHUNK_SIZE, chunkKey, worldToChunk, BlockType } from './BlockTypes';
 import { ChunkData } from './ChunkData';
 import { generateChunk } from './ChunkGenerator';
+import { initWasm } from './WasmLoader';
 import { MeshData, MeshLOD } from './ChunkMesher';
 import { ChunkMesh } from './ChunkMesh';
 import { blockWorldPlayer } from './PlayerState';
@@ -19,12 +20,14 @@ import { useGameStore } from '../store/gameStore';
 import { VoxelEntityRenderer } from './VoxelEntityRenderer';
 import { buildPlayerModel } from './VoxelModels';
 import { getRealmAura } from '../utils/appearance';
+import { saveChunksSync, loadChunkBlocks, hasSavedChunks, getSavedChunkKeys } from './ChunkPersistence';
 
 const HORIZONTAL_VIEW_CHUNKS = 16;
 const VERTICAL_VIEW_CHUNKS = 4;
 const LOD0_DIST = 6;
 const LOD1_DIST = 10;
 const MAX_CHUNK_LOADS_PER_FRAME = 80;
+const PERSIST_INTERVAL = 5;
 
 interface LoadedChunk {
   data: ChunkData;
@@ -61,7 +64,9 @@ export const BlockWorld: React.FC = () => {
 
   const chunkDataMap = useRef(new Map<string, ChunkData>());
   const chunkCache = useRef(new ChunkCache(5000));
-  const dirtyChunks = useRef(new Set<string>());
+  const persistedKeys = useRef(new Set<string>());
+  const pendingPersist = useRef(new Map<string, ChunkData>());
+  const persistTimer = useRef(0);
   const workerRef = useRef<ChunkWorkerManager | null>(null);
   const loadingSet = useRef(new Set<string>());
   const chunkGenRef = useRef(new Map<string, number>());
@@ -71,6 +76,36 @@ export const BlockWorld: React.FC = () => {
     setChunkDataMap(chunkDataMap.current);
     workerRef.current = new ChunkWorkerManager(6);
 
+    initWasm();
+
+    hasSavedChunks().then(has => {
+      if (has) {
+        getSavedChunkKeys().then(keys => {
+          for (const k of keys) persistedKeys.current.add(k);
+          console.log(`[BlockWorld] Loaded ${keys.length} saved chunk keys`);
+        });
+      }
+    });
+
+    const flushDirty = () => {
+      if (pendingPersist.current.size > 0) {
+        saveChunksSync(new Map(pendingPersist.current));
+        for (const key of pendingPersist.current.keys()) {
+          persistedKeys.current.add(key);
+        }
+        pendingPersist.current.clear();
+      }
+    };
+
+    const onBeforeUnload = () => {
+      flushDirty();
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushDirty();
+    });
+
     blockWorldActions.getChunkData = (cx, cy, cz) => chunkDataMap.current.get(chunkKey(cx, cy, cz));
 
     blockWorldActions.setBlock = (wx, wy, wz, type) => {
@@ -79,6 +114,7 @@ export const BlockWorld: React.FC = () => {
 
     return () => {
       workerRef.current?.destroy();
+      window.removeEventListener('beforeunload', onBeforeUnload);
       blockWorldActions.setBlock = null;
       blockWorldActions.getChunkData = null;
     };
@@ -145,7 +181,7 @@ export const BlockWorld: React.FC = () => {
     if (data.getBlock(bx, by, bz) === type) return;
 
     data.setBlock(bx, by, bz, type);
-    dirtyChunks.current.add(key);
+    pendingPersist.current.set(key, data);
 
     const chunksToRemesh = new Set<string>();
     chunksToRemesh.add(key);
@@ -245,35 +281,52 @@ export const BlockWorld: React.FC = () => {
     chunkGenRef.current.set(key, gen);
     loadingSet.current.add(key);
 
-    const data = generateChunk(cx, cy, cz);
-    chunkDataMap.current.set(key, data);
-
-    setChunks(prev => {
-      const next = new Map(prev);
-      next.set(key, { data, meshData: null, lod, loading: true });
-      return next;
-    });
-
-    workerRef.current!.enqueue(data, buildNeighbors(cx, cy, cz), lod).then(meshData => {
-      loadingSet.current.delete(key);
-      if (chunkGenRef.current.get(key) !== gen) return;
+    const finalize = (data: ChunkData) => {
+      chunkDataMap.current.set(key, data);
       setChunks(prev => {
         const next = new Map(prev);
-        const entry = next.get(key);
-        if (entry) {
-          next.set(key, { ...entry, meshData, loading: false });
-        }
+        next.set(key, { data, meshData: null, lod, loading: true });
         return next;
       });
 
-      const offsets = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
-      for (const [dx, dy, dz] of offsets) {
-        const nk = chunkKey(cx + dx, cy + dy, cz + dz);
-        if (chunkDataMap.current.has(nk) && !loadingSet.current.has(nk)) {
-          remeshChunkRef.current(cx + dx, cy + dy, cz + dz);
+      workerRef.current!.enqueue(data, buildNeighbors(cx, cy, cz), lod).then(meshData => {
+        loadingSet.current.delete(key);
+        if (chunkGenRef.current.get(key) !== gen) return;
+        setChunks(prev => {
+          const next = new Map(prev);
+          const entry = next.get(key);
+          if (entry) {
+            next.set(key, { ...entry, meshData, loading: false });
+          }
+          return next;
+        });
+
+        const offsets = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
+        for (const [dx, dy, dz] of offsets) {
+          const nk = chunkKey(cx + dx, cy + dy, cz + dz);
+          if (chunkDataMap.current.has(nk) && !loadingSet.current.has(nk)) {
+            remeshChunkRef.current(cx + dx, cy + dy, cz + dz);
+          }
         }
-      }
-    });
+      });
+    };
+
+    if (persistedKeys.current.has(key)) {
+      loadChunkBlocks(cx, cy, cz).then(blocks => {
+        if (chunkGenRef.current.get(key) !== gen) return;
+        if (blocks) {
+          const saved = new ChunkData(cx, cy, cz);
+          saved.blocks.set(blocks);
+          saved.markDirty();
+          finalize(saved);
+        } else {
+          persistedKeys.current.delete(key);
+          finalize(generateChunk(cx, cy, cz));
+        }
+      });
+    } else {
+      finalize(generateChunk(cx, cy, cz));
+    }
   }, [buildNeighbors]);
 
   const unloadChunk = useCallback((cx: number, cy: number, cz: number) => {
@@ -285,11 +338,17 @@ export const BlockWorld: React.FC = () => {
     chunkGenRef.current.delete(key);
 
     const chunk = chunksRef.current.get(key)!;
-    if (!dirtyChunks.current.has(key) && !chunk.data.isEmpty()) {
+
+    if (chunk.data.isDirty) {
+      const saveMap = new Map<string, ChunkData>();
+      saveMap.set(key, chunk.data);
+      saveChunksSync(saveMap);
+      persistedKeys.current.add(key);
+      pendingPersist.current.delete(key);
+    } else if (!chunk.data.isEmpty()) {
       chunkCache.current.set(key, { data: chunk.data, meshData: chunk.meshData, lod: chunk.lod });
     }
 
-    dirtyChunks.current.delete(key);
     chunkDataMap.current.delete(key);
     setChunks(prev => {
       const next = new Map(prev);
@@ -302,6 +361,17 @@ export const BlockWorld: React.FC = () => {
 
   useFrame((_, delta) => {
     frameRef.current += delta;
+
+    persistTimer.current += delta;
+    if (persistTimer.current >= PERSIST_INTERVAL && pendingPersist.current.size > 0) {
+      persistTimer.current = 0;
+      saveChunksSync(new Map(pendingPersist.current));
+      for (const key of pendingPersist.current.keys()) {
+        persistedKeys.current.add(key);
+      }
+      pendingPersist.current.clear();
+    }
+
     const waterMat = (ChunkMesh as any).__waterMaterial;
     if (waterMat) {
       waterMat.opacity = 0.6 + Math.sin(frameRef.current * 1.5) * 0.05;

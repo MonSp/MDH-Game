@@ -5,7 +5,7 @@ export class ChunkData {
   public cx: number;
   public cy: number;
   public cz: number;
-  public isDirty = true;
+  public isDirty = false;
 
   constructor(cx: number, cy: number, cz: number) {
     this.cx = cx;
@@ -27,10 +27,25 @@ export class ChunkData {
     this.isDirty = true;
   }
 
+  markDirty(): void {
+    this.isDirty = true;
+  }
+
+  clearDirty(): void {
+    this.isDirty = false;
+  }
+
   isEmpty(): boolean {
     for (let i = 0; i < CHUNK_TOTAL; i++) {
       if (this.blocks[i] !== BlockType.AIR) return false;
     }
     return true;
+  }
+
+  clone(): ChunkData {
+    const copy = new ChunkData(this.cx, this.cy, this.cz);
+    copy.blocks.set(this.blocks);
+    copy.isDirty = this.isDirty;
+    return copy;
   }
 }
