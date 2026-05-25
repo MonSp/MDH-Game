@@ -88,6 +88,8 @@ let _getNPCStates: CGetStatesFn | null = null;
 let _getStats: CGetStatsFn | null = null;
 let _destroy: CVoidFn | null = null;
 
+const _decoder = new TextDecoder();
+
 export function isECSWasmReady(): boolean {
   return ecsWasmReady;
 }
@@ -139,35 +141,38 @@ export function readNPCStates(): NPCState[] {
   _getNPCStates(_statesBufferPtr, readCount);
 
   const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
-  const decoder = new TextDecoder();
   const result: NPCState[] = [];
 
   for (let i = 0; i < readCount; i++) {
     const offset = _statesBufferPtr + i * NPC_STATE_SIZE;
 
-    const entityId = view.getUint32(offset, true);
-    const x = view.getFloat32(offset + 4, true);
-    const y = view.getFloat32(offset + 8, true);
-    const hp = view.getInt32(offset + 12, true);
-    const maxHp = view.getInt32(offset + 16, true);
-    const mp = view.getInt32(offset + 20, true);
-    const maxMp = view.getInt32(offset + 24, true);
-    const power = view.getInt32(offset + 28, true);
-    const realm = view.getInt32(offset + 32, true);
-    const role = view.getInt32(offset + 36, true);
-    const activity = view.getInt32(offset + 40, true);
-    const layer = view.getInt32(offset + 44, true);
-    const ambition = view.getFloat32(offset + 48, true);
-    const caution = view.getFloat32(offset + 52, true);
-    const loyalty = view.getFloat32(offset + 56, true);
-    const greed = view.getFloat32(offset + 60, true);
-    const spiritStonesLo = view.getInt32(offset + 64, true);
-    const spiritStonesHi = view.getInt32(offset + 68, true);
+    const spiritStonesLo = view.getInt32(offset, true);
+    const spiritStonesHi = view.getInt32(offset + 4, true);
     const spiritStones = spiritStonesLo + spiritStonesHi * 0x100000000;
 
-    const nameEnd = HEAPU8.subarray(offset + 72, offset + 72 + 56).indexOf(0);
-    const nameBytes = HEAPU8.subarray(offset + 72, offset + 72 + (nameEnd >= 0 ? nameEnd : 56));
-    const name = decoder.decode(nameBytes);
+    const entityIdLo = view.getUint32(offset + 8, true);
+    const entityIdHi = view.getUint32(offset + 12, true);
+    const entityId = entityIdLo + entityIdHi * 0x100000000;
+
+    const x = view.getFloat32(offset + 16, true);
+    const y = view.getFloat32(offset + 20, true);
+    const hp = view.getInt32(offset + 24, true);
+    const maxHp = view.getInt32(offset + 28, true);
+    const mp = view.getInt32(offset + 32, true);
+    const maxMp = view.getInt32(offset + 36, true);
+    const power = view.getInt32(offset + 40, true);
+    const realm = view.getInt32(offset + 44, true);
+    const role = view.getInt32(offset + 48, true);
+    const activity = view.getInt32(offset + 52, true);
+    const layer = view.getInt32(offset + 56, true);
+    const ambition = view.getFloat32(offset + 60, true);
+    const caution = view.getFloat32(offset + 64, true);
+    const loyalty = view.getFloat32(offset + 68, true);
+    const greed = view.getFloat32(offset + 72, true);
+
+    const nameEnd = HEAPU8.subarray(offset + 76, offset + 76 + 52).indexOf(0);
+    const nameBytes = HEAPU8.subarray(offset + 76, offset + 76 + (nameEnd >= 0 ? nameEnd : 52));
+    const name = nameEnd === 0 ? '' : _decoder.decode(nameBytes);
 
     result.push({
       entityId, x, y, hp, maxHp, mp, maxMp, power,

@@ -8,12 +8,14 @@
 #include "game/ecs/components/ResourcesComponent.h"
 #include "game/ecs/components/LifecycleComponent.h"
 #include "game/npc/NPCCreationSystem.h"
+#include <cstdint>
 #include <cstring>
 #include <algorithm>
 
 #pragma pack(push, 1)
 struct NPCStateWasm {
-    uint32_t entityId;
+    int64_t spiritStones;
+    uint64_t entityId;
     float x;
     float y;
     int32_t hp;
@@ -29,8 +31,7 @@ struct NPCStateWasm {
     float caution;
     float loyalty;
     float greed;
-    int64_t spiritStones;
-    char name[56];
+    char name[52];
 };
 #pragma pack(pop)
 
@@ -90,7 +91,7 @@ void ecs_getNPCStates(NPCStateWasm* outBuffer, int maxCount) {
 
         NPCStateWasm& out = outBuffer[written];
 
-        out.entityId = static_cast<uint32_t>(entityId);
+        out.entityId = entityId;
         out.x = position ? position->x : 0.0f;
         out.y = position ? position->y : 0.0f;
         out.hp = stats ? stats->hp : 0;
