@@ -17,6 +17,10 @@ export default defineConfig({
     tsconfigPaths()
   ],
   server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
     proxy: {
       '/socket.io': {
         target: 'http://localhost:3000',

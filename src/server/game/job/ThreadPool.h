@@ -18,6 +18,8 @@ struct ThreadPoolConfig {
 class ThreadPool {
 public:
     explicit ThreadPool(const ThreadPoolConfig& config) : config_(config), stop_(false) {
+        if (config_.threadCount == 0) return;
+
         queues_.reserve(config.threadCount);
         for (uint32_t i = 0; i < config.threadCount; ++i) {
             queues_.push_back(std::make_unique<TaskQueue>());
@@ -53,6 +55,10 @@ public:
     }
 
     void submit(std::function<void()> func, uint32_t hintThread = 0) {
+        if (config_.threadCount == 0) {
+            func();
+            return;
+        }
         uint32_t threadIndex = hintThread % config_.threadCount;
         if (!queues_[threadIndex]->push(std::move(func))) {
             for (uint32_t i = 0; i < config_.threadCount; ++i) {
@@ -66,11 +72,16 @@ public:
     template<typename F>
     std::shared_ptr<IJob> submitJob(F&& func, uint32_t hintThread = 0) {
         auto job = std::make_shared<LambdaJob>(std::forward<F>(func));
+        if (config_.threadCount == 0) {
+            job->execute();
+            return job;
+        }
         submit([job]() { job->execute(); }, hintThread);
         return job;
     }
 
     void waitAll() {
+        if (config_.threadCount == 0) return;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 

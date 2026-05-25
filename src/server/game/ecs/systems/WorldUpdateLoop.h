@@ -3,7 +3,9 @@
 #include "NPChunkUpdateSystem.h"
 #include "LifecycleSystem.h"
 #include "PopulationBalanceSystem.h"
+#ifndef __EMSCRIPTEN__
 #include "LLMPlanningSystem.h"
+#endif
 #include "../../job/ThreadPool.h"
 #include "../../npc/NPCCreationSystem.h"
 #include <chrono>
@@ -27,7 +29,9 @@ public:
         NPChunkUpdateSystem::getInstance().initialize(threadPool_.get());
         LifecycleSystem::getInstance().initialize();
         PopulationBalanceSystem::getInstance().initialize();
+#ifndef __EMSCRIPTEN__
         LLMPlanningSystem::getInstance().initialize();
+#endif
 
         running_ = false;
         frameCount_ = 0;
@@ -77,7 +81,9 @@ public:
             std::cout << "Frame " << frameCount_
                      << " | Avg Frame Time: " << (totalFrameTimeMs_ / frameCount_) << "ms"
                      << " | NPC Count: " << NPCCreationSystem::getInstance().getNPCCount()
+#ifndef __EMSCRIPTEN__
                      << " | Active Plans: " << LLMPlanningSystem::getInstance().getActivePlanCount()
+#endif
                      << std::endl;
         }
     }

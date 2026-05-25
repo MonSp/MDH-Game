@@ -22,6 +22,10 @@ tools/blockworld-wasm/build/
 src/blockworld/blockworld_wasm.js
 public/blockworld_wasm.wasm
 
+tools/ecs-wasm/build/
+src/ecs/ecs_wasm.js
+public/ecs_wasm.wasm
+
 public/atlas/*
 
 # Editor directories and files
