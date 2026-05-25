@@ -48,6 +48,14 @@ public:
         return true;
     }
 
+    bool moveToEntity(ECS::EntityId entityId, ECS::EntityId targetEntityId) {
+        auto* position = ECS::Registry::getInstance().getComponent<PositionComponent>(entityId);
+        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(targetEntityId);
+        if (!position || !targetPos) return false;
+        position->moveTo(targetPos->x, targetPos->y);
+        return true;
+    }
+
     float getDistance(ECS::EntityId entity1, ECS::EntityId entity2) {
         auto* pos1 = ECS::Registry::getInstance().getComponent<PositionComponent>(entity1);
         auto* pos2 = ECS::Registry::getInstance().getComponent<PositionComponent>(entity2);

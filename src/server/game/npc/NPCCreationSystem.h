@@ -8,9 +8,11 @@
 #include "../ecs/components/IdentityComponent.h"
 #include "../ecs/components/LifecycleComponent.h"
 #include "../ecs/components/ResourcesComponent.h"
+#include "../ecs/components/SocialComponent.h"
 #include <string>
 #include <vector>
 #include <random>
+#include <ctime>
 #include <iostream>
 
 class NPCCreationSystem {
@@ -38,6 +40,9 @@ public:
         lifecycle->age = 16.0f;
         auto* resources = new ResourcesComponent();
         resources->spiritStones = 100;
+        auto* social = new SocialComponent();
+        social->homeX = x;
+        social->homeY = y;
 
         registry.addComponent<IdentityComponent>(entityId, *identity);
         registry.addComponent<PositionComponent>(entityId, *position);
@@ -46,6 +51,7 @@ public:
         registry.addComponent<PersonalityComponent>(entityId, *personality);
         registry.addComponent<LifecycleComponent>(entityId, *lifecycle);
         registry.addComponent<ResourcesComponent>(entityId, *resources);
+        registry.addComponent<SocialComponent>(entityId, *social);
 
         delete identity;
         delete position;
@@ -54,6 +60,7 @@ public:
         delete personality;
         delete lifecycle;
         delete resources;
+        delete social;
 
         return entityId;
     }
@@ -93,7 +100,7 @@ public:
     }
 
 private:
-    NPCCreationSystem() = default;
+    NPCCreationSystem() : rng_(static_cast<unsigned>(std::time(nullptr))) {}
 
     StatsComponent* createStatsForRealm(RealmLevel realm, uint8_t layer) {
         int32_t basePower = 500 + static_cast<int32_t>(layer) * 100;
@@ -104,17 +111,38 @@ private:
 
     PersonalityComponent* createPersonalityByNation(const std::string& nation) {
         float amb = 50.0f, cau = 50.0f, loy = 50.0f, gre = 50.0f;
+        std::uniform_real_distribution<float> dist(30.0f, 70.0f);
+        float soc = dist(rng_);
+        float dil = dist(rng_);
 
         if (nation == "Qin") {
             amb = 70.0f; loy = 70.0f;
+            soc += 10.0f; dil += 15.0f;
         } else if (nation == "Chu") {
             cau = 70.0f;
+            soc += 15.0f; dil -= 10.0f;
+        } else if (nation == "Qi") {
+            amb += 10.0f; cau += 10.0f;
+            soc += 15.0f; dil += 5.0f;
         } else if (nation == "Yan") {
             cau = 70.0f; gre = 40.0f;
+            soc -= 10.0f; dil += 10.0f;
         } else if (nation == "Zhao") {
             amb = 60.0f; gre = 60.0f;
+            soc += 5.0f;
+        } else if (nation == "Wei") {
+            loy += 20.0f;
+            dil += 10.0f;
+        } else if (nation == "Han") {
+            gre += 20.0f; cau += 10.0f;
+            soc += 5.0f; dil -= 5.0f;
         }
 
-        return new PersonalityComponent(amb, cau, loy, gre);
+        soc = std::max(0.0f, std::min(100.0f, soc));
+        dil = std::max(0.0f, std::min(100.0f, dil));
+
+        return new PersonalityComponent(amb, cau, loy, gre, soc, dil);
     }
+
+    std::mt19937 rng_;
 };

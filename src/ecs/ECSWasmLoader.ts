@@ -25,16 +25,57 @@ export const NPCRole: Record<number, string> = {
 };
 
 export const NPCActivity: Record<number, string> = {
-  0: 'patrol',
-  1: 'retreat',
-  2: 'logistics',
-  3: 'compete',
-  4: 'work',
-  5: 'rest',
-  6: 'trade',
-  7: 'flee',
-  8: 'chase',
-  9: 'dead',
+  0: 'Idle',
+  1: 'Dead',
+  10: 'Flee',
+  11: 'Heal',
+  12: 'Defend',
+  20: 'Eat',
+  21: 'Rest',
+  22: 'Sleep',
+  23: 'Walk',
+  24: 'Chat',
+  30: 'Cultivate',
+  31: 'Breakthrough',
+  32: 'Tribulation',
+  33: 'Meditate',
+  34: 'Alchemy',
+  35: 'SeekFortune',
+  40: 'VisitFriend',
+  41: 'Date',
+  42: 'FamilyGathering',
+  43: 'MentorTeach',
+  44: 'DiscipleAsk',
+  45: 'Trade',
+  46: 'Gossip',
+  50: 'Build',
+  51: 'Mine',
+  52: 'Farm',
+  53: 'Fish',
+  54: 'Lumber',
+  55: 'Gather',
+  56: 'Attack',
+  57: 'DefendPosition',
+  58: 'Patrol',
+  59: 'Escort',
+  60: 'Scout',
+  70: 'Craft',
+  71: 'Refine',
+  72: 'Cook',
+  73: 'Tailor',
+  74: 'Construct',
+  75: 'Repair',
+  80: 'Buy',
+  81: 'Sell',
+  82: 'Bargain',
+  90: 'Duel',
+  91: 'Hunt',
+  92: 'Ambush',
+  93: 'Assassinate',
+  100: 'Explore',
+  101: 'TreasureHunt',
+  102: 'MapExplore',
+  200: 'Incapacitated',
 };
 
 export interface NPCState {
@@ -53,10 +94,10 @@ export interface NPCState {
   activity: number;
   activityName: string;
   layer: number;
-  ambition: number;
-  caution: number;
-  loyalty: number;
-  greed: number;
+  cultivationProgress: number;
+  hunger: number;
+  fatigue: number;
+  socialDesire: number;
   spiritStones: number;
   name: string;
 }
@@ -165,10 +206,10 @@ export function readNPCStates(): NPCState[] {
     const role = view.getInt32(offset + 48, true);
     const activity = view.getInt32(offset + 52, true);
     const layer = view.getInt32(offset + 56, true);
-    const ambition = view.getFloat32(offset + 60, true);
-    const caution = view.getFloat32(offset + 64, true);
-    const loyalty = view.getFloat32(offset + 68, true);
-    const greed = view.getFloat32(offset + 72, true);
+    const cultivationProgress = view.getFloat32(offset + 60, true);
+    const hunger = view.getFloat32(offset + 64, true);
+    const fatigue = view.getFloat32(offset + 68, true);
+    const socialDesire = view.getFloat32(offset + 72, true);
 
     const nameEnd = HEAPU8.subarray(offset + 76, offset + 76 + 52).indexOf(0);
     const nameBytes = HEAPU8.subarray(offset + 76, offset + 76 + (nameEnd >= 0 ? nameEnd : 52));
@@ -181,8 +222,8 @@ export function readNPCStates(): NPCState[] {
       role,
       roleName: NPCRole[role] ?? '内门子弟',
       activity,
-      activityName: NPCActivity[activity] ?? 'rest',
-      layer, ambition, caution, loyalty, greed, spiritStones, name,
+      activityName: NPCActivity[activity] ?? 'Rest',
+      layer, cultivationProgress, hunger, fatigue, socialDesire, spiritStones, name,
     });
   }
 

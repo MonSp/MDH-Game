@@ -66,7 +66,13 @@ private:
             return;
         }
 
-        BehaviorTreeSystem::getInstance().evaluate(entityId);
+        float deltaHours = deltaTime / (1000.0f * 60.0f * 60.0f);
+        auto* social = ECS::Registry::getInstance().getComponent<SocialComponent>(entityId);
+        if (social) {
+            social->tickDaily(deltaHours);
+        }
+
+        BehaviorTreeSystem::getInstance().evaluate(entityId, currentTime);
         BehaviorTreeSystem::getInstance().execute(entityId, currentTime, deltaTime);
         MovementSystem::getInstance().update(entityId, deltaTime);
     }

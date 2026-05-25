@@ -7,14 +7,19 @@ struct PersonalityComponent : public ECS::ComponentBase<PersonalityComponent> {
     float caution;
     float loyalty;
     float greed;
+    float sociability;
+    float diligence;
 
-    PersonalityComponent() : ambition(50.0f), caution(50.0f), loyalty(50.0f), greed(50.0f) {}
+    PersonalityComponent() : ambition(50.0f), caution(50.0f), loyalty(50.0f),
+        greed(50.0f), sociability(50.0f), diligence(50.0f) {}
 
-    PersonalityComponent(float amb, float cau, float loy, float gre)
-        : ambition(amb), caution(cau), loyalty(loy), greed(gre) {}
+    PersonalityComponent(float amb, float cau, float loy, float gre,
+                         float soc, float dil)
+        : ambition(amb), caution(cau), loyalty(loy), greed(gre),
+          sociability(soc), diligence(dil) {}
 
     float getOverall() const {
-        return (ambition + caution + loyalty + greed) / 4.0f;
+        return (ambition + caution + loyalty + greed + sociability + diligence) / 6.0f;
     }
 
     bool isAggressive() const {
@@ -27,5 +32,13 @@ struct PersonalityComponent : public ECS::ComponentBase<PersonalityComponent> {
 
     bool isLoyal() const {
         return loyalty > 70.0f;
+    }
+
+    bool isSocial() const {
+        return sociability > 60.0f;
+    }
+
+    bool isDiligent() const {
+        return diligence > 60.0f;
     }
 };

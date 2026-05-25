@@ -4,7 +4,8 @@
 #include "game/ecs/components/StatsComponent.h"
 #include "game/ecs/components/PositionComponent.h"
 #include "game/ecs/components/BehaviorComponent.h"
-#include "game/ecs/components/PersonalityComponent.h"
+#include "game/ecs/components/CultivationComponent.h"
+#include "game/ecs/components/SocialComponent.h"
 #include "game/ecs/components/ResourcesComponent.h"
 #include "game/ecs/components/LifecycleComponent.h"
 #include "game/npc/NPCCreationSystem.h"
@@ -27,10 +28,10 @@ struct NPCStateWasm {
     int32_t role;
     int32_t activity;
     int32_t layer;
-    float ambition;
-    float caution;
-    float loyalty;
-    float greed;
+    float cultivationProgress;
+    float hunger;
+    float fatigue;
+    float socialDesire;
     char name[52];
 };
 #pragma pack(pop)
@@ -86,7 +87,8 @@ void ecs_getNPCStates(NPCStateWasm* outBuffer, int maxCount) {
         auto* stats = registry.getComponent<StatsComponent>(entityId);
         auto* position = registry.getComponent<PositionComponent>(entityId);
         auto* behavior = registry.getComponent<BehaviorComponent>(entityId);
-        auto* personality = registry.getComponent<PersonalityComponent>(entityId);
+        auto* cultivation = registry.getComponent<CultivationComponent>(entityId);
+        auto* social = registry.getComponent<SocialComponent>(entityId);
         auto* resources = registry.getComponent<ResourcesComponent>(entityId);
 
         NPCStateWasm& out = outBuffer[written];
@@ -103,10 +105,10 @@ void ecs_getNPCStates(NPCStateWasm* outBuffer, int maxCount) {
         out.role = identity ? static_cast<int32_t>(identity->role) : 0;
         out.activity = behavior ? static_cast<int32_t>(behavior->currentActivity) : 0;
         out.layer = identity ? identity->layer : 0;
-        out.ambition = personality ? personality->ambition : 50.0f;
-        out.caution = personality ? personality->caution : 50.0f;
-        out.loyalty = personality ? personality->loyalty : 50.0f;
-        out.greed = personality ? personality->greed : 50.0f;
+        out.cultivationProgress = cultivation ? cultivation->cultivationProgress : 0.0f;
+        out.hunger = social ? social->hunger : 0.0f;
+        out.fatigue = social ? social->fatigue : 0.0f;
+        out.socialDesire = social ? social->socialDesire : 0.0f;
         out.spiritStones = resources ? resources->spiritStones : 0;
 
         if (identity) {

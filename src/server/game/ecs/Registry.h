@@ -10,6 +10,10 @@
 #include "components/LifecycleComponent.h"
 #include "components/ResourcesComponent.h"
 #include "components/LLMComponent.h"
+#include "components/SocialComponent.h"
+#include "components/RelationshipComponent.h"
+#include "components/RoleCommandComponent.h"
+#include "components/CultivationComponent.h"
 #include <vector>
 #include <unordered_map>
 #include <queue>
@@ -35,6 +39,10 @@ public:
             lifecycle_.emplace_back();
             resources_.emplace_back();
             llmPlan_.emplace_back();
+            social_.emplace_back();
+            relationship_.emplace_back();
+            roleCommand_.emplace_back();
+            cultivation_.emplace_back();
             hasLLMPlan_.push_back(false);
             entityIds_.push_back(0);
             activeSlots_.push_back(false);
@@ -49,6 +57,10 @@ public:
             lifecycle_[slot] = LifecycleComponent();
             resources_[slot] = ResourcesComponent();
             llmPlan_[slot] = LLMPlanComponent();
+            social_[slot] = SocialComponent();
+            relationship_[slot] = RelationshipComponent();
+            roleCommand_[slot] = RoleCommandComponent();
+            cultivation_[slot] = CultivationComponent();
             hasLLMPlan_[slot] = false;
         }
 
@@ -148,6 +160,10 @@ public:
         lifecycle_.clear();
         resources_.clear();
         llmPlan_.clear();
+        social_.clear();
+        relationship_.clear();
+        roleCommand_.clear();
+        cultivation_.clear();
         hasLLMPlan_.clear();
         entityIds_.clear();
         activeSlots_.clear();
@@ -169,25 +185,33 @@ private:
     Registry() = default;
 
     template<typename T> std::vector<T>& getArray() {
-        if constexpr (std::is_same_v<T, IdentityComponent>)    return identity_;
-        if constexpr (std::is_same_v<T, PositionComponent>)     return position_;
-        if constexpr (std::is_same_v<T, StatsComponent>)        return stats_;
-        if constexpr (std::is_same_v<T, BehaviorComponent>)      return behavior_;
-        if constexpr (std::is_same_v<T, PersonalityComponent>)   return personality_;
-        if constexpr (std::is_same_v<T, LifecycleComponent>)     return lifecycle_;
-        if constexpr (std::is_same_v<T, ResourcesComponent>)     return resources_;
-        if constexpr (std::is_same_v<T, LLMPlanComponent>)       return llmPlan_;
+        if constexpr (std::is_same_v<T, IdentityComponent>)      return identity_;
+        if constexpr (std::is_same_v<T, PositionComponent>)       return position_;
+        if constexpr (std::is_same_v<T, StatsComponent>)          return stats_;
+        if constexpr (std::is_same_v<T, BehaviorComponent>)        return behavior_;
+        if constexpr (std::is_same_v<T, PersonalityComponent>)     return personality_;
+        if constexpr (std::is_same_v<T, LifecycleComponent>)       return lifecycle_;
+        if constexpr (std::is_same_v<T, ResourcesComponent>)       return resources_;
+        if constexpr (std::is_same_v<T, LLMPlanComponent>)         return llmPlan_;
+        if constexpr (std::is_same_v<T, SocialComponent>)          return social_;
+        if constexpr (std::is_same_v<T, RelationshipComponent>)    return relationship_;
+        if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
+        if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
     }
 
     template<typename T> const std::vector<T>& getArray() const {
-        if constexpr (std::is_same_v<T, IdentityComponent>)    return identity_;
-        if constexpr (std::is_same_v<T, PositionComponent>)     return position_;
-        if constexpr (std::is_same_v<T, StatsComponent>)        return stats_;
-        if constexpr (std::is_same_v<T, BehaviorComponent>)      return behavior_;
-        if constexpr (std::is_same_v<T, PersonalityComponent>)   return personality_;
-        if constexpr (std::is_same_v<T, LifecycleComponent>)     return lifecycle_;
-        if constexpr (std::is_same_v<T, ResourcesComponent>)     return resources_;
-        if constexpr (std::is_same_v<T, LLMPlanComponent>)       return llmPlan_;
+        if constexpr (std::is_same_v<T, IdentityComponent>)      return identity_;
+        if constexpr (std::is_same_v<T, PositionComponent>)       return position_;
+        if constexpr (std::is_same_v<T, StatsComponent>)          return stats_;
+        if constexpr (std::is_same_v<T, BehaviorComponent>)        return behavior_;
+        if constexpr (std::is_same_v<T, PersonalityComponent>)     return personality_;
+        if constexpr (std::is_same_v<T, LifecycleComponent>)       return lifecycle_;
+        if constexpr (std::is_same_v<T, ResourcesComponent>)       return resources_;
+        if constexpr (std::is_same_v<T, LLMPlanComponent>)         return llmPlan_;
+        if constexpr (std::is_same_v<T, SocialComponent>)          return social_;
+        if constexpr (std::is_same_v<T, RelationshipComponent>)    return relationship_;
+        if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
+        if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
     }
 
     std::vector<IdentityComponent> identity_;
@@ -198,6 +222,10 @@ private:
     std::vector<LifecycleComponent> lifecycle_;
     std::vector<ResourcesComponent> resources_;
     std::vector<LLMPlanComponent> llmPlan_;
+    std::vector<SocialComponent> social_;
+    std::vector<RelationshipComponent> relationship_;
+    std::vector<RoleCommandComponent> roleCommand_;
+    std::vector<CultivationComponent> cultivation_;
     std::vector<bool> hasLLMPlan_;
 
     std::vector<EntityId> entityIds_;

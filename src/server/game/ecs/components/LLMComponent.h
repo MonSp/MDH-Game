@@ -29,7 +29,18 @@ enum class ActionType : uint8_t {
     CAPTURE_RESOURCE_POINT = 13,
     DOMAIN_WAR = 14,
     ALLIANCE_FORMATION = 15,
-    CULTIVATE_BREAKTHROUGH = 16
+    CULTIVATE_BREAKTHROUGH = 16,
+    MINING = 17,
+    FARMING = 18,
+    FISHING = 19,
+    LUMBERING = 20,
+    BUILDING = 21,
+    CRAFTING = 22,
+    REFINING = 23,
+    HEALING = 24,
+    DATING = 25,
+    TEACHING = 26,
+    EXPLORING = 27
 };
 
 enum class PlanStatus : uint8_t {

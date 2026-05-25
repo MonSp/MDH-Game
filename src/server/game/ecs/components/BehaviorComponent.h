@@ -4,50 +4,102 @@
 #include <cstdint>
 
 enum class NPCActivity : uint8_t {
-    Patrol = 0,
-    Retreat = 1,
-    Logistics = 2,
-    Compete = 3,
-    Work = 4,
-    Rest = 5,
-    Trade = 6,
-    Flee = 7,
-    Chase = 8,
-    Dead = 9
+    Idle = 0,
+    Dead = 1,
+
+    Flee = 10,
+    Heal = 11,
+    Defend = 12,
+
+    Eat = 20,
+    Rest = 21,
+    Sleep = 22,
+    Walk = 23,
+    Chat = 24,
+
+    Cultivate = 30,
+    Breakthrough = 31,
+    Tribulation = 32,
+    Meditate = 33,
+    Alchemy = 34,
+    SeekFortune = 35,
+
+    VisitFriend = 40,
+    Date = 41,
+    FamilyGathering = 42,
+    MentorTeach = 43,
+    DiscipleAsk = 44,
+    Trade = 45,
+    Gossip = 46,
+
+    Build = 50,
+    Mine = 51,
+    Farm = 52,
+    Fish = 53,
+    Lumber = 54,
+    Gather = 55,
+    Attack = 56,
+    DefendPosition = 57,
+    Patrol = 58,
+    Escort = 59,
+    Scout = 60,
+
+    Craft = 70,
+    Refine = 71,
+    Cook = 72,
+    Tailor = 73,
+    Construct = 74,
+    Repair = 75,
+
+    Buy = 80,
+    Sell = 81,
+    Bargain = 82,
+
+    Duel = 90,
+    Hunt = 91,
+    Ambush = 92,
+    Assassinate = 93,
+
+    Explore = 100,
+    TreasureHunt = 101,
+    MapExplore = 102,
+
+    Incapacitated = 200
 };
 
-enum class BehaviorPriority : uint8_t {
-    Survival = 1,
-    FamilyDuty = 2,
-    Opportunism = 3,
-    Daily = 4
-};
-
-struct BehaviorWeight {
-    uint32_t patrol;
-    uint32_t retreat;
-    uint32_t logistics;
-    uint32_t compete;
-    uint32_t work;
-    uint32_t rest;
-    uint32_t trade;
-
-    BehaviorWeight() : patrol(10), retreat(10), logistics(10), compete(10), work(10), rest(10), trade(0) {}
+enum class CommandStatus : uint8_t {
+    Pending = 0,
+    Executing = 1,
+    Completed = 2,
+    Failed = 3,
+    Rejected = 4
 };
 
 struct BehaviorComponent : public ECS::ComponentBase<BehaviorComponent> {
     NPCActivity currentActivity;
     NPCActivity previousActivity;
-    BehaviorWeight weights;
     uint64_t activityStartTime;
-    uint32_t currentPatrolIndex;
+    uint32_t activityStep;
+    float activityProgress;
 
     BehaviorComponent() : currentActivity(NPCActivity::Rest), previousActivity(NPCActivity::Rest),
-        activityStartTime(0), currentPatrolIndex(0) {}
+        activityStartTime(0), activityStep(0), activityProgress(0.0f) {}
 
     void changeActivity(NPCActivity newActivity) {
         previousActivity = currentActivity;
         currentActivity = newActivity;
         activityStartTime = 0;
+        activityStep = 0;
+        activityProgress = 0.0f;
+    }
+
+    bool isIdle() const {
+        return currentActivity == NPCActivity::Idle ||
+               currentActivity == NPCActivity::Rest;
+    }
+
+    bool isBusy() const {
+        return !isIdle() && currentActivity != NPCActivity::Dead &&
+               currentActivity != NPCActivity::Incapacitated;
     }
 };
