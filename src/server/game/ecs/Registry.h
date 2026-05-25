@@ -2,11 +2,17 @@
 
 #include "Component.h"
 #include "Entity.h"
+#include "components/IdentityComponent.h"
+#include "components/PositionComponent.h"
+#include "components/StatsComponent.h"
+#include "components/BehaviorComponent.h"
+#include "components/PersonalityComponent.h"
+#include "components/LifecycleComponent.h"
+#include "components/ResourcesComponent.h"
+#include "components/LLMComponent.h"
 #include <vector>
 #include <unordered_map>
-#include <unordered_set>
 #include <queue>
-#include <functional>
 
 namespace ECS {
 
@@ -18,138 +24,189 @@ public:
     }
 
     Entity createEntity() {
-        EntityId id;
-        if (freeIds.empty()) {
-            id = nextEntityId++;
+        size_t slot;
+        if (freeSlots_.empty()) {
+            slot = identity_.size();
+            identity_.emplace_back();
+            position_.emplace_back();
+            stats_.emplace_back();
+            behavior_.emplace_back();
+            personality_.emplace_back();
+            lifecycle_.emplace_back();
+            resources_.emplace_back();
+            llmPlan_.emplace_back();
+            hasLLMPlan_.push_back(false);
+            entityIds_.push_back(0);
+            activeSlots_.push_back(false);
         } else {
-            id = freeIds.front();
-            freeIds.pop();
+            slot = freeSlots_.front();
+            freeSlots_.pop();
+            identity_[slot] = IdentityComponent();
+            position_[slot] = PositionComponent();
+            stats_[slot] = StatsComponent();
+            behavior_[slot] = BehaviorComponent();
+            personality_[slot] = PersonalityComponent();
+            lifecycle_[slot] = LifecycleComponent();
+            resources_[slot] = ResourcesComponent();
+            llmPlan_[slot] = LLMPlanComponent();
+            hasLLMPlan_[slot] = false;
         }
-        auto& comps = entityComponents[id];
+
+        EntityId id;
+        if (freeIds_.empty()) {
+            id = nextEntityId_++;
+        } else {
+            id = freeIds_.front();
+            freeIds_.pop();
+        }
+
+        entityIds_[slot] = id;
+        entityToSlot_[id] = slot;
+        activeSlots_[slot] = true;
         return Entity(id);
     }
 
     void destroyEntity(EntityId id) {
-        auto it = entityComponents.find(id);
-        if (it != entityComponents.end()) {
-            entityComponents.erase(it);
-            freeIds.push(id);
-        }
-    }
+        auto it = entityToSlot_.find(id);
+        if (it == entityToSlot_.end()) return;
+        size_t slot = it->second;
+        if (!activeSlots_[slot]) return;
 
-    template<typename T>
-    bool hasComponent(EntityId id) const {
-        auto it = entityComponents.find(id);
-        if (it == entityComponents.end()) return false;
-        return it->second.find(ComponentBase<T>::getStaticTypeId()) != it->second.end();
+        activeSlots_[slot] = false;
+        freeSlots_.push(slot);
+        freeIds_.push(id);
+        entityToSlot_.erase(it);
     }
 
     template<typename T>
     T* getComponent(EntityId id) {
-        auto typeId = ComponentBase<T>::getStaticTypeId();
-        auto it = entityComponents.find(id);
-        if (it == entityComponents.end()) return nullptr;
-
-        auto compIt = it->second.find(typeId);
-        if (compIt == it->second.end()) return nullptr;
-
-        return static_cast<T*>(compIt->second.get());
+        auto it = entityToSlot_.find(id);
+        if (it == entityToSlot_.end() || !activeSlots_[it->second]) return nullptr;
+        return &getArray<T>()[it->second];
     }
 
     template<typename T>
     const T* getComponent(EntityId id) const {
-        auto typeId = ComponentBase<T>::getStaticTypeId();
-        auto it = entityComponents.find(id);
-        if (it == entityComponents.end()) return nullptr;
-
-        auto compIt = it->second.find(typeId);
-        if (compIt == it->second.end()) return nullptr;
-
-        return static_cast<const T*>(compIt->second.get());
+        auto it = entityToSlot_.find(id);
+        if (it == entityToSlot_.end() || !activeSlots_[it->second]) return nullptr;
+        return &getArray<T>()[it->second];
     }
 
     template<typename T, typename... Args>
     void addComponent(EntityId id, Args&&... args) {
-        auto typeId = ComponentBase<T>::getStaticTypeId();
-        ComponentRegistry::getInstance().registerComponent<T>();
-
-        auto it = entityComponents.find(id);
-        if (it == entityComponents.end()) {
-            it = entityComponents.emplace(id, std::unordered_map<ComponentTypeId, std::unique_ptr<IComponent>>()).first;
+        auto it = entityToSlot_.find(id);
+        if (it == entityToSlot_.end()) return;
+        size_t slot = it->second;
+        if constexpr (std::is_same_v<T, LLMPlanComponent>) {
+            hasLLMPlan_[slot] = true;
         }
-
-        it->second[typeId] = std::make_unique<T>(std::forward<Args>(args)...);
-    }
-
-    template<typename T>
-    void removeComponent(EntityId id) {
-        auto typeId = ComponentBase<T>::getStaticTypeId();
-        auto it = entityComponents.find(id);
-        if (it != entityComponents.end()) {
-            it->second.erase(typeId);
-        }
-    }
-
-    template<typename T>
-    void removeComponentSafe(EntityId id) {
-        auto typeId = ComponentBase<T>::getStaticTypeId();
-        auto it = entityComponents.find(id);
-        if (it != entityComponents.end()) {
-            it->second.erase(typeId);
-        }
-    }
-
-    std::vector<EntityId> getAllEntities() const {
-        std::vector<EntityId> entities;
-        for (const auto& pair : entityComponents) {
-            entities.push_back(pair.first);
-        }
-        return entities;
-    }
-
-    size_t getEntityCount() const {
-        return entityComponents.size();
-    }
-
-    void clear() {
-        entityComponents.clear();
-        while (!freeIds.empty()) freeIds.pop();
-        nextEntityId = 0;
+        getArray<T>()[slot] = T(std::forward<Args>(args)...);
     }
 
     template<typename T>
     std::vector<EntityId> getEntitiesWithComponent() const {
         std::vector<EntityId> result;
-        auto typeId = ComponentBase<T>::getStaticTypeId();
-        for (const auto& pair : entityComponents) {
-            if (pair.second.find(typeId) != pair.second.end()) {
-                result.push_back(pair.first);
+        result.reserve(entityIds_.size());
+
+        if constexpr (std::is_same_v<T, LLMPlanComponent>) {
+            for (size_t i = 0; i < entityIds_.size(); ++i) {
+                if (activeSlots_[i] && hasLLMPlan_[i]) {
+                    result.push_back(entityIds_[i]);
+                }
+            }
+        } else {
+            for (size_t i = 0; i < entityIds_.size(); ++i) {
+                if (activeSlots_[i]) {
+                    result.push_back(entityIds_[i]);
+                }
             }
         }
         return result;
     }
 
-    template<typename T1, typename T2>
-    std::vector<EntityId> getEntitiesWithComponents() const {
+    std::vector<EntityId> getAllEntities() const {
         std::vector<EntityId> result;
-        auto typeId1 = ComponentBase<T1>::getStaticTypeId();
-        auto typeId2 = ComponentBase<T2>::getStaticTypeId();
-        for (const auto& pair : entityComponents) {
-            const auto& components = pair.second;
-            if (components.find(typeId1) != components.end() &&
-                components.find(typeId2) != components.end()) {
-                result.push_back(pair.first);
+        result.reserve(entityIds_.size());
+        for (size_t i = 0; i < entityIds_.size(); ++i) {
+            if (activeSlots_[i]) {
+                result.push_back(entityIds_[i]);
             }
         }
         return result;
     }
+
+    size_t getEntityCount() const {
+        return entityToSlot_.size();
+    }
+
+    void clear() {
+        identity_.clear();
+        position_.clear();
+        stats_.clear();
+        behavior_.clear();
+        personality_.clear();
+        lifecycle_.clear();
+        resources_.clear();
+        llmPlan_.clear();
+        hasLLMPlan_.clear();
+        entityIds_.clear();
+        activeSlots_.clear();
+        entityToSlot_.clear();
+        while (!freeSlots_.empty()) freeSlots_.pop();
+        while (!freeIds_.empty()) freeIds_.pop();
+        nextEntityId_ = 0;
+    }
+
+    template<typename T>
+    bool hasComponent(EntityId id) const {
+        return getComponent<T>(id) != nullptr;
+    }
+
+    template<typename T>
+    void removeComponent(EntityId) {}
 
 private:
     Registry() = default;
 
-    EntityId nextEntityId = 0;
-    std::queue<EntityId> freeIds;
-    std::unordered_map<EntityId, std::unordered_map<ComponentTypeId, std::unique_ptr<IComponent>>> entityComponents;
+    template<typename T> std::vector<T>& getArray() {
+        if constexpr (std::is_same_v<T, IdentityComponent>)    return identity_;
+        if constexpr (std::is_same_v<T, PositionComponent>)     return position_;
+        if constexpr (std::is_same_v<T, StatsComponent>)        return stats_;
+        if constexpr (std::is_same_v<T, BehaviorComponent>)      return behavior_;
+        if constexpr (std::is_same_v<T, PersonalityComponent>)   return personality_;
+        if constexpr (std::is_same_v<T, LifecycleComponent>)     return lifecycle_;
+        if constexpr (std::is_same_v<T, ResourcesComponent>)     return resources_;
+        if constexpr (std::is_same_v<T, LLMPlanComponent>)       return llmPlan_;
+    }
+
+    template<typename T> const std::vector<T>& getArray() const {
+        if constexpr (std::is_same_v<T, IdentityComponent>)    return identity_;
+        if constexpr (std::is_same_v<T, PositionComponent>)     return position_;
+        if constexpr (std::is_same_v<T, StatsComponent>)        return stats_;
+        if constexpr (std::is_same_v<T, BehaviorComponent>)      return behavior_;
+        if constexpr (std::is_same_v<T, PersonalityComponent>)   return personality_;
+        if constexpr (std::is_same_v<T, LifecycleComponent>)     return lifecycle_;
+        if constexpr (std::is_same_v<T, ResourcesComponent>)     return resources_;
+        if constexpr (std::is_same_v<T, LLMPlanComponent>)       return llmPlan_;
+    }
+
+    std::vector<IdentityComponent> identity_;
+    std::vector<PositionComponent> position_;
+    std::vector<StatsComponent> stats_;
+    std::vector<BehaviorComponent> behavior_;
+    std::vector<PersonalityComponent> personality_;
+    std::vector<LifecycleComponent> lifecycle_;
+    std::vector<ResourcesComponent> resources_;
+    std::vector<LLMPlanComponent> llmPlan_;
+    std::vector<bool> hasLLMPlan_;
+
+    std::vector<EntityId> entityIds_;
+    std::vector<bool> activeSlots_;
+    std::unordered_map<EntityId, size_t> entityToSlot_;
+
+    EntityId nextEntityId_ = 0;
+    std::queue<EntityId> freeIds_;
+    std::queue<size_t> freeSlots_;
 };
 
 }

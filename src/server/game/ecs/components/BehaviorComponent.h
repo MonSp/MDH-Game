@@ -1,9 +1,7 @@
 #pragma once
 
 #include "../../ecs/Component.h"
-#include <string>
 #include <cstdint>
-#include <unordered_map>
 
 enum class NPCActivity : uint8_t {
     Patrol = 0,
@@ -41,7 +39,6 @@ struct BehaviorComponent : public ECS::ComponentBase<BehaviorComponent> {
     NPCActivity currentActivity;
     NPCActivity previousActivity;
     BehaviorWeight weights;
-    std::unordered_map<std::string, float> activityData;
     uint64_t activityStartTime;
     uint32_t currentPatrolIndex;
 
@@ -52,14 +49,5 @@ struct BehaviorComponent : public ECS::ComponentBase<BehaviorComponent> {
         previousActivity = currentActivity;
         currentActivity = newActivity;
         activityStartTime = 0;
-    }
-
-    void setActivityData(const std::string& key, float value) {
-        activityData[key] = value;
-    }
-
-    float getActivityData(const std::string& key, float defaultValue = 0.0f) const {
-        auto it = activityData.find(key);
-        return (it != activityData.end()) ? it->second : defaultValue;
     }
 };

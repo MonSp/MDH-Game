@@ -12,44 +12,17 @@ struct Item {
     int32_t value;
 };
 
-struct Equipment {
-    std::string id;
-    std::string name;
-    int32_t quality;
-    int32_t attackBonus;
-    int32_t defenseBonus;
-    bool damaged;
-};
-
 struct ResourcesComponent : public ECS::ComponentBase<ResourcesComponent> {
     int64_t spiritStones;
     std::vector<Item> items;
-    Equipment* equipment;
+    int32_t attackBonus;
+    int32_t defenseBonus;
+    int32_t equipmentQuality;
+    bool hasEquipment;
     int32_t familyContribution;
 
-    ResourcesComponent() : spiritStones(0), equipment(nullptr), familyContribution(0) {}
-
-    ~ResourcesComponent() {
-        if (equipment) {
-            delete equipment;
-        }
-    }
-
-    ResourcesComponent(const ResourcesComponent& other)
-        : spiritStones(other.spiritStones), items(other.items),
-        equipment(other.equipment ? new Equipment(*other.equipment) : nullptr),
-        familyContribution(other.familyContribution) {}
-
-    ResourcesComponent& operator=(const ResourcesComponent& other) {
-        if (this != &other) {
-            spiritStones = other.spiritStones;
-            items = other.items;
-            if (equipment) delete equipment;
-            equipment = other.equipment ? new Equipment(*other.equipment) : nullptr;
-            familyContribution = other.familyContribution;
-        }
-        return *this;
-    }
+    ResourcesComponent() : spiritStones(0), attackBonus(0), defenseBonus(0),
+        equipmentQuality(0), hasEquipment(false), familyContribution(0) {}
 
     void addSpiritStones(int64_t amount) {
         spiritStones += amount;
