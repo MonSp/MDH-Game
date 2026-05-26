@@ -160,6 +160,35 @@ static void exec_buy(ExecuteContext& ctx) {
     if (resources->removeSpiritStones(cost)) resources->addSpiritStones(exec_randRange(0, 20));
     behavior->changeActivity(NPCActivity::Rest);
 }
+static void exec_tailor(ExecuteContext& ctx) {
+    auto* resources = ctx.getResources();
+    auto* behavior = ctx.getBehavior();
+    if (!resources || !behavior) return;
+    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 6);
+    if (exec_random01() < 0.65f) resources->addSpiritStones(exec_randRange(25, 70));
+    float roll = exec_random01();
+    int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+    behavior->reflection.recordResult(NPCActivity::Tailor, score);
+    behavior->changeActivity(NPCActivity::Rest);
+}
+static void exec_bargain(ExecuteContext& ctx) {
+    auto* resources = ctx.getResources();
+    auto* behavior = ctx.getBehavior();
+    if (!resources || !behavior) return;
+    int64_t basePrice = exec_randRange(10, 50);
+    float haggleRoll = exec_random01();
+    if (haggleRoll < 0.3f) {
+        resources->addSpiritStones(static_cast<int64_t>(basePrice * 1.5f));
+    } else if (haggleRoll < 0.7f) {
+        resources->addSpiritStones(basePrice);
+    } else {
+        resources->addSpiritStones(static_cast<int64_t>(basePrice * 0.6f));
+    }
+    float roll = exec_random01();
+    int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+    behavior->reflection.recordResult(NPCActivity::Bargain, score);
+    behavior->changeActivity(NPCActivity::Rest);
+}
 
 constexpr ExecuteDescriptor kProductionTable[] = {
     {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES, exec_build, nullptr},
@@ -175,4 +204,6 @@ constexpr ExecuteDescriptor kProductionTable[] = {
     {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES, exec_repair, nullptr},
     {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES, exec_sell, nullptr},
     {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES, exec_buy, nullptr},
+    {NPCActivity::Tailor,    "Tailor",     ActivityCategory::Production, REQ_RESOURCES, exec_tailor, nullptr},
+    {NPCActivity::Bargain,   "Bargain",    ActivityCategory::Production, REQ_RESOURCES, exec_bargain, nullptr},
 };

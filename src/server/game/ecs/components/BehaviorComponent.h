@@ -432,64 +432,53 @@ static ActivityTagBundle getActivityTagBundle(NPCActivity act) {
     }
 }
 
+// DEPRECATED: use getActivityTagBundle() instead
 static uint32_t getActivityTags(NPCActivity act) {
-    switch (act) {
-        case NPCActivity::Mine:    return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Farm:    return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::CategoryProduction);
-        case NPCActivity::Fish:    return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::CategoryProduction);
-        case NPCActivity::Lumber:  return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Gather:  return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Craft:   return static_cast<uint32_t>(BehaviorTag::ProducesEquipment) | static_cast<uint32_t>(BehaviorTag::SceneIndoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Refine:  return static_cast<uint32_t>(BehaviorTag::ProducesMaterials) | static_cast<uint32_t>(BehaviorTag::SceneIndoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Cook:    return static_cast<uint32_t>(BehaviorTag::ProducesFood) | static_cast<uint32_t>(BehaviorTag::SceneIndoor) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Build:   return static_cast<uint32_t>(BehaviorTag::ProducesEquipment) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityHigh) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Construct: return static_cast<uint32_t>(BehaviorTag::ProducesEquipment) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityHigh) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Repair:  return static_cast<uint32_t>(BehaviorTag::ProducesEquipment) | static_cast<uint32_t>(BehaviorTag::SceneAny) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Sell:    return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::SceneIndoor) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::Buy:     return static_cast<uint32_t>(BehaviorTag::ProducesEquipment) | static_cast<uint32_t>(BehaviorTag::SceneIndoor) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::CategoryProduction) | static_cast<uint32_t>(BehaviorTag::RequiresResources) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::VisitFriend: return static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::RequiresMovement) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::Date:    return static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::RequiresMovement) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::Gossip:  return static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::SceneAny) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::MentorTeach: return static_cast<uint32_t>(BehaviorTag::ProducesCultivation) | static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::DiscipleAsk: return static_cast<uint32_t>(BehaviorTag::ProducesCultivation) | static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::Trade:   return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::Hunt:    return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::CategoryCombat) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityHigh) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Explore: return static_cast<uint32_t>(BehaviorTag::CategoryExploration) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::RequiresMovement) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::TreasureHunt: return static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones) | static_cast<uint32_t>(BehaviorTag::CategoryExploration) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::MapExplore: return static_cast<uint32_t>(BehaviorTag::CategoryExploration) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityHigh) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Patrol:  return static_cast<uint32_t>(BehaviorTag::CategoryCombat) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Scout:   return static_cast<uint32_t>(BehaviorTag::CategoryExploration) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Cultivate: return static_cast<uint32_t>(BehaviorTag::ProducesCultivation) | static_cast<uint32_t>(BehaviorTag::CategoryCultivation) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::Meditate: return static_cast<uint32_t>(BehaviorTag::ProducesCultivation) | static_cast<uint32_t>(BehaviorTag::CategoryCultivation) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::SeekFortune: return static_cast<uint32_t>(BehaviorTag::ProducesCultivation) | static_cast<uint32_t>(BehaviorTag::CategoryExploration) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::RequiresMovement);
-        case NPCActivity::Alchemy: return static_cast<uint32_t>(BehaviorTag::ProducesEquipment) | static_cast<uint32_t>(BehaviorTag::CategoryCultivation) | static_cast<uint32_t>(BehaviorTag::SceneIndoor) | static_cast<uint32_t>(BehaviorTag::IntensityMedium) | static_cast<uint32_t>(BehaviorTag::RequiresResources);
-        case NPCActivity::Walk:    return static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::RequiresMovement) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::Rest:    return static_cast<uint32_t>(BehaviorTag::SceneAny) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::SoloActivity);
-        case NPCActivity::Duel:    return static_cast<uint32_t>(BehaviorTag::CategoryCombat) | static_cast<uint32_t>(BehaviorTag::IntensityHigh) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::Attack:  return static_cast<uint32_t>(BehaviorTag::CategoryCombat) | static_cast<uint32_t>(BehaviorTag::SceneOutdoor) | static_cast<uint32_t>(BehaviorTag::IntensityHigh) | static_cast<uint32_t>(BehaviorTag::RequiresMovement) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        case NPCActivity::SocialHelp: return static_cast<uint32_t>(BehaviorTag::CategorySocial) | static_cast<uint32_t>(BehaviorTag::IntensityLow) | static_cast<uint32_t>(BehaviorTag::RequiresMovement) | static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        default: return static_cast<uint32_t>(BehaviorTag::None);
-    }
-}
+    ActivityTagBundle bundle = getActivityTagBundle(act);
+    uint32_t result = static_cast<uint32_t>(BehaviorTag::None);
 
-static float jaccardSimilarity(NPCActivity a, NPCActivity b) {
-    uint32_t tagsA = getActivityTags(a);
-    uint32_t tagsB = getActivityTags(b);
-    if (tagsA == 0 && tagsB == 0) return 0.0f;
+    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesSpiritStones))
+        result |= static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones);
+    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesCultivation))
+        result |= static_cast<uint32_t>(BehaviorTag::ProducesCultivation);
+    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesEquipment))
+        result |= static_cast<uint32_t>(BehaviorTag::ProducesEquipment);
+    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesFood))
+        result |= static_cast<uint32_t>(BehaviorTag::ProducesFood);
+    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesMaterials))
+        result |= static_cast<uint32_t>(BehaviorTag::ProducesMaterials);
 
-    uint32_t intersection = tagsA & tagsB;
-    uint32_t union_ = tagsA | tagsB;
+    if (bundle.careerTags & static_cast<uint16_t>(CareerTag::Cultivator))
+        result |= static_cast<uint32_t>(BehaviorTag::CategoryCultivation);
+    if (bundle.careerTags & static_cast<uint16_t>(CareerTag::Soldier))
+        result |= static_cast<uint32_t>(BehaviorTag::CategoryCombat);
 
-    int intCount = 0, unionCount = 0;
-    uint32_t check = 1;
-    for (int i = 0; i < 24; i++) {
-        if (intersection & check) intCount++;
-        if (union_ & check) unionCount++;
-        check <<= 1;
+    uint16_t productiveMask = static_cast<uint16_t>(ResourceTag::ProducesSpiritStones)
+                            | static_cast<uint16_t>(ResourceTag::ProducesCultivation)
+                            | static_cast<uint16_t>(ResourceTag::ProducesEquipment)
+                            | static_cast<uint16_t>(ResourceTag::ProducesFood)
+                            | static_cast<uint16_t>(ResourceTag::ProducesMaterials);
+    if (bundle.resourceTags & productiveMask)
+        result |= static_cast<uint32_t>(BehaviorTag::CategoryProduction);
+
+    if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::PreferSolitude))
+        result |= static_cast<uint32_t>(BehaviorTag::SoloActivity);
+    if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::PreferCooperation)) {
+        result |= static_cast<uint32_t>(BehaviorTag::GroupActivity);
+        result |= static_cast<uint32_t>(BehaviorTag::RequiresSocial);
     }
 
-    if (unionCount == 0) return 0.0f;
-    return static_cast<float>(intCount) / static_cast<float>(unionCount);
+    if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::HighStamina))
+        result |= static_cast<uint32_t>(BehaviorTag::IntensityHigh);
+    else if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::LowStamina))
+        result |= static_cast<uint32_t>(BehaviorTag::IntensityLow);
+    else
+        result |= static_cast<uint32_t>(BehaviorTag::IntensityMedium);
+
+    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::CostsSpiritStones))
+        result |= static_cast<uint32_t>(BehaviorTag::RequiresResources);
+
+    return result;
 }
 
 static float jaccardUint16(uint16_t a, uint16_t b) {
@@ -505,6 +494,17 @@ static float jaccardUint16(uint16_t a, uint16_t b) {
     }
     if (unionCount == 0) return 0.0f;
     return static_cast<float>(intCount) / static_cast<float>(unionCount);
+}
+
+static float jaccardSimilarity(NPCActivity a, NPCActivity b) {
+    ActivityTagBundle tagsA = getActivityTagBundle(a);
+    ActivityTagBundle tagsB = getActivityTagBundle(b);
+
+    float careerJaccard = jaccardUint16(tagsA.careerTags, tagsB.careerTags);
+    float resourceJaccard = jaccardUint16(tagsA.resourceTags, tagsB.resourceTags);
+    float personalityJaccard = jaccardUint16(tagsA.personalityTags, tagsB.personalityTags);
+
+    return careerJaccard * 0.6f + resourceJaccard * 0.3f + personalityJaccard * 0.1f;
 }
 
 static float computeTagSimilarity(NPCActivity current, NPCActivity candidate,
@@ -812,6 +812,7 @@ struct ReflectionData {
     uint8_t microPlanTriggered;
     NPCActivity microPlanActivity;
     uint32_t microPlanTargetSlot;
+    uint8_t microPlanFailCount;
     uint8_t stickinessDecay;
 
     NPCActivity boostedActivity;
@@ -824,6 +825,7 @@ struct ReflectionData {
 
     ReflectionData() : trackedCount(0), stuckCount(0), lastStuckFrame(0),
         microPlanTriggered(0), microPlanActivity(NPCActivity::Rest), microPlanTargetSlot(0),
+        microPlanFailCount(0),
         stickinessDecay(0),
         boostedActivity(NPCActivity::Idle), boostExpireFrame(0), boostAmount(0.0f),
         boostConsecutiveFailures(0),
@@ -889,6 +891,23 @@ struct ReflectionData {
             } else {
                 boostConsecutiveFailures = 0;
             }
+        }
+
+        if (microPlanTriggered && act == microPlanActivity) {
+            if (score > 0) {
+                microPlanTriggered = 0;
+                microPlanActivity = NPCActivity::Idle;
+                microPlanFailCount = 0;
+            } else if (score < 0) {
+                microPlanFailCount++;
+                if (microPlanFailCount >= 3) {
+                    microPlanTriggered = 0;
+                    microPlanActivity = NPCActivity::Idle;
+                    microPlanFailCount = 0;
+                }
+            }
+        } else if (act != microPlanActivity) {
+            microPlanFailCount = 0;
         }
 
         if (weightMultiplier[idx] < 1.0f) {

@@ -89,6 +89,8 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES,                exec_repair, nullptr},
     {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES,                exec_sell, nullptr},
     {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES,                exec_buy, nullptr},
+    {NPCActivity::Tailor,    "Tailor",     ActivityCategory::Production, REQ_RESOURCES,                exec_tailor, nullptr},
+    {NPCActivity::Bargain,   "Bargain",    ActivityCategory::Production, REQ_RESOURCES,                exec_bargain, nullptr},
     // Combat (9)
     {NPCActivity::Duel,           "Duel",           ActivityCategory::Combat, REQ_STATS,               exec_duel, nullptr},
     {NPCActivity::Hunt,           "Hunt",           ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_hunt, nullptr},
@@ -109,6 +111,32 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
 };
 static constexpr size_t kExecuteTableSize = sizeof(kExecuteTable) / sizeof(kExecuteTable[0]);
 
+struct EconomicSignals {
+    float ironOreDemand = 1.0f;
+    float spiritStoneInflation = 1.0f;
+    float foodDemand = 1.0f;
+    float equipmentDemand = 1.0f;
+    float materialDemand = 1.0f;
+    float cultivationDemand = 1.0f;
+
+    void computeFromHeritage(uint16_t factionCareerHeritage) {
+        if (factionCareerHeritage == 0) return;
+
+        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Miner))
+            ironOreDemand = 1.5f;
+        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Farmer))
+            foodDemand = 1.3f;
+        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Smith))
+            equipmentDemand = 1.4f;
+        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Cultivator))
+            cultivationDemand = 1.3f;
+        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Merchant))
+            spiritStoneInflation = 0.7f;
+        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Soldier))
+            equipmentDemand = 1.5f;
+    }
+};
+
 class BehaviorTreeSystem {
 public:
     static BehaviorTreeSystem& getInstance() {
@@ -126,36 +154,6 @@ public:
         auto* cmd = registry.getComponent<RoleCommandComponent>(entityId);
 
         if (!stats || !behavior) return;
-
-        if (llmPlan && llmPlan->tier != LLMTier::T3 &&
-            llmPlan->status == PlanStatus::ACTIVE) {
-            ActionType action = llmPlan->getCurrentAction();
-            NPCActivity newAct = translateActionType(action);
-            if (stats->hpPercent() < 0.3f) {
-                llmPlan->status = PlanStatus::INTERRUPTED;
-                if (shouldInterrupt(behavior, NPCActivity::Flee, 6)) {
-                    NPCActivity oldAct = behavior->currentActivity;
-                    behavior->changeActivity(NPCActivity::Flee);
-                    LOG_DECISION(behavior, currentTime, oldAct, NPCActivity::Flee, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
-                }
-                return;
-            }
-            if (stats->hpPercent() < 0.5f) {
-                llmPlan->status = PlanStatus::INTERRUPTED;
-                if (shouldInterrupt(behavior, NPCActivity::Heal, 6)) {
-                    NPCActivity oldAct = behavior->currentActivity;
-                    behavior->changeActivity(NPCActivity::Heal);
-                    LOG_DECISION(behavior, currentTime, oldAct, NPCActivity::Heal, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
-                }
-                return;
-            }
-            if (shouldInterrupt(behavior, newAct, 6)) {
-                NPCActivity oldAct = behavior->currentActivity;
-                behavior->changeActivity(newAct);
-                LOG_DECISION(behavior, currentTime, oldAct, newAct, DecisionReason::LLMPlanStep, 6, 0.0f, 0);
-            }
-            return;
-        }
 
         if (bt && bt->tmpl) {
             if (BTEvaluator::evaluate(entityId, currentTime)) return;
@@ -227,6 +225,7 @@ private:
         SocialComponent* social;
         RelationshipComponent* rel;
         CultivationComponent* cult;
+        EconomicSignals econSignals;
     };
 
     using EvaluateFn = bool (*)(EvaluateContext&);
@@ -255,7 +254,14 @@ private:
         if (!behavior) return NPCActivity::Idle;
         auto& ref = behavior->reflection;
 
-        if (ref.microPlanTriggered) return ref.microPlanActivity;
+        if (ref.microPlanTriggered) {
+            if (behavior->currentActivity != ref.microPlanActivity) {
+                ref.microPlanTriggered = 0;
+                ref.microPlanActivity = NPCActivity::Idle;
+                return NPCActivity::Idle;
+            }
+            return ref.microPlanActivity;
+        }
 
         if (!ref.allBehaviorsLow()) {
             ref.stuckCount = 0;
@@ -305,37 +311,17 @@ private:
 
         uint8_t effectiveDecay = ref.stickinessDecay;
 
-        NPCActivity allActivities[] = {
-            NPCActivity::Flee, NPCActivity::Heal, NPCActivity::Defend,
-            NPCActivity::Eat, NPCActivity::Rest, NPCActivity::Sleep, NPCActivity::Walk,
-            NPCActivity::Chat, NPCActivity::AwaitOrders,
-            NPCActivity::Cultivate, NPCActivity::Breakthrough, NPCActivity::Tribulation,
-            NPCActivity::Meditate, NPCActivity::Alchemy, NPCActivity::SeekFortune,
-            NPCActivity::VisitFriend, NPCActivity::Date, NPCActivity::FamilyGathering,
-            NPCActivity::MentorTeach, NPCActivity::DiscipleAsk, NPCActivity::Trade,
-            NPCActivity::Gossip, NPCActivity::ReportTask, NPCActivity::RefuseCommand,
-            NPCActivity::CoordinateSquad,
-            NPCActivity::Build, NPCActivity::Mine, NPCActivity::Farm, NPCActivity::Fish,
-            NPCActivity::Lumber, NPCActivity::Gather,
-            NPCActivity::Attack, NPCActivity::DefendPosition, NPCActivity::Patrol,
-            NPCActivity::Escort, NPCActivity::Scout,
-            NPCActivity::Craft, NPCActivity::Refine, NPCActivity::Cook, NPCActivity::Tailor,
-            NPCActivity::Construct, NPCActivity::Repair,
-            NPCActivity::Buy, NPCActivity::Sell, NPCActivity::Bargain,
-            NPCActivity::Duel, NPCActivity::Hunt, NPCActivity::Ambush, NPCActivity::Assassinate,
-            NPCActivity::Explore, NPCActivity::TreasureHunt, NPCActivity::MapExplore,
-            NPCActivity::SocialHelp,
-        };
-        constexpr int numAll = sizeof(allActivities) / sizeof(allActivities[0]);
-
         NPCActivity creative = NPCActivity::Rest;
         float bestScore = -1.0f;
         NPCActivity tieCandidate = NPCActivity::Rest;
         float tieScore = -1.0f;
 
-        for (int i = 0; i < numAll; i++) {
-            if (allActivities[i] == best) continue;
-            float score = computeTagSimilarity(best, allActivities[i], p,
+        for (size_t i = 0; i < kExecuteTableSize; ++i) {
+            NPCActivity candidate = kExecuteTable[i].activity;
+            if (candidate == NPCActivity::Idle || candidate == NPCActivity::Dead || candidate == NPCActivity::Incapacitated) continue;
+            if (candidate == NPCActivity::Flee || candidate == NPCActivity::Heal || candidate == NPCActivity::Defend) continue;
+            if (candidate == best) continue;
+            float score = computeTagSimilarity(best, candidate, p,
                                                 factionHeritage, effectiveDecay);
 
             if (p) {
@@ -345,15 +331,15 @@ private:
 
             if (score > bestScore) {
                 bestScore = score;
-                creative = allActivities[i];
-                tieCandidate = allActivities[i];
+                creative = candidate;
+                tieCandidate = candidate;
                 tieScore = score;
             } else if (score == bestScore && bestScore > 0.0f) {
                 float jacA = jaccardSimilarity(best, creative);
-                float jacB = jaccardSimilarity(best, allActivities[i]);
+                float jacB = jaccardSimilarity(best, candidate);
                 if (jacB > jacA) {
-                    creative = allActivities[i];
-                    tieCandidate = allActivities[i];
+                    creative = candidate;
+                    tieCandidate = candidate;
                     tieScore = score;
                 }
             }
@@ -458,9 +444,6 @@ private:
             case NPCActivity::Heal:
             case NPCActivity::Defend:
                 return 1;
-            case NPCActivity::RefuseCommand:
-            case NPCActivity::CoordinateSquad:
-                return 2;
             case NPCActivity::VisitFriend:
             case NPCActivity::Date:
             case NPCActivity::FamilyGathering:
@@ -723,11 +706,14 @@ private:
     static bool evaluateLLMPlan(EvaluateContext& ctx) {
         if (!ctx.llmPlan || ctx.llmPlan->tier == LLMTier::T3 ||
             ctx.llmPlan->status != PlanStatus::ACTIVE) return false;
+
         ActionType action = ctx.llmPlan->getCurrentAction();
         NPCActivity newAct = translateActionType(action);
-        NPCActivity oldAct = ctx.behavior->currentActivity;
-        ctx.behavior->changeActivity(newAct);
-        LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, newAct, DecisionReason::LLMPlanStep, 6, 0.0f, 0);
+        if (shouldInterrupt(ctx.behavior, newAct, 6)) {
+            NPCActivity oldAct = ctx.behavior->currentActivity;
+            ctx.behavior->changeActivity(newAct);
+            LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, newAct, DecisionReason::LLMPlanStep, 6, 0.0f, 0);
+        }
         return true;
     }
 
@@ -848,16 +834,31 @@ private:
         }
 
         if (ctx.identity && ctx.personality) {
-            NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime);
+            ctx.econSignals.computeFromHeritage(ctx.identity->factionCareerHeritage);
+            NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime, ctx.identity, ctx.econSignals);
             float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality, ctx.identity);
             DecisionReason reason = DecisionReason::DailyRoleDefault;
             float delta = 0.0f;
             if (weight < 0.7f && random01() < 0.5f) {
-                NPCActivity prevChosen = chosen;
-                chosen = chooseByRole(ctx.identity->role, ctx.personality, nullptr, ctx.currentTime);
-                if (chosen != prevChosen) {
+                NPCActivity alternative = NPCActivity::Rest;
+                float bestScore = -1.0f;
+                for (size_t i = 0; i < kExecuteTableSize; ++i) {
+                    NPCActivity candidate = kExecuteTable[i].activity;
+                    if (candidate == chosen) continue;
+                    if (candidate == NPCActivity::Idle || candidate == NPCActivity::Dead || candidate == NPCActivity::Incapacitated) continue;
+                    if (candidate == NPCActivity::Flee || candidate == NPCActivity::Heal || candidate == NPCActivity::Defend) continue;
+                    float score = computeTagSimilarity(chosen, candidate, ctx.personality,
+                        ctx.identity ? ctx.identity->factionCareerHeritage : 0, 0);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        alternative = candidate;
+                    }
+                }
+                if (alternative != chosen && alternative != NPCActivity::Rest) {
                     reason = DecisionReason::DailyReflection;
                     delta = 1.0f - weight;
+                    chosen = alternative;
+                    weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality, ctx.identity);
                 }
             }
             if (weight < 0.5f && random01() < 0.3f) {
@@ -885,13 +886,12 @@ private:
         return true;
     }
 
-    // LLM planning (T1/T2 ACTIVE) is handled at the top of evaluate() before this array.
-    // evaluateLLMPlan exists as a standalone function but is not listed here
-    // because the top-level catch intercepts all T1/T2 ACTIVE plans first.
+    // LLM planning (T1/T2 ACTIVE) is now handled via evaluateLLMPlan layer.
     static constexpr EvaluateFn kEvaluateLayers[] = {
         evaluateSurvival,
         evaluateEmotion,
         evaluateCommand,
+        evaluateLLMPlan,
         evaluateSocial,
         evaluateCultivation,
         evaluateDaily,
@@ -919,37 +919,91 @@ private:
         }
     }
 
+    static float economicBiasFor(NPCActivity act, const IdentityComponent* identity, const EconomicSignals& signals) {
+        if (!identity || identity->factionCareerHeritage == 0) return 1.0f;
+
+        ActivityTagBundle bundle = getActivityTagBundle(act);
+        uint16_t heritage = identity->factionCareerHeritage;
+
+        if (!(bundle.careerTags & heritage)) return 1.0f;
+
+        float bias = 1.0f;
+        uint16_t resTags = bundle.resourceTags;
+
+        if (resTags & static_cast<uint16_t>(ResourceTag::ProducesSpiritStones))
+            bias *= signals.spiritStoneInflation;
+        if (resTags & static_cast<uint16_t>(ResourceTag::ProducesFood))
+            bias *= signals.foodDemand;
+        if (resTags & static_cast<uint16_t>(ResourceTag::ProducesEquipment))
+            bias *= signals.equipmentDemand;
+        if (resTags & static_cast<uint16_t>(ResourceTag::ProducesMaterials))
+            bias *= signals.materialDemand;
+        if (resTags & static_cast<uint16_t>(ResourceTag::ProducesCultivation))
+            bias *= signals.cultivationDemand;
+
+        return bias > 0.0f ? bias : 1.0f;
+    }
+
     static NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p, BehaviorComponent* behavior = nullptr,
-                             uint64_t currentTime = 0) {
+                             uint64_t currentTime = 0, const IdentityComponent* identity = nullptr,
+                             const EconomicSignals& econSignals = EconomicSignals{}) {
         switch (role) {
             case NPCRole::FamilyHead:
             case NPCRole::Elder:
-                if (random01() < 0.3f) return NPCActivity::Patrol;
-                if (random01() < 0.2f) return NPCActivity::Meditate;
-                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Trade, currentTime, p) : 1.0f))
-                    return NPCActivity::Trade;
+                if (random01() < 0.3f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Patrol, identity, econSignals))
+                return NPCActivity::Patrol;
+            if (random01() < 0.2f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Meditate, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Meditate, identity, econSignals))
+                return NPCActivity::Meditate;
+            if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Trade, currentTime, p) : 1.0f)
+                * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Trade, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Trade, identity, econSignals))
+                return NPCActivity::Trade;
                 return NPCActivity::Rest;
             case NPCRole::LawEnforcementElder:
-                return (random01() < 0.4f) ? NPCActivity::Patrol : NPCActivity::Rest;
+                if (random01() < 0.4f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Patrol, identity, econSignals))
+                return NPCActivity::Patrol;
+                return NPCActivity::Rest;
             case NPCRole::CoreDisciple:
             case NPCRole::InnerDisciple:
-                if (p->isDiligent() && random01() < 0.35f) return NPCActivity::Cultivate;
-                if (random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Patrol, currentTime, p) : 1.0f))
-                    return NPCActivity::Patrol;
-                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Gather, currentTime, p) : 1.0f))
-                    return NPCActivity::Gather;
-                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Explore, currentTime, p) : 1.0f))
-                    return NPCActivity::Explore;
+                if (p->isDiligent() && random01() < 0.35f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Cultivate, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Cultivate, identity, econSignals))
+                return NPCActivity::Cultivate;
+            if (random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Patrol, currentTime, p) : 1.0f)
+                * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Patrol, identity, econSignals))
+                return NPCActivity::Patrol;
+            if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Gather, currentTime, p) : 1.0f)
+                * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Gather, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Gather, identity, econSignals))
+                return NPCActivity::Gather;
+            if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Explore, currentTime, p) : 1.0f)
+                * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Explore, identity) : 1.0f)
+                * economicBiasFor(NPCActivity::Explore, identity, econSignals))
+                return NPCActivity::Explore;
                 return NPCActivity::Rest;
             case NPCRole::BranchDisciple:
             default:
-                if (p->isDiligent() && random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Mine, currentTime, p) : 1.0f))
-                    return NPCActivity::Mine;
-                if (random01() < 0.2f * (behavior ? applyReflection(behavior, NPCActivity::Farm, currentTime, p) : 1.0f))
+                {
+                    float mineProb = 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Mine, currentTime, p) : 1.0f)
+                        * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Mine, identity) : 1.0f)
+                        * economicBiasFor(NPCActivity::Mine, identity, econSignals);
+                    if (p && !p->isDiligent()) mineProb *= 0.5f;
+                    if (random01() < mineProb) return NPCActivity::Mine;
+                }
+                if (random01() < 0.2f * (behavior ? applyReflection(behavior, NPCActivity::Farm, currentTime, p) : 1.0f)
+                    * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Farm, identity) : 1.0f)
+                    * economicBiasFor(NPCActivity::Farm, identity, econSignals))
                     return NPCActivity::Farm;
-                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Fish, currentTime, p) : 1.0f))
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Fish, currentTime, p) : 1.0f)
+                    * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Fish, identity) : 1.0f)
+                    * economicBiasFor(NPCActivity::Fish, identity, econSignals))
                     return NPCActivity::Fish;
-                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Lumber, currentTime, p) : 1.0f))
+                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Lumber, currentTime, p) : 1.0f)
+                    * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Lumber, identity) : 1.0f)
+                    * economicBiasFor(NPCActivity::Lumber, identity, econSignals))
                     return NPCActivity::Lumber;
                 return NPCActivity::Walk;
         }
