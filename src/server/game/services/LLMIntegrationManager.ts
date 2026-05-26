@@ -27,6 +27,7 @@ import {
   PlanningType
 } from '../../../shared/types/LLMPlanning';
 import { LLMPlanningService } from './LLMPlanningService';
+import { FrontlineService } from './FrontlineService';
 import { NPCBehaviorTreeManager, translateActionToActivity } from './NPCBehaviorTree';
 import { determineTier, shouldRequestPlanning, getFallbackBehavior, LLM_SERVICE_CONFIG } from '../../config/LLMConfig';
 import { PlanAction, NarrativeActionType } from '../../llm/PlanParser';
@@ -106,14 +107,19 @@ export class LLMPlanningScheduler {
     this.npcDataStore.clear();
   }
 
-  async triggerPlanning(npcId: string, memoryContext?: string): Promise<void> {
+  async triggerPlanning(
+    npcId: string,
+    memoryContext?: string,
+    frontlineSummary?: string,
+    revisionFlags?: string[]
+  ): Promise<void> {
     const planningService = LLMPlanningService.getInstance();
     const request = this.createPlanningRequest(npcId, memoryContext);
 
     if (!request) return;
 
     try {
-      const plan = await planningService.requestPlan(request);
+      const plan = await planningService.requestPlan(request, frontlineSummary, revisionFlags);
       if (plan) {
         this.eventDispatcher.emitEvent({
           type: LLMEventType.PLAN_GENERATED,
@@ -377,7 +383,13 @@ export class LLMIntegrationManager {
   }
 
   /** Trigger planning for an NPC and return converted PlanAction[], or [] on failure. */
-  async triggerAndGetActions(npcId: string, npcData: any, memoryContext?: string): Promise<PlanAction[]> {
+  async triggerAndGetActions(
+    npcId: string,
+    npcData: any,
+    memoryContext?: string,
+    frontlineSummary?: string,
+    revisionFlags?: string[]
+  ): Promise<PlanAction[]> {
     // Register if not already registered
     this.scheduler.registerNPC(npcId, {
       id: npcId,
@@ -395,7 +407,7 @@ export class LLMIntegrationManager {
     if (actions.length > 0) return actions;
 
     // Force trigger planning and check again
-    await this.scheduler.triggerPlanning(npcId, memoryContext);
+    await this.scheduler.triggerPlanning(npcId, memoryContext, frontlineSummary, revisionFlags);
     actions = this.convertPlanToActions(npcId);
     return actions;
   }

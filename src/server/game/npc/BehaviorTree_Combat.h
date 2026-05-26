@@ -1,31 +1,59 @@
 #pragma once
 #include "ExecuteDescriptor.h"
+#include "../ecs/components/SocialComponent.h"
+#include "../ecs/components/PersonalityComponent.h"
 #include <algorithm>
 
 static void exec_duel(ExecuteContext& ctx) {
     auto* stats = ctx.getStats();
     if (!stats) return;
     stats->mp = std::max(0, stats->mp - 2);
-    if (exec_random01() < 0.3f) stats->takeDamage(stats->power / 10);
+    if (exec_random01() < 0.3f) {
+        int32_t dmg = stats->power / 10;
+        stats->takeDamage(dmg);
+        auto* social = ctx.reg().getComponent<SocialComponent>(ctx.entityId);
+        auto* personality = ctx.reg().getComponent<PersonalityComponent>(ctx.entityId);
+        if (social && personality) social->onAttacked(static_cast<float>(dmg), personality->caution);
+    }
 }
 static void exec_hunt(ExecuteContext& ctx) {
     auto* pos = ctx.getPosition();
     auto* stats = ctx.getStats();
     if (!pos || !stats) return;
     pos->moveTo(pos->x + stats->power / 10, pos->y + stats->power / 10);
-    if (exec_random01() < 0.1f) stats->takeDamage(stats->power / 20);
+    if (exec_random01() < 0.1f) {
+        int32_t dmg = stats->power / 20;
+        stats->takeDamage(dmg);
+        auto* social = ctx.reg().getComponent<SocialComponent>(ctx.entityId);
+        auto* personality = ctx.reg().getComponent<PersonalityComponent>(ctx.entityId);
+        if (social && personality) social->onAttacked(static_cast<float>(dmg), personality->caution);
+    }
     if (exec_random01() < 0.05f) stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 30);
 }
 static void exec_ambush(ExecuteContext& ctx) {
     auto* stats = ctx.getStats();
     if (!stats) return;
-    if (exec_random01() < 0.4f) stats->hp = std::max(1, stats->hp / 2);
+    if (exec_random01() < 0.4f) {
+        int32_t beforeHp = stats->hp;
+        stats->hp = std::max(1, stats->hp / 2);
+        int32_t dmg = beforeHp - stats->hp;
+        auto* social = ctx.reg().getComponent<SocialComponent>(ctx.entityId);
+        auto* personality = ctx.reg().getComponent<PersonalityComponent>(ctx.entityId);
+        if (social && personality && dmg > 0) social->onAttacked(static_cast<float>(dmg), personality->caution);
+    }
 }
 static void exec_assassinate(ExecuteContext& ctx) {
     auto* stats = ctx.getStats();
     if (!stats) return;
     stats->mp = std::max(0, stats->mp - 5);
-    if (exec_random01() < 0.15f) stats->hp = std::max(1, stats->hp / 3);
+    if (exec_random01() < 0.15f) {
+        int32_t beforeHp = stats->hp;
+        stats->hp = std::max(1, stats->hp / 3);
+        int32_t dmg = beforeHp - stats->hp;
+        auto* social = ctx.reg().getComponent<SocialComponent>(ctx.entityId);
+        auto* personality = ctx.reg().getComponent<PersonalityComponent>(ctx.entityId);
+        if (social && personality && dmg > 0) social->onAttacked(static_cast<float>(dmg), personality->caution);
+    }
 }
 static void exec_attack(ExecuteContext& ctx) {
     auto* pos = ctx.getPosition();

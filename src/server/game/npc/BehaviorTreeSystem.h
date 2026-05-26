@@ -111,7 +111,10 @@ public:
         if (llmPlan && llmPlan->tier != LLMTier::T3 &&
             llmPlan->status == PlanStatus::ACTIVE) {
             ActionType action = llmPlan->getCurrentAction();
-            behavior->changeActivity(translateActionType(action));
+            NPCActivity newAct = translateActionType(action);
+            if (shouldInterrupt(behavior, newAct, 6)) {
+                behavior->changeActivity(newAct);
+            }
             return;
         }
 
@@ -128,6 +131,7 @@ public:
         if (!identity || !personality) return;
 
         if (evaluateSurvival(stats, behavior)) return;
+        if (evaluateEmotion(social, personality, behavior, stats)) return;
         auto* cmdRespGet = registry.getComponent<CommandResponseComponent>(entityId);
         if (evaluateCommand(entityId, cmd, cmdRespGet, behavior, personality, currentTime)) return;
         if (evaluateLLMPlan(llmPlan, behavior)) return;
@@ -138,6 +142,8 @@ public:
 
     void execute(ECS::EntityId entityId, uint64_t currentTime, float deltaTime) {
         auto* behavior = ECS::Registry::getInstance().getComponent<BehaviorComponent>(entityId);
+        auto* social = ECS::Registry::getInstance().getComponent<SocialComponent>(entityId);
+        if (social) social->tickEmotions(deltaTime);
         if (!behavior) return;
         if (behavior->activityStep == 0) {
             behavior->activityStep = 1;
@@ -165,6 +171,11 @@ private:
         return min + rand() % (max - min + 1);
     }
 
+    float applyReflection(BehaviorComponent* behavior, NPCActivity activity) {
+        if (!behavior) return 1.0f;
+        return behavior->reflection.getWeight(activity);
+    }
+
     static float getRiskLevel(NPCActivity a) {
         switch (a) {
             case NPCActivity::Attack: case NPCActivity::Hunt:
@@ -186,15 +197,144 @@ private:
         }
     }
 
+    static uint8_t getPriorityLevel(NPCActivity activity) {
+        switch (activity) {
+            case NPCActivity::Flee:
+            case NPCActivity::Heal:
+            case NPCActivity::Defend:
+                return 1;
+            case NPCActivity::RefuseCommand:
+            case NPCActivity::CoordinateSquad:
+                return 2;
+            case NPCActivity::VisitFriend:
+            case NPCActivity::Date:
+            case NPCActivity::FamilyGathering:
+            case NPCActivity::MentorTeach:
+            case NPCActivity::DiscipleAsk:
+            case NPCActivity::Trade:
+            case NPCActivity::Gossip:
+            case NPCActivity::ReportTask:
+                return 4;
+            case NPCActivity::Cultivate:
+            case NPCActivity::Breakthrough:
+            case NPCActivity::Tribulation:
+            case NPCActivity::Meditate:
+            case NPCActivity::Alchemy:
+            case NPCActivity::SeekFortune:
+                return 5;
+            default:
+                return 6;
+        }
+    }
+
+    bool shouldInterrupt(BehaviorComponent* behavior, NPCActivity newActivity, uint8_t interruptSource) {
+        if (!behavior) return false;
+        if (behavior->currentActivity == NPCActivity::Idle ||
+            behavior->currentActivity == NPCActivity::Dead ||
+            behavior->currentActivity == NPCActivity::Incapacitated) {
+            return true;
+        }
+
+        uint8_t oldPriority = getPriorityLevel(behavior->currentActivity);
+        uint8_t newPriority = getPriorityLevel(newActivity);
+        uint8_t hysteresisNeeded = 0;
+
+        if (interruptSource == 1) {
+            if (newActivity == NPCActivity::Flee || newActivity == NPCActivity::Heal || newActivity == NPCActivity::Defend) {
+                hysteresisNeeded = HYSTERESIS_SURVIVAL_ENTER;
+            } else {
+                hysteresisNeeded = HYSTERESIS_SURVIVAL_EXIT;
+            }
+        } else if (interruptSource == 6) {
+            return true;
+        } else if (newPriority < oldPriority) {
+            hysteresisNeeded = HYSTERESIS_LEVEL_UPGRADE;
+        } else if (newPriority > oldPriority) {
+            hysteresisNeeded = HYSTERESIS_LEVEL_DOWNGRADE;
+        } else {
+            hysteresisNeeded = HYSTERESIS_SAME_LEVEL;
+        }
+
+        if (hysteresisNeeded == 0) {
+            behavior->hysteresisLocked = 0;
+            return true;
+        }
+
+        if (behavior->currentActivity == newActivity) return false;
+
+        if (!behavior->hysteresisLocked) {
+            behavior->hysteresisLocked = 1;
+            behavior->hysteresisFrames = hysteresisNeeded;
+            return false;
+        }
+
+        if (behavior->hysteresisFrames > 0) {
+            behavior->hysteresisFrames--;
+            return false;
+        }
+
+        behavior->hysteresisLocked = 0;
+        return true;
+    }
+
     bool evaluateSurvival(StatsComponent* stats, BehaviorComponent* behavior) {
+        bool wasInSurvival = (behavior->currentActivity == NPCActivity::Flee ||
+                              behavior->currentActivity == NPCActivity::Heal ||
+                              behavior->currentActivity == NPCActivity::Defend);
+
         if (stats->hpPercent() < 0.3f) {
+            if (!shouldInterrupt(behavior, NPCActivity::Flee, 1)) return true;
             behavior->changeActivity(NPCActivity::Flee);
             return true;
         }
         if (stats->hpPercent() < 0.5f) {
-            behavior->changeActivity(NPCActivity::Heal);
+            if (behavior->currentActivity == NPCActivity::Flee && stats->hpPercent() >= 0.4f) {
+                if (!shouldInterrupt(behavior, NPCActivity::Heal, 1)) return true;
+                behavior->changeActivity(NPCActivity::Heal);
+                return true;
+            }
+            if (!wasInSurvival) {
+                behavior->changeActivity(NPCActivity::Heal);
+                return true;
+            }
             return true;
         }
+        if (wasInSurvival) {
+            float exitThreshold = (behavior->currentActivity == NPCActivity::Heal) ? 0.6f : 0.4f;
+            if (stats->hpPercent() >= exitThreshold) {
+                if (!shouldInterrupt(behavior, NPCActivity::Rest, 1)) return true;
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    bool evaluateEmotion(SocialComponent* social, PersonalityComponent* personality,
+                         BehaviorComponent* behavior, StatsComponent* stats) {
+        if (!social || !personality) return false;
+
+        if (social->isTerrified() && stats && stats->hpPercent() > 0.15f) {
+            if (shouldInterrupt(behavior, NPCActivity::Flee, 4)) {
+                behavior->changeActivity(NPCActivity::Flee);
+                return true;
+            }
+        }
+
+        if (social->isEnraged(personality->caution)) {
+            if (shouldInterrupt(behavior, NPCActivity::Duel, 4)) {
+                behavior->changeActivity(NPCActivity::Duel);
+                return true;
+            }
+        }
+
+        if (social->isElated(personality->sociability)) {
+            if (shouldInterrupt(behavior, NPCActivity::Gossip, 4)) {
+                behavior->changeActivity(NPCActivity::Gossip);
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -234,13 +374,17 @@ private:
 
         if (cmdResp && cmdResp->isRefusing()) {
             cmd->updateStatus(slot->commandId, CommandLifecycle::Refused);
-            behavior->changeActivity(NPCActivity::RefuseCommand);
+            if (shouldInterrupt(behavior, NPCActivity::RefuseCommand, 6)) {
+                behavior->changeActivity(NPCActivity::RefuseCommand);
+            }
             cmd->setFeedback(static_cast<uint8_t>(CommandLifecycle::Refused), currentTime);
             return true;
         }
 
         if (cmd->squadId != 0) {
-            behavior->changeActivity(NPCActivity::CoordinateSquad);
+            if (shouldInterrupt(behavior, NPCActivity::CoordinateSquad, 6)) {
+                behavior->changeActivity(NPCActivity::CoordinateSquad);
+            }
             return true;
         }
 
@@ -252,7 +396,9 @@ private:
                         ? CommandLifecycle::PartiallyCompleted
                         : CommandLifecycle::Completed);
                 cmd->setFeedback(slot->status, currentTime);
-                behavior->changeActivity(NPCActivity::ReportTask);
+                if (shouldInterrupt(behavior, NPCActivity::ReportTask, 6)) {
+                    behavior->changeActivity(NPCActivity::ReportTask);
+                }
                 return true;
             }
             return true;
@@ -260,9 +406,7 @@ private:
 
         cmd->updateStatus(slot->commandId, CommandLifecycle::Executing);
 
-        if (cmd->issuerTier <= 2) {
-            behavior->changeActivity(NPCActivity::Patrol);
-        } else {
+        if (shouldInterrupt(behavior, NPCActivity::Patrol, 6)) {
             behavior->changeActivity(NPCActivity::Patrol);
         }
 
@@ -284,22 +428,32 @@ private:
         if (social->wantsSocial() && personality->isSocial() && rel &&
             rel->relationCount > 0) {
             if (rel->spouseSlot != 0 && random01() < 0.2f) {
-                behavior->changeActivity(NPCActivity::Date);
+                if (shouldInterrupt(behavior, NPCActivity::Date, 5)) {
+                    behavior->changeActivity(NPCActivity::Date);
+                }
                 return true;
             }
             if (rel->hasDisciples() && random01() < 0.15f) {
-                behavior->changeActivity(NPCActivity::MentorTeach);
+                if (shouldInterrupt(behavior, NPCActivity::MentorTeach, 5)) {
+                    behavior->changeActivity(NPCActivity::MentorTeach);
+                }
                 return true;
             }
             if (rel->mentorSlot != 0 && random01() < 0.15f) {
-                behavior->changeActivity(NPCActivity::DiscipleAsk);
+                if (shouldInterrupt(behavior, NPCActivity::DiscipleAsk, 5)) {
+                    behavior->changeActivity(NPCActivity::DiscipleAsk);
+                }
                 return true;
             }
             if (random01() < 0.3f) {
-                behavior->changeActivity(NPCActivity::VisitFriend);
+                if (shouldInterrupt(behavior, NPCActivity::VisitFriend, 5)) {
+                    behavior->changeActivity(NPCActivity::VisitFriend);
+                }
                 return true;
             }
-            behavior->changeActivity(NPCActivity::Gossip);
+            if (shouldInterrupt(behavior, NPCActivity::Gossip, 5)) {
+                behavior->changeActivity(NPCActivity::Gossip);
+            }
             return true;
         }
         return false;
@@ -310,28 +464,40 @@ private:
                              IdentityComponent* identity) {
         if (!cult || !stats) return false;
         if (cult->isBreakingThrough) {
-            behavior->changeActivity(NPCActivity::Breakthrough);
+            if (shouldInterrupt(behavior, NPCActivity::Breakthrough, 7)) {
+                behavior->changeActivity(NPCActivity::Breakthrough);
+            }
             return true;
         }
         if (cult->tribulationTimer > 0) {
-            behavior->changeActivity(NPCActivity::Tribulation);
+            if (shouldInterrupt(behavior, NPCActivity::Tribulation, 7)) {
+                behavior->changeActivity(NPCActivity::Tribulation);
+            }
             return true;
         }
         if (cult->isReadyForBreakthrough() &&
             cult->bottleneckTimer > 1000 && !cult->isBreakingThrough) {
-            behavior->changeActivity(NPCActivity::Breakthrough);
+            if (shouldInterrupt(behavior, NPCActivity::Breakthrough, 7)) {
+                behavior->changeActivity(NPCActivity::Breakthrough);
+            }
             return true;
         }
         if (personality->isDiligent() && random01() < 0.4f) {
-            behavior->changeActivity(NPCActivity::Cultivate);
+            if (shouldInterrupt(behavior, NPCActivity::Cultivate, 7)) {
+                behavior->changeActivity(NPCActivity::Cultivate);
+            }
             return true;
         }
         if (cult->bottleneckTimer > 500 && personality->ambition > 70.0f && random01() < 0.2f) {
-            behavior->changeActivity(NPCActivity::SeekFortune);
+            if (shouldInterrupt(behavior, NPCActivity::SeekFortune, 7)) {
+                behavior->changeActivity(NPCActivity::SeekFortune);
+            }
             return true;
         }
         if (personality->caution > 60.0f && random01() < 0.1f) {
-            behavior->changeActivity(NPCActivity::Alchemy);
+            if (shouldInterrupt(behavior, NPCActivity::Alchemy, 7)) {
+                behavior->changeActivity(NPCActivity::Alchemy);
+            }
             return true;
         }
         return false;
@@ -342,22 +508,34 @@ private:
                        CultivationComponent* cult) {
         if (social) {
             if (social->isHungry()) {
-                behavior->changeActivity(NPCActivity::Eat);
+                if (shouldInterrupt(behavior, NPCActivity::Eat, 7)) {
+                    behavior->changeActivity(NPCActivity::Eat);
+                }
                 return;
             }
             if (social->isExhausted()) {
-                behavior->changeActivity(NPCActivity::Sleep);
+                if (shouldInterrupt(behavior, NPCActivity::Sleep, 7)) {
+                    behavior->changeActivity(NPCActivity::Sleep);
+                }
                 return;
             }
         }
 
         if (identity && personality) {
-            NPCActivity chosen = chooseByRole(identity->role, personality);
-            behavior->changeActivity(chosen);
+            NPCActivity chosen = chooseByRole(identity->role, personality, behavior);
+            float weight = applyReflection(behavior, chosen);
+            if (weight < 0.7f && random01() < 0.5f) {
+                chosen = chooseByRole(identity->role, personality, nullptr);
+            }
+            if (shouldInterrupt(behavior, chosen, 7)) {
+                behavior->changeActivity(chosen);
+            }
             return;
         }
 
-        behavior->changeActivity(NPCActivity::Rest);
+        if (shouldInterrupt(behavior, NPCActivity::Rest, 7)) {
+            behavior->changeActivity(NPCActivity::Rest);
+        }
     }
 
     NPCActivity translateActionType(ActionType action) {
@@ -382,29 +560,37 @@ private:
         }
     }
 
-    NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p) {
+    NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p, BehaviorComponent* behavior = nullptr) {
         switch (role) {
             case NPCRole::FamilyHead:
             case NPCRole::Elder:
                 if (random01() < 0.3f) return NPCActivity::Patrol;
                 if (random01() < 0.2f) return NPCActivity::Meditate;
-                if (random01() < 0.15f) return NPCActivity::Trade;
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Trade) : 1.0f))
+                    return NPCActivity::Trade;
                 return NPCActivity::Rest;
             case NPCRole::LawEnforcementElder:
                 return (random01() < 0.4f) ? NPCActivity::Patrol : NPCActivity::Rest;
             case NPCRole::CoreDisciple:
             case NPCRole::InnerDisciple:
                 if (p->isDiligent() && random01() < 0.35f) return NPCActivity::Cultivate;
-                if (random01() < 0.25f) return NPCActivity::Patrol;
-                if (random01() < 0.15f) return NPCActivity::Gather;
-                if (random01() < 0.1f)  return NPCActivity::Explore;
+                if (random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Patrol) : 1.0f))
+                    return NPCActivity::Patrol;
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Gather) : 1.0f))
+                    return NPCActivity::Gather;
+                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Explore) : 1.0f))
+                    return NPCActivity::Explore;
                 return NPCActivity::Rest;
             case NPCRole::BranchDisciple:
             default:
-                if (p->isDiligent() && random01() < 0.25f) return NPCActivity::Mine;
-                if (random01() < 0.2f) return NPCActivity::Farm;
-                if (random01() < 0.15f) return NPCActivity::Fish;
-                if (random01() < 0.1f)  return NPCActivity::Lumber;
+                if (p->isDiligent() && random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Mine) : 1.0f))
+                    return NPCActivity::Mine;
+                if (random01() < 0.2f * (behavior ? applyReflection(behavior, NPCActivity::Farm) : 1.0f))
+                    return NPCActivity::Farm;
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Fish) : 1.0f))
+                    return NPCActivity::Fish;
+                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Lumber) : 1.0f))
+                    return NPCActivity::Lumber;
                 return NPCActivity::Walk;
         }
     }

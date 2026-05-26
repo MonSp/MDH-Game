@@ -22,7 +22,12 @@ static void exec_mine(ExecuteContext& ctx) {
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
     resources->addSpiritStones(static_cast<int64_t>(15.0f * h));
     behavior->activityProgress += h * 0.02f;
-    if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
+    if (behavior->activityProgress >= 1.0f) {
+        float roll = exec_random01();
+        int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+        behavior->reflection.recordResult(NPCActivity::Mine, score);
+        behavior->changeActivity(NPCActivity::Rest);
+    }
 }
 static void exec_farm(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
@@ -32,6 +37,9 @@ static void exec_farm(ExecuteContext& ctx) {
     behavior->activityProgress += h * 0.1f;
     if (behavior->activityProgress >= 1.0f) {
         resources->addSpiritStones(exec_randRange(20, 60));
+        float roll = exec_random01();
+        int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+        behavior->reflection.recordResult(NPCActivity::Farm, score);
         behavior->changeActivity(NPCActivity::Rest);
     }
 }
@@ -42,7 +50,12 @@ static void exec_fish(ExecuteContext& ctx) {
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
     resources->addSpiritStones(static_cast<int64_t>(10.0f * h));
     behavior->activityProgress += h * 0.03f;
-    if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
+    if (behavior->activityProgress >= 1.0f) {
+        float roll = exec_random01();
+        int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+        behavior->reflection.recordResult(NPCActivity::Fish, score);
+        behavior->changeActivity(NPCActivity::Rest);
+    }
 }
 static void exec_lumber(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
@@ -52,12 +65,27 @@ static void exec_lumber(ExecuteContext& ctx) {
     if (pos) pos->moveTo(pos->x + exec_randRange(-10,10), pos->y + exec_randRange(-10,10));
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
     resources->addSpiritStones(static_cast<int64_t>(8.0f * h));
+    behavior->activityProgress += h * 0.02f;
+    if (behavior->activityProgress >= 1.0f) {
+        float roll = exec_random01();
+        int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+        behavior->reflection.recordResult(NPCActivity::Lumber, score);
+        behavior->changeActivity(NPCActivity::Rest);
+    }
 }
 static void exec_gather(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
-    if (!resources) return;
+    auto* behavior = ctx.getBehavior();
+    if (!resources || !behavior) return;
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
     resources->addSpiritStones(static_cast<int64_t>(5.0f * h));
+    behavior->activityProgress += h * 0.02f;
+    if (behavior->activityProgress >= 1.0f) {
+        float roll = exec_random01();
+        int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
+        behavior->reflection.recordResult(NPCActivity::Gather, score);
+        behavior->changeActivity(NPCActivity::Rest);
+    }
 }
 static void exec_craft(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();

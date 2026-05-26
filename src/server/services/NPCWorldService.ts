@@ -87,6 +87,17 @@ const AMBIENT_ACTIONS = [
   '在瀑布下闭目打坐，任水流冲击',
 ];
 
+export interface FrontlineMetrics {
+    totalNPCs: number;
+    casualties: number;
+    injured: number;
+    tasksCompleted: number;
+    tasksFailed: number;
+    totalResourcesProduced: number;
+    anomalies: string[];
+    updatedAt: number;
+}
+
 export interface NPCWorldEvent {
   npcId: string;
   npcName: string;
@@ -128,6 +139,25 @@ export class NPCWorldService extends EventEmitter {
   /** Configurable clan ID pool (replaces hardcoded 'sect_main') */
   private clanIdPool: string[] = [];
   private clanIdIndex: number = 0;
+ private lastDecayTime: number = 0;
+  private readonly DECAY_INTERVAL_MS = 8000;
+  private memory!: NPCMemoryStore;
+
+  private frontlineMetrics: FrontlineMetrics = {
+    totalNPCs: 0,
+    casualties: 0,
+    injured: 0,
+    tasksCompleted: 0,
+    tasksFailed: 0,
+    totalResourcesProduced: 0,
+    anomalies: [],
+    updatedAt: 0
+  };
+
+  private readonly FRONTLINE_UPDATE_INTERVAL = 30000;
+
+  private maxRumorSpreadsPerFrame: number = 50;
+  private rumorSpreadsThisFrame: number = 0;
 
   private constructor() {
     super();
@@ -231,6 +261,18 @@ export class NPCWorldService extends EventEmitter {
     this.planningOffset = 0;
     this.llmMode = true;
     this.recentInteractions = [];
+    this.lastDecayTime = 0;
+    this.rumorSpreadsThisFrame = 0;
+    this.frontlineMetrics = {
+      totalNPCs: 0,
+      casualties: 0,
+      injured: 0,
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      totalResourcesProduced: 0,
+      anomalies: [],
+      updatedAt: 0
+    };
     this.removeAllListeners('npc:event');
   }
 
@@ -241,6 +283,31 @@ export class NPCWorldService extends EventEmitter {
     const events = this.recentInteractions;
     this.recentInteractions = [];
     return events;
+  }
+
+  resetRumorCounter(): void {
+    this.rumorSpreadsThisFrame = 0;
+  }
+
+  canSpreadRumor(): boolean {
+    return this.rumorSpreadsThisFrame < this.maxRumorSpreadsPerFrame;
+  }
+
+  recordRumorSpread(): void {
+    this.rumorSpreadsThisFrame++;
+  }
+
+  private handleRumorReachesSubject(npcId: string, rumor: { originalWitness: string; originalEventSlot: number; hopCount: number }): void {
+    const state = this.npcs.get(npcId);
+    if (!state) return;
+
+    if (state.npc.personality.caution > 70) {
+      this.emitEvent(npcId, '试图私下摆平流言...', 'rumor_response');
+      this.modifyRelationship(npcId, rumor.originalWitness, -10, 'rumor_suppression');
+    } else {
+      this.emitEvent(npcId, '暴怒：谁敢造谣？！', 'rumor_response');
+      this.modifyRelationship(npcId, rumor.originalWitness, -15, 'rumor_confrontation');
+    }
   }
 
   private seedNPCs(): void {
@@ -309,6 +376,90 @@ export class NPCWorldService extends EventEmitter {
       .map(r => ({ id: r.otherId, name: this.npcs.get(r.otherId)?.npc.name || r.otherId, affinity: r.affinity }));
   }
 
+  private computeDecayRate(loyalty: number, greed: number): number {
+    let rate = 3;
+    if (loyalty >= 70) rate -= 2;
+    else if (loyalty < 30) rate += 1;
+    if (greed >= 70) rate += 2;
+    return Math.max(1, Math.min(10, rate));
+  }
+
+  private applyRelationshipDecay(now: number): void {
+    if (now - this.lastDecayTime < this.DECAY_INTERVAL_MS) return;
+    this.lastDecayTime = now;
+
+    for (const [npcId, state] of this.npcs) {
+      const personality = state.npc.personality;
+      const decayRate = this.computeDecayRate(personality.loyalty, personality.greed);
+
+      const relationships = this.memory.relationships.getTopRelationships(npcId, 50);
+      for (const rel of relationships) {
+        if (rel.affinity > 0) {
+          this.memory.relationships.modify(npcId, rel.otherId, -1, 'time_decay');
+        } else if (rel.affinity < 0) {
+          this.memory.relationships.modify(npcId, rel.otherId, 1, 'time_reconcile');
+        }
+      }
+    }
+  }
+
+  private collectFrontlineMetrics(now: number): FrontlineMetrics {
+    if (now - this.frontlineMetrics.updatedAt < this.FRONTLINE_UPDATE_INTERVAL) {
+      return this.frontlineMetrics;
+    }
+
+    const metrics: FrontlineMetrics = {
+      totalNPCs: this.npcs.size,
+      casualties: 0,
+      injured: 0,
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      totalResourcesProduced: 0,
+      anomalies: this.frontlineMetrics.anomalies,
+      updatedAt: now
+    };
+
+    for (const [, state] of this.npcs) {
+      const npc = state.npc;
+      if (npc.hp < npc.maxHp * 0.5) metrics.injured++;
+      if (npc.state === 'dead') metrics.casualties++;
+      if (state.goal === '执行规划' && state.activityUntil > now) {
+        metrics.tasksCompleted++;
+      }
+      if (npc.resources) {
+        metrics.totalResourcesProduced += npc.resources.spiritStones || 0;
+      }
+    }
+
+    this.frontlineMetrics = metrics;
+    return metrics;
+  }
+
+  buildFrontlineSummary(): string {
+    const m = this.frontlineMetrics;
+    const lines: string[] = [];
+    lines.push('## 前线态势摘要');
+    lines.push(`- 总兵力/人口: ${m.totalNPCs}`);
+    lines.push(`- 阵亡: ${m.casualties}, 负伤: ${m.injured}`);
+    lines.push(`- 任务完成: ${m.tasksCompleted}, 任务失败: ${m.tasksFailed}`);
+    lines.push(`- 资源产出: ${m.totalResourcesProduced}灵石`);
+
+    if (m.anomalies && m.anomalies.length > 0) {
+      lines.push('- 异常事件:');
+      for (const a of m.anomalies) {
+        lines.push(`  * ${a}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  reportAnomaly(description: string): void {
+    if (this.frontlineMetrics.anomalies.length < 20) {
+      this.frontlineMetrics.anomalies.push(description);
+    }
+  }
+
   // --- NPC tick ---
 
   private readonly PREPLAN_THRESHOLD = 10000;
@@ -317,6 +468,7 @@ export class NPCWorldService extends EventEmitter {
 
   private async tick(): Promise<void> {
     const now = Date.now();
+    this.resetRumorCounter();
 
     // 1) Advance queues — move to next step when current expires
     for (const [, state] of this.npcs) {
@@ -328,7 +480,13 @@ export class NPCWorldService extends EventEmitter {
     // 1.5) NPC-to-NPC interaction check
     this.syncInteractionEvents(now);
 
-    // 2) Collect planning candidates
+    // 2) Apply relationship decay
+    this.applyRelationshipDecay(now);
+
+    // 2.5) Collect frontline metrics for LLM planning feedback
+    this.collectFrontlineMetrics(now);
+
+    // 3) Collect planning candidates
     const preplan: string[] = [];
     const idle: string[] = [];
 
@@ -422,10 +580,14 @@ export class NPCWorldService extends EventEmitter {
       return s ? s.npc.name : npcId;
     };
     // TODO: use NPCMemoryStore from shared instance
-    const memoryContext = this.memory.buildMemoryContext(id, nameResolver);
+    const memoryContext = this.memory?.buildMemoryContext(id, nameResolver) || '';
+    // Collect frontline summary for LLM bottom-up feedback
+    const frontlineSummary = this.buildFrontlineSummary();
     // Delegate planning to LLMIntegrationManager (single unified pipeline)
     state.planningNext = true;
-    const actions = await LLMIntegrationManager.getInstance().triggerAndGetActions(id, state.npc, memoryContext);
+    const actions = await LLMIntegrationManager.getInstance().triggerAndGetActions(
+      id, state.npc, memoryContext, frontlineSummary
+    );
     state.planningNext = false;
 
     if (actions.length > 0) {

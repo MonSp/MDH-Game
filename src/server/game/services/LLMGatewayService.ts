@@ -116,23 +116,47 @@ export class LLMGatewayService {
   }
 
   private buildUserPrompt(request: LLMPlanningRequest): string {
-    const { npc_data, world_context, planning_horizon } = request;
-    return `NPC信息：
-- 名字：${npc_data.name}
-- 家族：${npc_data.clan_id}
-- 国家：${npc_data.nation}
-- 角色：${npc_data.role}
-- 境界：${npc_data.realm}
-- 实力：${npc_data.power}
-- 性格：野心${npc_data.personality.ambition}，谨慎${npc_data.personality.caution}，忠诚${npc_data.personality.loyalty}，贪婪${npc_data.personality.greed}
+    const { npc_data, world_context, planning_horizon, frontline_summary, revision_flags, memory_context } = request;
+    const parts: string[] = [];
 
-世界局势：
-- 战争状态：${world_context.war_active ? '进行中' : '和平'}
-- 资源密度：${world_context.resource_density}
-- 经济状态：${world_context.economy_status}
-- 重大事件：${world_context.major_events.join(', ') || '无'}
+    parts.push(`NPC信息：`);
+    parts.push(`- 名字：${npc_data.name}`);
+    parts.push(`- 家族：${npc_data.clan_id}`);
+    parts.push(`- 国家：${npc_data.nation}`);
+    parts.push(`- 角色：${npc_data.role}`);
+    parts.push(`- 境界：${npc_data.realm}`);
+    parts.push(`- 实力：${npc_data.power}`);
+    parts.push(`- 性格：野心${npc_data.personality.ambition}，谨慎${npc_data.personality.caution}，忠诚${npc_data.personality.loyalty}，贪婪${npc_data.personality.greed}`);
 
-请为这个NPC规划未来${planning_horizon}的行动计划。`;
+    parts.push('');
+    parts.push(`世界局势：`);
+    parts.push(`- 战争状态：${world_context.war_active ? '进行中' : '和平'}`);
+    parts.push(`- 资源密度：${world_context.resource_density}`);
+    parts.push(`- 经济状态：${world_context.economy_status}`);
+    parts.push(`- 重大事件：${world_context.major_events.join(', ') || '无'}`);
+
+    if (frontline_summary) {
+      parts.push('');
+      parts.push(frontline_summary);
+    }
+
+    if (revision_flags && revision_flags.length > 0) {
+      parts.push('');
+      parts.push('## 来自前线的修正建议');
+      for (const flag of revision_flags) {
+        parts.push(`- ${flag}`);
+      }
+    }
+
+    if (memory_context) {
+      parts.push('');
+      parts.push(memory_context);
+    }
+
+    parts.push('');
+    parts.push(`请为这个NPC规划未来${planning_horizon}的行动计划。`);
+
+    return parts.join('\n');
   }
 
   private parseLLMOutput(output: string): LLMPlanningResponse {

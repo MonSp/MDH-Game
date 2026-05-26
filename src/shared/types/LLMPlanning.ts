@@ -169,6 +169,11 @@ export interface LLMPlanningRequest {
   world_context: WorldContext;
   planning_horizon: '1天' | '1周' | '1月';
   planning_type: PlanningType;
+  frontline_summary?: string;
+  revision_flags?: string[];
+  npc_name?: string;
+  npc_role?: string;
+  memory_context?: string;
 }
 
 export interface LLMPlanningResponse {
