@@ -31,6 +31,7 @@ struct ExecuteDescriptor {
     ActivityCategory category;
     uint8_t requiredComponents;
     void (*execute)(ExecuteContext& ctx);
+    bool (*isExecutable)(ExecuteContext& ctx);
 };
 
 struct ExecuteContext {

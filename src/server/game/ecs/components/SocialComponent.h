@@ -1,7 +1,25 @@
 #pragma once
 
 #include "../../ecs/Component.h"
+#include "BehaviorComponent.h"
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
+
+enum class EmotionType : uint8_t {
+    Anger = 0,
+    Fear = 1,
+    Joy = 2
+};
+
+#pragma pack(push, 1)
+struct EmotionCooldown {
+    uint32_t targetSlot;
+    EmotionType emotionType;
+    NPCActivity triggerBehavior;
+    uint64_t cooldownUntilFrame;
+};
+#pragma pack(pop)
 
 struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
     float hunger;
@@ -16,9 +34,19 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
     float fear;
     float joy;
 
+    static constexpr size_t MAX_COOLDOWNS = 16;
+    static constexpr float HIGH_FEAR_THRESHOLD = 60.0f;
+    static constexpr float HIGH_ANGER_THRESHOLD = 60.0f;
+    static constexpr float HIGH_JOY_THRESHOLD = 50.0f;
+    static constexpr float GROUP_EMOTION_ABSOLUTE_MIN = 3;
+    static constexpr float GROUP_EMOTION_RATIO_MIN = 0.3f;
+    static constexpr float GROUP_EMOTION_RADIUS = 200.0f;
+    EmotionCooldown emotionCooldowns[MAX_COOLDOWNS];
+    uint8_t cooldownCount;
+
     SocialComponent() : hunger(0.0f), fatigue(0.0f), energy(80.0f),
         socialDesire(30.0f), mood(60.0f), homeX(0.0f), homeY(0.0f),
-        anger(0.0f), fear(0.0f), joy(0.0f) {}
+        anger(0.0f), fear(0.0f), joy(0.0f), cooldownCount(0) {}
 
     void tickDaily(float deltaHours) {
         hunger = clamp100(hunger + 4.0f * deltaHours);
@@ -54,11 +82,12 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
     bool wantsSocial() const { return socialDesire > 60.0f; }
 
     void tickEmotions(float deltaTime) {
-        (void)deltaTime;
-        float decayRate = 0.995f;
-        anger *= decayRate;
-        fear *= decayRate;
-        joy *= decayRate;
+        float decayPerFrame = 0.995f;
+        float effectiveFrames = deltaTime * 60.0f;
+        float decayFactor = std::pow(decayPerFrame, effectiveFrames);
+        anger *= decayFactor;
+        fear *= decayFactor;
+        joy *= decayFactor;
         clampEmotions();
     }
 
@@ -70,7 +99,7 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
         float threshold = 70.0f - caution * 0.3f;
         return anger > threshold;
     }
-    bool isTerrified() const { return fear > 60.0f; }
+    bool isTerrified() const { return fear > HIGH_FEAR_THRESHOLD; }
     bool isElated(float sociability) const {
         float threshold = 80.0f - sociability * 0.2f;
         return joy > threshold;
@@ -88,6 +117,54 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
     }
     void onGiftReceived() { addJoy(25.0f); }
     void onSocialSuccess() { addJoy(10.0f); }
+
+    bool isInCooldown(uint32_t targetSlot, EmotionType type, NPCActivity behavior, uint64_t currentFrame) const {
+        for (uint8_t i = 0; i < cooldownCount; i++) {
+            if (emotionCooldowns[i].targetSlot == targetSlot &&
+                emotionCooldowns[i].emotionType == type &&
+                emotionCooldowns[i].triggerBehavior == behavior &&
+                emotionCooldowns[i].cooldownUntilFrame > currentFrame) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void addCooldown(uint32_t targetSlot, EmotionType type, NPCActivity behavior, uint64_t currentFrame) {
+        for (uint8_t i = 0; i < cooldownCount; i++) {
+            if (emotionCooldowns[i].cooldownUntilFrame <= currentFrame) {
+                emotionCooldowns[i].targetSlot = targetSlot;
+                emotionCooldowns[i].emotionType = type;
+                emotionCooldowns[i].triggerBehavior = behavior;
+                emotionCooldowns[i].cooldownUntilFrame = currentFrame + 72;
+                return;
+            }
+        }
+
+        if (cooldownCount < MAX_COOLDOWNS) {
+            uint8_t idx = cooldownCount++;
+            emotionCooldowns[idx].targetSlot = targetSlot;
+            emotionCooldowns[idx].emotionType = type;
+            emotionCooldowns[idx].triggerBehavior = behavior;
+            emotionCooldowns[idx].cooldownUntilFrame = currentFrame + 72;
+            return;
+        }
+
+        fprintf(stderr, "[WARNING] EmotionCooldown overflow: NPC has %zu active cooldowns, "
+                "refusing new cooldown for targetSlot=%u type=%d behavior=%d\n",
+                MAX_COOLDOWNS, targetSlot, static_cast<int>(type), static_cast<int>(behavior));
+    }
+
+    void cleanupExpiredCooldowns(uint64_t currentFrame) {
+        uint8_t writeIdx = 0;
+        for (uint8_t i = 0; i < cooldownCount; i++) {
+            if (emotionCooldowns[i].cooldownUntilFrame > currentFrame) {
+                if (writeIdx != i) emotionCooldowns[writeIdx] = emotionCooldowns[i];
+                writeIdx++;
+            }
+        }
+        cooldownCount = writeIdx;
+    }
 
 private:
     static float clamp100(float v) {

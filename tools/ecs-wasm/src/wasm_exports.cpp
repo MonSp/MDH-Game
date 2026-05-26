@@ -160,7 +160,7 @@ void ecs_destroy() {
 int ecs_getAffinity(int slotA, int slotB) {
     if (slotA < 0 || slotB < 0) return 0;
     auto& reg = ECS::Registry::getInstance();
-    auto* rel = &reg.relationship_[static_cast<size_t>(slotA)];
+    auto* rel = &reg.getArray_<RelationshipComponent>()[static_cast<size_t>(slotA)];
     if (slotA >= (int)reg.entityIds_.size() || !reg.activeSlots_[slotA]) return 0;
     return rel->getAffinity(static_cast<uint32_t>(slotB));
 }
@@ -170,15 +170,15 @@ void ecs_modifyAffinity(int slotA, int slotB, int delta) {
     auto& reg = ECS::Registry::getInstance();
     if (slotA >= (int)reg.entityIds_.size() || !reg.activeSlots_[slotA]) return;
     if (slotB >= (int)reg.entityIds_.size() || !reg.activeSlots_[slotB]) return;
-    reg.relationship_[slotA].modifyAffinity(static_cast<uint32_t>(slotB), static_cast<int8_t>(delta));
-    reg.relationship_[slotB].modifyAffinity(static_cast<uint32_t>(slotA), static_cast<int8_t>(delta));
+    reg.getArray_<RelationshipComponent>()[slotA].modifyAffinity(static_cast<uint32_t>(slotB), static_cast<int8_t>(delta));
+    reg.getArray_<RelationshipComponent>()[slotB].modifyAffinity(static_cast<uint32_t>(slotA), static_cast<int8_t>(delta));
 }
 
 void ecs_getTopRelationships(int slot, int count, int* outBuf) {
     if (!outBuf || count <= 0 || slot < 0) return;
     auto& reg = ECS::Registry::getInstance();
     if (slot >= (int)reg.entityIds_.size() || !reg.activeSlots_[slot]) return;
-    auto& rel = reg.relationship_[slot];
+    auto& rel = reg.getArray_<RelationshipComponent>()[slot];
     uint32_t slots[50];
     int8_t affs[50];
     int n = rel.getTopRelationships(slots, affs, count);
@@ -192,7 +192,7 @@ void ecs_getRecentInteractions(int slot, int count, int32_t* outBuf) {
     if (!outBuf || count <= 0 || slot < 0) { if (outBuf) outBuf[0] = 0; return; }
     auto& reg = ECS::Registry::getInstance();
     if (slot >= (int)reg.entityIds_.size() || !reg.activeSlots_[slot]) { outBuf[0] = 0; return; }
-    auto& mem = reg.memoryRing_[slot];
+    auto& mem = reg.getArray_<MemoryRingComponent>()[slot];
     InteractionSlot buf[20];
     size_t n = mem.interactions.getRecent(buf, count < 20 ? (size_t)count : 20);
     outBuf[0] = static_cast<int32_t>(n);
@@ -208,7 +208,7 @@ void ecs_getRecentCommandMemory(int slot, int count, int32_t* outBuf) {
     if (!outBuf || count <= 0 || slot < 0) { if (outBuf) outBuf[0] = 0; return; }
     auto& reg = ECS::Registry::getInstance();
     if (slot >= (int)reg.entityIds_.size() || !reg.activeSlots_[slot]) { outBuf[0] = 0; return; }
-    auto& mem = reg.memoryRing_[slot];
+    auto& mem = reg.getArray_<MemoryRingComponent>()[slot];
     CommandMemorySlot buf[30];
     size_t n = mem.commandMemory.getRecent(buf, count < 30 ? (size_t)count : 30);
     outBuf[0] = static_cast<int32_t>(n);
@@ -226,14 +226,14 @@ void ecs_getWitnessedEvents(int slot, int count, int32_t* outBuf) {
     if (!outBuf || count <= 0 || slot < 0) { if (outBuf) outBuf[0] = 0; return; }
     auto& reg = ECS::Registry::getInstance();
     if (slot >= (int)reg.entityIds_.size() || !reg.activeSlots_[slot]) { outBuf[0] = 0; return; }
-    auto& mem = reg.memoryRing_[slot];
+    auto& mem = reg.getArray_<MemoryRingComponent>()[slot];
     WitnessedSlot buf[30];
     size_t n = mem.witnessed.getRecent(buf, count < 30 ? (size_t)count : 30);
     outBuf[0] = static_cast<int32_t>(n);
     for (size_t i = 0; i < n; i++) {
         outBuf[1 + i * 3] = static_cast<int32_t>(buf[i].timestamp & 0xFFFFFFFF);
         outBuf[1 + i * 3 + 1] = static_cast<int32_t>(buf[i].timestamp >> 32);
-        outBuf[1 + i * 3 + 2] = static_cast<int32_t>(buf[i].eventIndex) | (static_cast<int32_t>(buf[i].significance) << 16);
+        outBuf[1 + i * 3 + 2] = static_cast<int32_t>(buf[i].slot) | (static_cast<int32_t>(buf[i].significance) << 16);
     }
 }
 
@@ -264,9 +264,9 @@ void ecs_recordWitnessedEvent(int eventSlot, const char* desc, int significance)
     if (eventSlot < 0 || eventSlot >= (int)reg.entityIds_.size() || !reg.activeSlots_[eventSlot]) return;
     WitnessedSlot ws;
     ws.timestamp = 0;
-    ws.eventIndex = idx;
+    ws.slot = idx;
     ws.significance = static_cast<uint8_t>(significance > 10 ? 10 : significance);
-    reg.memoryRing_[eventSlot].witnessed.push(ws);
+    reg.getArray_<MemoryRingComponent>()[eventSlot].witnessed.push(ws);
 }
 
 int ecs_dumpMemory(int* outBuf, int maxSize) {
@@ -290,14 +290,14 @@ int ecs_dumpMemory(int* outBuf, int maxSize) {
         uint32_t slot = static_cast<uint32_t>(i);
         *cursor++ = static_cast<int>(slot); remaining -= 4;
         
-        auto& rel = reg.relationship_[i];
+        auto& rel = reg.getArray_<RelationshipComponent>()[i];
         *cursor++ = static_cast<int>(rel.relationCount); remaining -= 4;
         for (uint8_t j = 0; j < rel.relationCount && remaining >= 8; ++j) {
             *cursor++ = static_cast<int>(rel.relations[j].targetSlot); remaining -= 4;
             *cursor++ = static_cast<int>(rel.relations[j].affinity); remaining -= 4;
         }
         
-        auto& mem = reg.memoryRing_[i];
+        auto& mem = reg.getArray_<MemoryRingComponent>()[i];
         int ic = static_cast<int>(mem.interactions.size());
         *cursor++ = ic; remaining -= 4;
         InteractionSlot ibuf[20];
@@ -328,7 +328,7 @@ int ecs_dumpMemory(int* outBuf, int maxSize) {
         mem.witnessed.getRecent(wbuf, wc);
         for (int j = 0; j < wc && remaining >= 8; ++j) {
             *cursor++ = static_cast<int>(wbuf[j].timestamp); remaining -= 4;
-            *cursor++ = static_cast<int>(wbuf[j].eventIndex) 
+            *cursor++ = static_cast<int>(wbuf[j].slot) 
                       | (static_cast<int>(wbuf[j].significance) << 16); remaining -= 4;
         }
     }
@@ -358,7 +358,7 @@ void ecs_loadMemory(const int* inBuf, int size) {
         }
         
         int relCount = *cursor++;
-        auto& rel = reg.relationship_[slot];
+        auto& rel = reg.getArray_<RelationshipComponent>()[slot];
         rel.relationCount = 0;
         for (int j = 0; j < relCount && j < 50; ++j) {
             rel.relations[j].targetSlot = static_cast<uint32_t>(*cursor++);
@@ -366,7 +366,7 @@ void ecs_loadMemory(const int* inBuf, int size) {
             rel.relationCount++;
         }
         
-        auto& mem = reg.memoryRing_[slot];
+        auto& mem = reg.getArray_<MemoryRingComponent>()[slot];
         int ic = *cursor++;
         for (int j = 0; j < ic && j < 20; ++j) {
             InteractionSlot is;
@@ -396,7 +396,7 @@ void ecs_loadMemory(const int* inBuf, int size) {
             WitnessedSlot ws;
             ws.timestamp = static_cast<uint64_t>(*cursor++);
             int packed = *cursor++;
-            ws.eventIndex = static_cast<uint16_t>(packed & 0xFFFF);
+            ws.slot = static_cast<uint16_t>(packed & 0xFFFF);
             ws.significance = static_cast<uint8_t>((packed >> 16) & 0xFF);
             mem.witnessed.push(ws);
         }

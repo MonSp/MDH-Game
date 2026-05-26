@@ -28,65 +28,74 @@
 #include <ctime>
 #include <cmath>
 
+extern bool canExecute_mine(ExecuteContext& ctx);
+extern bool canExecute_farm(ExecuteContext& ctx);
+extern bool canExecute_fish(ExecuteContext& ctx);
+extern bool canExecute_lumber(ExecuteContext& ctx);
+extern bool canExecute_gather(ExecuteContext& ctx);
+extern bool canExecute_explore(ExecuteContext& ctx);
+extern bool canExecute_treasureHunt(ExecuteContext& ctx);
+extern bool canExecute_mapExplore(ExecuteContext& ctx);
+
 static constexpr ExecuteDescriptor kExecuteTable[] = {
     // Survival (3)
-    {NPCActivity::Flee,   "Flee",   ActivityCategory::Survival, REQ_POSITION|REQ_STATS, exec_flee},
-    {NPCActivity::Heal,   "Heal",   ActivityCategory::Survival, REQ_STATS,              exec_heal},
-    {NPCActivity::Defend, "Defend", ActivityCategory::Survival, REQ_STATS,              exec_defend},
+    {NPCActivity::Flee,   "Flee",   ActivityCategory::Survival, REQ_POSITION|REQ_STATS, exec_flee, nullptr},
+    {NPCActivity::Heal,   "Heal",   ActivityCategory::Survival, REQ_STATS,              exec_heal, nullptr},
+    {NPCActivity::Defend, "Defend", ActivityCategory::Survival, REQ_STATS,              exec_defend, nullptr},
     // Daily (6)
-    {NPCActivity::Eat,         "Eat",         ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_eat},
-    {NPCActivity::Rest,        "Rest",        ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_rest},
-    {NPCActivity::Sleep,       "Sleep",       ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_sleep},
-    {NPCActivity::Walk,        "Walk",        ActivityCategory::Daily, REQ_POSITION,         exec_walk},
-    {NPCActivity::Chat,        "Chat",        ActivityCategory::Daily, REQ_SOCIAL,           exec_gossip},
-    {NPCActivity::AwaitOrders,"AwaitOrders",  ActivityCategory::Daily, REQ_STATS,            exec_awaitOrders},
+    {NPCActivity::Eat,         "Eat",         ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_eat, nullptr},
+    {NPCActivity::Rest,        "Rest",        ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_rest, nullptr},
+    {NPCActivity::Sleep,       "Sleep",       ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_sleep, nullptr},
+    {NPCActivity::Walk,        "Walk",        ActivityCategory::Daily, REQ_POSITION,         exec_walk, nullptr},
+    {NPCActivity::Chat,        "Chat",        ActivityCategory::Daily, REQ_SOCIAL,           exec_gossip, nullptr},
+    {NPCActivity::AwaitOrders,"AwaitOrders",  ActivityCategory::Daily, REQ_STATS,            exec_awaitOrders, nullptr},
     // Cultivation (6)
-    {NPCActivity::Cultivate,    "Cultivate",    ActivityCategory::Cultivation, REQ_CULT,                              exec_cultivate},
-    {NPCActivity::Breakthrough, "Breakthrough", ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_breakthrough},
-    {NPCActivity::Tribulation,  "Tribulation",  ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_tribulation},
-    {NPCActivity::Meditate,     "Meditate",     ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_meditate},
-    {NPCActivity::Alchemy,      "Alchemy",      ActivityCategory::Cultivation, REQ_RESOURCES,                         exec_alchemy},
-    {NPCActivity::SeekFortune,  "SeekFortune",  ActivityCategory::Cultivation, REQ_POSITION,                          exec_seekFortune},
+    {NPCActivity::Cultivate,    "Cultivate",    ActivityCategory::Cultivation, REQ_CULT,                              exec_cultivate, nullptr},
+    {NPCActivity::Breakthrough, "Breakthrough", ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_breakthrough, nullptr},
+    {NPCActivity::Tribulation,  "Tribulation",  ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_tribulation, nullptr},
+    {NPCActivity::Meditate,     "Meditate",     ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_meditate, nullptr},
+    {NPCActivity::Alchemy,      "Alchemy",      ActivityCategory::Cultivation, REQ_RESOURCES,                         exec_alchemy, nullptr},
+    {NPCActivity::SeekFortune,  "SeekFortune",  ActivityCategory::Cultivation, REQ_POSITION,                          exec_seekFortune, nullptr},
     // Social (8)
-    {NPCActivity::VisitFriend,     "VisitFriend",    ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_visitFriend},
-    {NPCActivity::Date,            "Date",           ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_date},
-    {NPCActivity::FamilyGathering, "FamilyGathering",ActivityCategory::Social, REQ_POSITION,                  exec_familyGathering},
-    {NPCActivity::MentorTeach,     "MentorTeach",    ActivityCategory::Social, REQ_RELATIONSHIP,              exec_mentorTeach},
-    {NPCActivity::DiscipleAsk,     "DiscipleAsk",    ActivityCategory::Social, REQ_RELATIONSHIP|REQ_CULT,     exec_discipleAsk},
-    {NPCActivity::Trade,           "Trade",          ActivityCategory::Social, REQ_RESOURCES,                 exec_trade},
-    {NPCActivity::Gossip,          "Gossip",         ActivityCategory::Social, REQ_SOCIAL,                    exec_gossip},
-    {NPCActivity::ReportTask,      "ReportTask",     ActivityCategory::Social, REQ_POSITION,                  exec_reportTask},
+    {NPCActivity::VisitFriend,     "VisitFriend",    ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_visitFriend, nullptr},
+    {NPCActivity::Date,            "Date",           ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_date, nullptr},
+    {NPCActivity::FamilyGathering, "FamilyGathering",ActivityCategory::Social, REQ_POSITION,                  exec_familyGathering, nullptr},
+    {NPCActivity::MentorTeach,     "MentorTeach",    ActivityCategory::Social, REQ_RELATIONSHIP,              exec_mentorTeach, nullptr},
+    {NPCActivity::DiscipleAsk,     "DiscipleAsk",    ActivityCategory::Social, REQ_RELATIONSHIP|REQ_CULT,     exec_discipleAsk, nullptr},
+    {NPCActivity::Trade,           "Trade",          ActivityCategory::Social, REQ_RESOURCES,                 exec_trade, nullptr},
+    {NPCActivity::Gossip,          "Gossip",         ActivityCategory::Social, REQ_SOCIAL,                    exec_gossip, nullptr},
+    {NPCActivity::ReportTask,      "ReportTask",     ActivityCategory::Social, REQ_POSITION,                  exec_reportTask, nullptr},
     // Production (13)
-    {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES,                exec_build},
-    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_mine},
-    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES,                exec_farm},
-    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES,                exec_fish},
-    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_lumber},
-    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES,                exec_gather},
-    {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES,                exec_craft},
-    {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES,                exec_refine},
-    {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES,                exec_cook},
-    {NPCActivity::Construct, "Construct",  ActivityCategory::Production, REQ_RESOURCES,                exec_construct},
-    {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES,                exec_repair},
-    {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES,                exec_sell},
-    {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES,                exec_buy},
+    {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES,                exec_build, nullptr},
+    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_mine, canExecute_mine},
+    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES,                exec_farm, canExecute_farm},
+    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES,                exec_fish, canExecute_fish},
+    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_lumber, canExecute_lumber},
+    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES,                exec_gather, canExecute_gather},
+    {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES,                exec_craft, nullptr},
+    {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES,                exec_refine, nullptr},
+    {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES,                exec_cook, nullptr},
+    {NPCActivity::Construct, "Construct",  ActivityCategory::Production, REQ_RESOURCES,                exec_construct, nullptr},
+    {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES,                exec_repair, nullptr},
+    {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES,                exec_sell, nullptr},
+    {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES,                exec_buy, nullptr},
     // Combat (9)
-    {NPCActivity::Duel,           "Duel",           ActivityCategory::Combat, REQ_STATS,               exec_duel},
-    {NPCActivity::Hunt,           "Hunt",           ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_hunt},
-    {NPCActivity::Ambush,         "Ambush",         ActivityCategory::Combat, REQ_STATS,               exec_ambush},
-    {NPCActivity::Assassinate,    "Assassinate",    ActivityCategory::Combat, REQ_STATS,               exec_assassinate},
-    {NPCActivity::Attack,         "Attack",         ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_attack},
-    {NPCActivity::DefendPosition, "DefendPosition", ActivityCategory::Combat, REQ_STATS,               exec_defendPosition},
-    {NPCActivity::Patrol,         "Patrol",         ActivityCategory::Combat, REQ_POSITION,             exec_patrol},
-    {NPCActivity::Escort,         "Escort",         ActivityCategory::Combat, REQ_POSITION,             exec_escort},
-    {NPCActivity::Scout,          "Scout",          ActivityCategory::Combat, REQ_POSITION,             exec_scout},
+    {NPCActivity::Duel,           "Duel",           ActivityCategory::Combat, REQ_STATS,               exec_duel, nullptr},
+    {NPCActivity::Hunt,           "Hunt",           ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_hunt, nullptr},
+    {NPCActivity::Ambush,         "Ambush",         ActivityCategory::Combat, REQ_STATS,               exec_ambush, nullptr},
+    {NPCActivity::Assassinate,    "Assassinate",    ActivityCategory::Combat, REQ_STATS,               exec_assassinate, nullptr},
+    {NPCActivity::Attack,         "Attack",         ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_attack, nullptr},
+    {NPCActivity::DefendPosition, "DefendPosition", ActivityCategory::Combat, REQ_STATS,               exec_defendPosition, nullptr},
+    {NPCActivity::Patrol,         "Patrol",         ActivityCategory::Combat, REQ_POSITION,             exec_patrol, nullptr},
+    {NPCActivity::Escort,         "Escort",         ActivityCategory::Combat, REQ_POSITION,             exec_escort, nullptr},
+    {NPCActivity::Scout,          "Scout",          ActivityCategory::Combat, REQ_POSITION,             exec_scout, nullptr},
     // Exploration (3)
-    {NPCActivity::Explore,      "Explore",       ActivityCategory::Exploration, REQ_POSITION, exec_explore},
-    {NPCActivity::TreasureHunt, "TreasureHunt",  ActivityCategory::Exploration, REQ_POSITION, exec_treasureHunt},
-    {NPCActivity::MapExplore,   "MapExplore",    ActivityCategory::Exploration, REQ_POSITION, exec_mapExplore},
+    {NPCActivity::Explore,      "Explore",       ActivityCategory::Exploration, REQ_POSITION, exec_explore, canExecute_explore},
+    {NPCActivity::TreasureHunt, "TreasureHunt",  ActivityCategory::Exploration, REQ_POSITION, exec_treasureHunt, canExecute_treasureHunt},
+    {NPCActivity::MapExplore,   "MapExplore",    ActivityCategory::Exploration, REQ_POSITION, exec_mapExplore, canExecute_mapExplore},
     // Command (2)
-    {NPCActivity::RefuseCommand,   "RefuseCommand",    ActivityCategory::Command, REQ_POSITION, exec_refuseCommand},
-    {NPCActivity::CoordinateSquad, "CoordinateSquad",  ActivityCategory::Command, REQ_POSITION, exec_coordinateSquad},
+    {NPCActivity::RefuseCommand,   "RefuseCommand",    ActivityCategory::Command, REQ_POSITION, exec_refuseCommand, nullptr},
+    {NPCActivity::CoordinateSquad, "CoordinateSquad",  ActivityCategory::Command, REQ_POSITION, exec_coordinateSquad, nullptr},
 };
 static constexpr size_t kExecuteTableSize = sizeof(kExecuteTable) / sizeof(kExecuteTable[0]);
 
@@ -131,13 +140,13 @@ public:
         if (!identity || !personality) return;
 
         if (evaluateSurvival(stats, behavior)) return;
-        if (evaluateEmotion(social, personality, behavior, stats)) return;
+        if (evaluateEmotion(social, personality, behavior, stats, rel, registry, entityId, currentTime)) return;
         auto* cmdRespGet = registry.getComponent<CommandResponseComponent>(entityId);
         if (evaluateCommand(entityId, cmd, cmdRespGet, behavior, personality, currentTime)) return;
         if (evaluateLLMPlan(llmPlan, behavior)) return;
         if (evaluateSocial(social, personality, behavior, rel, identity)) return;
         if (evaluateCultivation(cult, stats, behavior, personality, identity)) return;
-        evaluateDaily(social, personality, behavior, identity, cult);
+        evaluateDaily(social, personality, behavior, identity, cult, currentTime);
     }
 
     void execute(ECS::EntityId entityId, uint64_t currentTime, float deltaTime) {
@@ -154,6 +163,10 @@ public:
 
         for (size_t i = 0; i < kExecuteTableSize; ++i) {
             if (kExecuteTable[i].activity == behavior->currentActivity) {
+                if (kExecuteTable[i].isExecutable && !kExecuteTable[i].isExecutable(ctx)) {
+                    behavior->changeActivity(NPCActivity::Rest);
+                    return;
+                }
                 kExecuteTable[i].execute(ctx);
                 return;
             }
@@ -171,9 +184,71 @@ private:
         return min + rand() % (max - min + 1);
     }
 
-    float applyReflection(BehaviorComponent* behavior, NPCActivity activity) {
+    float applyReflection(BehaviorComponent* behavior, NPCActivity activity,
+                          uint64_t currentFrame = 0, PersonalityComponent* personality = nullptr) {
         if (!behavior) return 1.0f;
-        return behavior->reflection.getWeight(activity);
+        if (currentFrame == 0 || !personality) {
+            return behavior->reflection.getWeight(activity);
+        }
+        return behavior->reflection.getWeightWithDecay(activity, currentFrame, personality->diligence);
+    }
+
+    NPCActivity tryMicroPlan(BehaviorComponent* behavior, PersonalityComponent* p,
+                             uint64_t currentFrame) {
+        if (!behavior) return NPCActivity::Idle;
+        auto& ref = behavior->reflection;
+
+        if (ref.microPlanTriggered) return ref.microPlanActivity;
+
+        if (!ref.allBehaviorsLow()) {
+            ref.stuckCount = 0;
+            return NPCActivity::Idle;
+        }
+
+        if (ref.stuckCount == 0) {
+            ref.lastStuckFrame = currentFrame;
+        }
+        ref.stuckCount++;
+
+        if (ref.stuckCount < 5 || (currentFrame - ref.lastStuckFrame) < 100) {
+            return NPCActivity::Idle;
+        }
+
+        NPCActivity best = ref.getHighestWeightedActivity();
+
+        NPCActivity creative = NPCActivity::Rest;
+
+        NPCActivity allActivities[] = {
+            NPCActivity::Mine, NPCActivity::Farm, NPCActivity::Fish, NPCActivity::Lumber,
+            NPCActivity::Gather, NPCActivity::Craft, NPCActivity::Refine, NPCActivity::Cook,
+            NPCActivity::Trade, NPCActivity::Explore, NPCActivity::TreasureHunt, NPCActivity::MapExplore,
+            NPCActivity::Patrol, NPCActivity::Scout, NPCActivity::Hunt,
+            NPCActivity::Cultivate, NPCActivity::Meditate, NPCActivity::SeekFortune, NPCActivity::Alchemy,
+            NPCActivity::Walk, NPCActivity::Rest, NPCActivity::Gossip
+        };
+        constexpr int numAll = sizeof(allActivities) / sizeof(allActivities[0]);
+
+        float bestSimilarity = -1.0f;
+        for (int i = 0; i < numAll; i++) {
+            if (allActivities[i] == best) continue;
+            float sim = jaccardSimilarity(best, allActivities[i]);
+            if (sim > bestSimilarity) {
+                bestSimilarity = sim;
+                creative = allActivities[i];
+            }
+        }
+
+        if (bestSimilarity <= 0.0f) {
+            if (p && p->ambition > 60.0f) creative = NPCActivity::Explore;
+            else if (p && p->caution > 60.0f) creative = NPCActivity::Meditate;
+            else creative = NPCActivity::Walk;
+        }
+
+        ref.microPlanTriggered = 1;
+        ref.microPlanActivity = creative;
+        ref.stuckCount = 0;
+
+        return creative;
     }
 
     static float getRiskLevel(NPCActivity a) {
@@ -311,19 +386,55 @@ private:
     }
 
     bool evaluateEmotion(SocialComponent* social, PersonalityComponent* personality,
-                         BehaviorComponent* behavior, StatsComponent* stats) {
+                         BehaviorComponent* behavior, StatsComponent* stats,
+                         RelationshipComponent* rel, ECS::Registry& reg, ECS::EntityId entityId,
+                         uint64_t currentFrame) {
         if (!social || !personality) return false;
 
+        social->cleanupExpiredCooldowns(currentFrame);
+
         if (social->isTerrified() && stats && stats->hpPercent() > 0.15f) {
-            if (shouldInterrupt(behavior, NPCActivity::Flee, 4)) {
+            uint32_t targetSlot = 0;
+            if (rel && rel->relationCount > 0) {
+                int8_t lowestAffinity = 127;
+                for (uint8_t i = 0; i < rel->relationCount; i++) {
+                    if (rel->relations[i].affinity < lowestAffinity) {
+                        lowestAffinity = rel->relations[i].affinity;
+                        targetSlot = rel->relations[i].targetSlot;
+                    }
+                }
+            }
+            if (targetSlot != 0 && social->isInCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, currentFrame)) {
+            } else if (shouldInterrupt(behavior, NPCActivity::Flee, 4)) {
                 behavior->changeActivity(NPCActivity::Flee);
+                if (targetSlot != 0) {
+                    social->addCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, currentFrame);
+                }
                 return true;
             }
         }
 
         if (social->isEnraged(personality->caution)) {
+            uint32_t targetSlot = 0;
+            if (rel && rel->relationCount > 0) {
+                int8_t lowestAffinity = 127;
+                for (uint8_t i = 0; i < rel->relationCount; i++) {
+                    if (rel->relations[i].affinity < lowestAffinity) {
+                        lowestAffinity = rel->relations[i].affinity;
+                        targetSlot = rel->relations[i].targetSlot;
+                    }
+                }
+            }
+            if (targetSlot != 0 && social->isInCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, currentFrame)) {
+                float threshold = 70.0f - personality->caution * 0.3f;
+                social->addFear((social->anger - threshold) * 0.5f);
+                return false;
+            }
             if (shouldInterrupt(behavior, NPCActivity::Duel, 4)) {
                 behavior->changeActivity(NPCActivity::Duel);
+                if (targetSlot != 0) {
+                    social->addCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, currentFrame);
+                }
                 return true;
             }
         }
@@ -505,7 +616,7 @@ private:
 
     void evaluateDaily(SocialComponent* social, PersonalityComponent* personality,
                        BehaviorComponent* behavior, IdentityComponent* identity,
-                       CultivationComponent* cult) {
+                       CultivationComponent* cult, uint64_t currentTime) {
         if (social) {
             if (social->isHungry()) {
                 if (shouldInterrupt(behavior, NPCActivity::Eat, 7)) {
@@ -522,10 +633,17 @@ private:
         }
 
         if (identity && personality) {
-            NPCActivity chosen = chooseByRole(identity->role, personality, behavior);
-            float weight = applyReflection(behavior, chosen);
+            NPCActivity chosen = chooseByRole(identity->role, personality, behavior, currentTime);
+            float weight = applyReflection(behavior, chosen, currentTime, personality);
             if (weight < 0.7f && random01() < 0.5f) {
-                chosen = chooseByRole(identity->role, personality, nullptr);
+                chosen = chooseByRole(identity->role, personality, nullptr, currentTime);
+            }
+            if (weight < 0.5f && random01() < 0.3f) {
+                NPCActivity microPlan = tryMicroPlan(behavior, personality, currentTime);
+                if (microPlan != NPCActivity::Idle && shouldInterrupt(behavior, microPlan, 7)) {
+                    behavior->changeActivity(microPlan);
+                    return;
+                }
             }
             if (shouldInterrupt(behavior, chosen, 7)) {
                 behavior->changeActivity(chosen);
@@ -560,13 +678,14 @@ private:
         }
     }
 
-    NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p, BehaviorComponent* behavior = nullptr) {
+    NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p, BehaviorComponent* behavior = nullptr,
+                             uint64_t currentTime = 0) {
         switch (role) {
             case NPCRole::FamilyHead:
             case NPCRole::Elder:
                 if (random01() < 0.3f) return NPCActivity::Patrol;
                 if (random01() < 0.2f) return NPCActivity::Meditate;
-                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Trade) : 1.0f))
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Trade, currentTime, p) : 1.0f))
                     return NPCActivity::Trade;
                 return NPCActivity::Rest;
             case NPCRole::LawEnforcementElder:
@@ -574,22 +693,22 @@ private:
             case NPCRole::CoreDisciple:
             case NPCRole::InnerDisciple:
                 if (p->isDiligent() && random01() < 0.35f) return NPCActivity::Cultivate;
-                if (random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Patrol) : 1.0f))
+                if (random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Patrol, currentTime, p) : 1.0f))
                     return NPCActivity::Patrol;
-                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Gather) : 1.0f))
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Gather, currentTime, p) : 1.0f))
                     return NPCActivity::Gather;
-                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Explore) : 1.0f))
+                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Explore, currentTime, p) : 1.0f))
                     return NPCActivity::Explore;
                 return NPCActivity::Rest;
             case NPCRole::BranchDisciple:
             default:
-                if (p->isDiligent() && random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Mine) : 1.0f))
+                if (p->isDiligent() && random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Mine, currentTime, p) : 1.0f))
                     return NPCActivity::Mine;
-                if (random01() < 0.2f * (behavior ? applyReflection(behavior, NPCActivity::Farm) : 1.0f))
+                if (random01() < 0.2f * (behavior ? applyReflection(behavior, NPCActivity::Farm, currentTime, p) : 1.0f))
                     return NPCActivity::Farm;
-                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Fish) : 1.0f))
+                if (random01() < 0.15f * (behavior ? applyReflection(behavior, NPCActivity::Fish, currentTime, p) : 1.0f))
                     return NPCActivity::Fish;
-                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Lumber) : 1.0f))
+                if (random01() < 0.1f * (behavior ? applyReflection(behavior, NPCActivity::Lumber, currentTime, p) : 1.0f))
                     return NPCActivity::Lumber;
                 return NPCActivity::Walk;
         }

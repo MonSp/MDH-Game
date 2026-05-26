@@ -139,6 +139,7 @@ export class NPCWorldService extends EventEmitter {
   /** Configurable clan ID pool (replaces hardcoded 'sect_main') */
   private clanIdPool: string[] = [];
   private clanIdIndex: number = 0;
+  private factionAffinities: Map<string, Map<string, number>> = new Map();
  private lastDecayTime: number = 0;
   private readonly DECAY_INTERVAL_MS = 8000;
   private memory!: NPCMemoryStore;
@@ -262,6 +263,7 @@ export class NPCWorldService extends EventEmitter {
     this.llmMode = true;
     this.recentInteractions = [];
     this.lastDecayTime = 0;
+    this.factionAffinities = new Map();
     this.rumorSpreadsThisFrame = 0;
     this.frontlineMetrics = {
       totalNPCs: 0,
@@ -376,6 +378,57 @@ export class NPCWorldService extends EventEmitter {
       .map(r => ({ id: r.otherId, name: this.npcs.get(r.otherId)?.npc.name || r.otherId, affinity: r.affinity }));
   }
 
+  setFactionAffinity(clanA: string, clanB: string, affinity: number): void {
+    const [c1, c2] = clanA < clanB ? [clanA, clanB] : [clanB, clanA];
+    if (!this.factionAffinities.has(c1)) {
+      this.factionAffinities.set(c1, new Map());
+    }
+    const current = this.factionAffinities.get(c1)!.get(c2) || 0;
+    const step = current < affinity ? 1 : -1;
+    this.factionAffinities.get(c1)!.set(c2, current + step);
+  }
+
+  private getFactionAffinity(clanA: string, clanB: string): number {
+    if (!clanA || !clanB || clanA === clanB) return 0;
+    const [c1, c2] = clanA < clanB ? [clanA, clanB] : [clanB, clanA];
+    return this.factionAffinities.get(c1)?.get(c2) || 0;
+  }
+
+  private getFactionBiasFloor(npcAId: string, npcBId: string): number {
+    const stateA = this.npcs.get(npcAId);
+    const stateB = this.npcs.get(npcBId);
+    if (!stateA || !stateB) return 0;
+
+    const clanA = stateA.npc.clanId;
+    const clanB = stateB.npc.clanId;
+    if (!clanA || !clanB) return 0;
+
+    const factionAff = this.getFactionAffinity(clanA, clanB);
+    if (factionAff >= 0) return 0;
+
+    return Math.floor(factionAff * 0.25);
+  }
+
+  /**
+   * V6.2: LLM Micro-Plan hook — called when NPC behavior introspection
+   * detects a "stuck" state (all tracked behaviors have low weights).
+   * Currently returns a creative fallback; future iterations will call LLM.
+   * @returns { activity: string, modifier: string }
+   */
+  async requestMicroPlan(npcId: string, summary: string): Promise<{ activity: string; modifier: string } | null> {
+    const state = this.npcs.get(npcId);
+    if (!state) return null;
+
+    const npc = state.npc;
+    if (npc.personality.ambition > 60) {
+      return { activity: '探索未知区域', modifier: 'high_risk_high_reward' };
+    }
+    if (npc.personality.caution > 60) {
+      return { activity: '尝试冥想打坐', modifier: 'safe_alternative' };
+    }
+    return { activity: '换个地方走走', modifier: 'change_of_scenery' };
+  }
+
   private computeDecayRate(loyalty: number, greed: number): number {
     let rate = 3;
     if (loyalty >= 70) rate -= 2;
@@ -397,7 +450,10 @@ export class NPCWorldService extends EventEmitter {
         if (rel.affinity > 0) {
           this.memory.relationships.modify(npcId, rel.otherId, -1, 'time_decay');
         } else if (rel.affinity < 0) {
-          this.memory.relationships.modify(npcId, rel.otherId, 1, 'time_reconcile');
+          const floor = this.getFactionBiasFloor(npcId, rel.otherId);
+          if (rel.affinity < floor) {
+            this.memory.relationships.modify(npcId, rel.otherId, 1, 'time_reconcile');
+          }
         }
       }
     }

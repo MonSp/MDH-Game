@@ -5,6 +5,24 @@
 #include <algorithm>
 #include <cmath>
 
+static bool canExecute_mine(ExecuteContext& ctx) {
+    return true;
+}
+static bool canExecute_farm(ExecuteContext& ctx) {
+    auto* pos = ctx.getPosition();
+    if (!pos) return false;
+    return true;
+}
+static bool canExecute_fish(ExecuteContext& ctx) {
+    return true;
+}
+static bool canExecute_lumber(ExecuteContext& ctx) {
+    return true;
+}
+static bool canExecute_gather(ExecuteContext& ctx) {
+    return true;
+}
+
 static void exec_build(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
@@ -144,17 +162,17 @@ static void exec_buy(ExecuteContext& ctx) {
 }
 
 constexpr ExecuteDescriptor kProductionTable[] = {
-    {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES, exec_build},
-    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION, exec_mine},
-    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES, exec_farm},
-    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES, exec_fish},
-    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION, exec_lumber},
-    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES, exec_gather},
-    {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES, exec_craft},
-    {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES, exec_refine},
-    {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES, exec_cook},
-    {NPCActivity::Construct, "Construct",  ActivityCategory::Production, REQ_RESOURCES, exec_construct},
-    {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES, exec_repair},
-    {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES, exec_sell},
-    {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES, exec_buy},
+    {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES, exec_build, nullptr},
+    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION, exec_mine, canExecute_mine},
+    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES, exec_farm, canExecute_farm},
+    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES, exec_fish, canExecute_fish},
+    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION, exec_lumber, canExecute_lumber},
+    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES, exec_gather, canExecute_gather},
+    {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES, exec_craft, nullptr},
+    {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES, exec_refine, nullptr},
+    {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES, exec_cook, nullptr},
+    {NPCActivity::Construct, "Construct",  ActivityCategory::Production, REQ_RESOURCES, exec_construct, nullptr},
+    {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES, exec_repair, nullptr},
+    {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES, exec_sell, nullptr},
+    {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES, exec_buy, nullptr},
 };

@@ -35,6 +35,19 @@ struct CommandMemorySlot {
 };
 #pragma pack(pop)
 
+enum class RumorSeverity : uint8_t {
+    Tribulation = 10,
+    Assassination = 9,
+    Embezzlement = 8,
+    ClanWar = 7,
+    DaoBonding = 6,
+    Death = 5,
+    DuelOutcome = 4,
+    ResourceDispute = 3,
+    DailyConflict = 2,
+    GossipChatter = 1
+};
+
 #pragma pack(push, 1)
 struct RumorPacket {
     uint64_t timestamp;
@@ -43,7 +56,9 @@ struct RumorPacket {
     int8_t   contentIntegrity;
     uint8_t  hopCount;
     uint8_t  sensitivity;
-    uint8_t  _pad[1];
+    RumorSeverity severity;
+    uint64_t queuedSinceFrame;
+    uint64_t bornFrame;
 };
 #pragma pack(pop)
 
@@ -113,6 +128,8 @@ struct MemoryRingComponent : public ECS::ComponentBase<MemoryRingComponent> {
     static constexpr size_t MAX_RUMORS = 20;
     static constexpr size_t MAX_MIDTERM = 100;
     static constexpr size_t MAX_LONGTERM = 50;
+    static constexpr uint64_t MAX_RUMOR_TTL = 900;
+    static constexpr size_t MAX_RUMOR_QUEUE = 500;
 
     RingBuffer<InteractionSlot, MAX_RECENT_INTERACTIONS> interactions;
     RingBuffer<WitnessedSlot, MAX_RECENT_WITNESSED> witnessed;
@@ -123,7 +140,25 @@ struct MemoryRingComponent : public ECS::ComponentBase<MemoryRingComponent> {
 
     MemoryRingComponent() = default;
 
-    bool startRumor(uint32_t witnessSlot, uint32_t eventSlot, uint8_t sensitivity) {
+    static RumorSeverity significanceToSeverity(uint8_t significance) {
+        switch (significance) {
+            case 10: return RumorSeverity::Tribulation;
+            case 9:  return RumorSeverity::Assassination;
+            case 8:  return RumorSeverity::Embezzlement;
+            case 7:  return RumorSeverity::ClanWar;
+            case 6:  return RumorSeverity::DaoBonding;
+            case 5:  return RumorSeverity::Death;
+            case 4:  return RumorSeverity::DuelOutcome;
+            case 3:  return RumorSeverity::ResourceDispute;
+            case 2:  return RumorSeverity::DailyConflict;
+            default: return RumorSeverity::GossipChatter;
+        }
+    }
+
+    bool startRumor(uint32_t witnessSlot, uint32_t eventSlot, uint8_t sensitivity, uint64_t currentFrame) {
+        if (rumors.size() >= MAX_RUMOR_QUEUE) {
+            evictLowestSeverityRumor();
+        }
         RumorPacket rumor;
         rumor.timestamp = 0;
         rumor.originalEventSlot = eventSlot;
@@ -131,17 +166,24 @@ struct MemoryRingComponent : public ECS::ComponentBase<MemoryRingComponent> {
         rumor.contentIntegrity = 100;
         rumor.hopCount = 0;
         rumor.sensitivity = sensitivity;
+        rumor.severity = significanceToSeverity(sensitivity);
+        rumor.queuedSinceFrame = 0;
+        rumor.bornFrame = currentFrame;
         rumors.push(rumor);
         return true;
     }
 
     bool receiveRumor(const RumorPacket& incoming, uint32_t newWitness) {
+        if (rumors.size() >= MAX_RUMOR_QUEUE) {
+            evictLowestSeverityRumor();
+        }
         RumorPacket mutated = incoming;
         mutated.hopCount++;
         int8_t decay = 15 + (mutated.sensitivity / 3);
         mutated.contentIntegrity -= decay;
         if (mutated.contentIntegrity < 0) mutated.contentIntegrity = 0;
         mutated.originalWitness = newWitness;
+        mutated.bornFrame = incoming.bornFrame;
         rumors.push(mutated);
         return true;
     }
@@ -155,6 +197,38 @@ struct MemoryRingComponent : public ECS::ComponentBase<MemoryRingComponent> {
         return false;
     }
 
+    void evictLowestSeverityRumor() {
+        RumorPacket buf[MAX_RUMORS];
+        size_t n = rumors.size();
+        if (n == 0) return;
+        rumors.getRecent(buf, n);
+        size_t lowestIdx = 0;
+        uint8_t lowestSev = static_cast<uint8_t>(buf[0].severity);
+        for (size_t i = 1; i < n; i++) {
+            uint8_t sev = static_cast<uint8_t>(buf[i].severity);
+            if (sev < lowestSev) { lowestSev = sev; lowestIdx = i; }
+        }
+        RingBuffer<RumorPacket, MAX_RUMORS> fresh;
+        for (size_t i = 0; i < n; i++) {
+            if (i != lowestIdx) fresh.push(buf[i]);
+        }
+        rumors = fresh;
+    }
+
+    void cleanExpiredRumors(uint64_t currentFrame) {
+        RumorPacket buf[MAX_RUMORS];
+        size_t n = rumors.size();
+        if (n == 0) return;
+        rumors.getRecent(buf, n);
+        RingBuffer<RumorPacket, MAX_RUMORS> fresh;
+        for (size_t i = 0; i < n; i++) {
+            if (currentFrame - buf[i].bornFrame < MAX_RUMOR_TTL) {
+                fresh.push(buf[i]);
+            }
+        }
+        rumors = fresh;
+    }
+
     void recordMilestone(MilestoneType type, uint32_t relatedSlot, uint8_t significance) {
         LongTermMilestone m;
         m.timestamp = 0;
@@ -164,7 +238,42 @@ struct MemoryRingComponent : public ECS::ComponentBase<MemoryRingComponent> {
         longTerm.push(m);
     }
 
-    void compressToMidTerm() {
+    void upgradeMidTermToLongTerm(uint64_t currentFrame) {
+        MidTermSummary all[MAX_MIDTERM];
+        size_t n = midTerm.getRecent(all, MAX_MIDTERM);
+        RingBuffer<MidTermSummary, MAX_MIDTERM> retained;
+
+        for (size_t i = 0; i < n; i++) {
+            int absScore = all[i].avgEmotionScore < 0 ? -all[i].avgEmotionScore : all[i].avgEmotionScore;
+            if (absScore >= 80 && (currentFrame - all[i].firstTime) >= 1000) {
+                LongTermMilestone m;
+                m.timestamp = currentFrame;
+                m.relatedSlot = all[i].targetSlot;
+                m.significance = static_cast<uint8_t>(absScore > 127 ? 127 : absScore);
+
+                if (all[i].category == 2) {
+                    m.type = MilestoneType::MajorCommand;
+                } else if (all[i].category == 1) {
+                    m.type = (all[i].avgEmotionScore >= 0) ? MilestoneType::ClanWar : MilestoneType::LifeDeathBattle;
+                } else {
+                    m.type = (all[i].avgEmotionScore >= 0) ? MilestoneType::DaoCompanionBond : MilestoneType::ExpelledFromSect;
+                }
+                longTerm.push(m);
+            } else {
+                retained.push(all[i]);
+            }
+        }
+        midTerm = retained;
+    }
+
+    void tryAutoCompact(uint64_t currentFrame) {
+        if (interactions.size() >= MAX_RECENT_INTERACTIONS) {
+            compressToMidTerm(currentFrame);
+            interactions = RingBuffer<InteractionSlot, MAX_RECENT_INTERACTIONS>();
+        }
+    }
+
+    void compressToMidTerm(uint64_t currentFrame) {
         InteractionSlot ibuf[MAX_RECENT_INTERACTIONS];
         size_t icount = interactions.getRecent(ibuf, MAX_RECENT_INTERACTIONS);
         for (size_t i = 0; i < icount; i++) {
@@ -263,6 +372,7 @@ struct MemoryRingComponent : public ECS::ComponentBase<MemoryRingComponent> {
                 midTerm.push(s);
             }
         }
+        upgradeMidTermToLongTerm(currentFrame);
     }
 
     int getTopMidTerm(MidTermSummary* out, int count) const {

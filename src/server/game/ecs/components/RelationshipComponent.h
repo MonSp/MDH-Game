@@ -21,6 +21,46 @@ struct RelationshipComponent : public ECS::ComponentBase<RelationshipComponent> 
     static constexpr uint64_t DECAY_START_FRAMES = 30;
     static constexpr uint64_t DECAY_INTERVAL = 1;
 
+    static constexpr int MAX_FACTION_PAIRS = 64;
+    inline static int32_t factionAffinities[MAX_FACTION_PAIRS] = {};
+    inline static uint32_t factionPairHashes[MAX_FACTION_PAIRS] = {};
+    inline static uint8_t factionPairCount = 0;
+
+    static void setFactionAffinity(uint32_t clanAHash, uint32_t clanBHash, int8_t affinity) {
+        if (clanAHash == clanBHash || clanAHash == 0 || clanBHash == 0) return;
+        uint32_t h1 = clanAHash < clanBHash ? clanAHash : clanBHash;
+        uint32_t h2 = clanAHash < clanBHash ? clanBHash : clanAHash;
+        uint32_t combinedHash = (h1 << 16) ^ h2;
+
+        for (uint8_t i = 0; i < factionPairCount; i++) {
+            if (factionPairHashes[i] == combinedHash) {
+                int32_t current = factionAffinities[i];
+                if (current < affinity) factionAffinities[i] = current + 1;
+                else if (current > affinity) factionAffinities[i] = current - 1;
+                return;
+            }
+        }
+        if (factionPairCount < MAX_FACTION_PAIRS) {
+            factionPairHashes[factionPairCount] = combinedHash;
+            factionAffinities[factionPairCount] = affinity;
+            factionPairCount++;
+        }
+    }
+
+    static int8_t getFactionAffinity(uint32_t clanAHash, uint32_t clanBHash) {
+        if (clanAHash == clanBHash || clanAHash == 0 || clanBHash == 0) return 0;
+        uint32_t h1 = clanAHash < clanBHash ? clanAHash : clanBHash;
+        uint32_t h2 = clanAHash < clanBHash ? clanBHash : clanAHash;
+        uint32_t combinedHash = (h1 << 16) ^ h2;
+
+        for (uint8_t i = 0; i < factionPairCount; i++) {
+            if (factionPairHashes[i] == combinedHash) {
+                return static_cast<int8_t>(factionAffinities[i]);
+            }
+        }
+        return 0;
+    }
+
     RelationSlot relations[MAX_RELATIONS];
     uint8_t relationCount;
     uint32_t spouseSlot;
@@ -120,6 +160,13 @@ struct RelationshipComponent : public ECS::ComponentBase<RelationshipComponent> 
             }
         }
         return changes;
+    }
+
+    int8_t getFactionBiasFloor(uint32_t selfClanHash, uint32_t targetClanHash) const {
+        if (selfClanHash == 0 || targetClanHash == 0) return 0;
+        int8_t factionAff = getFactionAffinity(selfClanHash, targetClanHash);
+        if (factionAff >= 0) return 0;
+        return static_cast<int8_t>(static_cast<float>(factionAff) * 0.25f);
     }
 
     int getTopRelationships(uint32_t* outSlots, int8_t* outAffinities, int count) const {

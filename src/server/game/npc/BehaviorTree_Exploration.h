@@ -1,6 +1,19 @@
 #pragma once
 #include "ExecuteDescriptor.h"
 
+static bool canExecute_explore(ExecuteContext& ctx) {
+    auto* pos = ctx.getPosition();
+    return pos != nullptr;
+}
+static bool canExecute_treasureHunt(ExecuteContext& ctx) {
+    auto* pos = ctx.getPosition();
+    return pos != nullptr;
+}
+static bool canExecute_mapExplore(ExecuteContext& ctx) {
+    auto* pos = ctx.getPosition();
+    return pos != nullptr;
+}
+
 static void exec_explore(ExecuteContext& ctx) {
     auto* pos = ctx.getPosition();
     auto* behavior = ctx.getBehavior();
@@ -42,7 +55,7 @@ static void exec_mapExplore(ExecuteContext& ctx) {
 }
 
 constexpr ExecuteDescriptor kExplorationTable[] = {
-    {NPCActivity::Explore,      "Explore",       ActivityCategory::Exploration, REQ_POSITION, exec_explore},
-    {NPCActivity::TreasureHunt, "TreasureHunt",  ActivityCategory::Exploration, REQ_POSITION, exec_treasureHunt},
-    {NPCActivity::MapExplore,   "MapExplore",    ActivityCategory::Exploration, REQ_POSITION, exec_mapExplore},
+    {NPCActivity::Explore,      "Explore",       ActivityCategory::Exploration, REQ_POSITION, exec_explore, canExecute_explore},
+    {NPCActivity::TreasureHunt, "TreasureHunt",  ActivityCategory::Exploration, REQ_POSITION, exec_treasureHunt, canExecute_treasureHunt},
+    {NPCActivity::MapExplore,   "MapExplore",    ActivityCategory::Exploration, REQ_POSITION, exec_mapExplore, canExecute_mapExplore},
 };

@@ -128,6 +128,55 @@ static void exec_trade(ExecuteContext& ctx) {
     behavior->reflection.recordResult(NPCActivity::Trade, score);
     behavior->changeActivity(NPCActivity::Rest);
 }
+static void tryEmotionalContagion(ExecuteContext& ctx, uint32_t listenerSlot) {
+    auto& reg = ctx.reg();
+    auto* listenerSocial = reg.getComponent<SocialComponent>(reg.entityIds_[listenerSlot]);
+    if (!listenerSocial) return;
+
+    auto* selfPos = ECS::Registry::getInstance().getComponent<PositionComponent>(ctx.entityId);
+    auto* listenerPos = ECS::Registry::getInstance().getComponent<PositionComponent>(reg.entityIds_[listenerSlot]);
+    if (!selfPos || !listenerPos) return;
+
+    int nearbyCount = 0;
+    int highFearCount = 0;
+    int highAngerCount = 0;
+    int highJoyCount = 0;
+
+    float centerX = (selfPos->x + listenerPos->x) * 0.5f;
+    float centerY = (selfPos->y + listenerPos->y) * 0.5f;
+    const float RADIUS_SQ = 200.0f * 200.0f;
+
+    for (size_t i = 0; i < reg.entityIds_.size(); i++) {
+        if (!reg.activeSlots_[i]) continue;
+        auto* pos = reg.getComponent<PositionComponent>(reg.entityIds_[i]);
+        if (!pos) continue;
+        float dx = pos->x - centerX;
+        float dy = pos->y - centerY;
+        if (dx * dx + dy * dy > RADIUS_SQ) continue;
+
+        nearbyCount++;
+        auto* soc = reg.getComponent<SocialComponent>(reg.entityIds_[i]);
+        if (soc) {
+            if (soc->fear >= SocialComponent::HIGH_FEAR_THRESHOLD) highFearCount++;
+            if (soc->anger >= SocialComponent::HIGH_ANGER_THRESHOLD) highAngerCount++;
+            if (soc->joy >= SocialComponent::HIGH_JOY_THRESHOLD) highJoyCount++;
+        }
+    }
+
+    if (nearbyCount < 3) return;
+
+    float fearRatio = static_cast<float>(highFearCount) / static_cast<float>(nearbyCount);
+    float angerRatio = static_cast<float>(highAngerCount) / static_cast<float>(nearbyCount);
+    float joyRatio = static_cast<float>(highJoyCount) / static_cast<float>(nearbyCount);
+
+    if (highFearCount >= SocialComponent::GROUP_EMOTION_ABSOLUTE_MIN && fearRatio > 0.3f)
+        listenerSocial->addFear(15.0f * fearRatio);
+    if (highAngerCount >= SocialComponent::GROUP_EMOTION_ABSOLUTE_MIN && angerRatio > 0.3f)
+        listenerSocial->addAnger(10.0f * angerRatio);
+    if (highJoyCount >= SocialComponent::GROUP_EMOTION_ABSOLUTE_MIN && joyRatio > 0.3f)
+        listenerSocial->addJoy(10.0f * joyRatio);
+}
+
 static void trySpreadRumor(ExecuteContext& ctx, uint32_t listenerSlot) {
     auto& reg = ctx.reg();
 
@@ -140,6 +189,7 @@ static void trySpreadRumor(ExecuteContext& ctx, uint32_t listenerSlot) {
     auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
     auto* listenerMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[listenerSlot]);
     auto* personality = reg.getComponent<PersonalityComponent>(ctx.entityId);
+    auto* myRel = reg.getComponent<RelationshipComponent>(ctx.entityId);
 
     if (!myMemory || !listenerMemory || !personality) return;
 
@@ -148,26 +198,65 @@ static void trySpreadRumor(ExecuteContext& ctx, uint32_t listenerSlot) {
     WitnessedSlot witnessed[30];
     size_t n = myMemory->witnessed.getRecent(witnessed, 30);
 
-    for (size_t i = 0; i < n && i < 3; i++) {
+    struct Candidate {
+        WitnessedSlot event;
+        float priority;
+    };
+    Candidate candidates[30];
+    size_t candCount = 0;
+
+    for (size_t i = 0; i < n; i++) {
         if (witnessed[i].significance < 2) continue;
 
         if (listenerMemory->knowsRumor(witnessed[i].slot)) continue;
 
-        if (exec_random01() < 0.4f) {
-            RumorPacket rumor;
-            rumor.timestamp = ctx.currentTime;
-            rumor.originalEventSlot = witnessed[i].slot;
-            rumor.originalWitness = selfSlot;
-            rumor.contentIntegrity = 100;
-            rumor.hopCount = 0;
-            rumor.sensitivity = witnessed[i].significance;
+        uint8_t adjustedSig = witnessed[i].significance;
+        uint64_t age = ctx.currentTime - witnessed[i].timestamp;
+        if (age > 600) continue;
+        if (age > 300) adjustedSig = (adjustedSig < 10) ? adjustedSig + 1 : 10;
 
-            listenerMemory->receiveRumor(rumor, listenerSlot);
+        float intimacyFactor = 1.0f;
+        if (myRel) {
+            int8_t aff = myRel->getAffinity(witnessed[i].slot);
+            if (aff > 50 || aff < -50) intimacyFactor = 1.5f;
+        }
 
-            auto* listenerSocial = reg.getComponent<SocialComponent>(reg.entityIds_[listenerSlot]);
-            if (listenerSocial) listenerSocial->onSocialSuccess();
+        float priority = static_cast<float>(adjustedSig) * intimacyFactor;
+        candidates[candCount].event = witnessed[i];
+        candidates[candCount].priority = priority;
+        candCount++;
+        if (candCount >= 30) break;
+    }
+
+    if (candCount == 0) return;
+
+    for (size_t i = 0; i < candCount - 1; i++) {
+        for (size_t j = i + 1; j < candCount; j++) {
+            if (candidates[j].priority > candidates[i].priority ||
+                (candidates[j].priority == candidates[i].priority &&
+                 candidates[j].event.timestamp < candidates[i].event.timestamp)) {
+                Candidate tmp = candidates[i];
+                candidates[i] = candidates[j];
+                candidates[j] = tmp;
+            }
         }
     }
+
+    RumorPacket rumor;
+    rumor.timestamp = ctx.currentTime;
+    rumor.originalEventSlot = candidates[0].event.slot;
+    rumor.originalWitness = selfSlot;
+    rumor.contentIntegrity = 100;
+    rumor.hopCount = 0;
+    rumor.sensitivity = candidates[0].event.significance;
+    rumor.severity = MemoryRingComponent::significanceToSeverity(
+        candidates[0].event.significance);
+    rumor.queuedSinceFrame = ctx.currentTime;
+
+    listenerMemory->receiveRumor(rumor, listenerSlot);
+
+    auto* listenerSocial = reg.getComponent<SocialComponent>(reg.entityIds_[listenerSlot]);
+    if (listenerSocial) listenerSocial->onSocialSuccess();
 }
 
 static void exec_gossip(ExecuteContext& ctx) {
@@ -199,6 +288,7 @@ static void exec_gossip(ExecuteContext& ctx) {
 
     uint32_t listenerSlot = candidates[exec_randRange(0, static_cast<int>(candidateCount) - 1)];
     trySpreadRumor(ctx, listenerSlot);
+    tryEmotionalContagion(ctx, listenerSlot);
 }
 static void exec_reportTask(ExecuteContext& ctx) {
     auto* pos = ctx.getPosition();
