@@ -17,6 +17,7 @@
 #include "components/RoleCommandComponent.h"
 #include "components/CommandDelegationComponent.h"
 #include "components/CommandResponseComponent.h"
+#include "components/MemoryRingComponent.h"
 #include "components/CultivationComponent.h"
 #include <vector>
 #include <unordered_map>
@@ -48,6 +49,7 @@ public:
             roleCommand_.emplace_back();
             cmdDelegation_.emplace_back();
             cmdResponse_.emplace_back();
+            memoryRing_.emplace_back();
             cultivation_.emplace_back();
             bt_.emplace_back();
             blackboard_.emplace_back();
@@ -70,6 +72,7 @@ public:
             roleCommand_[slot] = RoleCommandComponent();
             cmdDelegation_[slot] = CommandDelegationComponent();
             cmdResponse_[slot] = CommandResponseComponent();
+            memoryRing_[slot] = MemoryRingComponent();
             cultivation_[slot] = CultivationComponent();
             bt_[slot] = BehaviorTreeComponent();
             blackboard_[slot] = BlackboardCache();
@@ -177,6 +180,7 @@ public:
         roleCommand_.clear();
         cmdDelegation_.clear();
         cmdResponse_.clear();
+        memoryRing_.clear();
         cultivation_.clear();
         bt_.clear();
         blackboard_.clear();
@@ -220,6 +224,7 @@ private:
         if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
         if constexpr (std::is_same_v<T, CommandDelegationComponent>) return cmdDelegation_;
         if constexpr (std::is_same_v<T, CommandResponseComponent>)  return cmdResponse_;
+        if constexpr (std::is_same_v<T, MemoryRingComponent>)      return memoryRing_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
         if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
         if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
@@ -239,6 +244,7 @@ private:
         if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
         if constexpr (std::is_same_v<T, CommandDelegationComponent>) return cmdDelegation_;
         if constexpr (std::is_same_v<T, CommandResponseComponent>)  return cmdResponse_;
+        if constexpr (std::is_same_v<T, MemoryRingComponent>)      return memoryRing_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
         if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
         if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
@@ -257,6 +263,7 @@ private:
     std::vector<RoleCommandComponent> roleCommand_;
     std::vector<CommandDelegationComponent> cmdDelegation_;
     std::vector<CommandResponseComponent> cmdResponse_;
+    std::vector<MemoryRingComponent> memoryRing_;
     std::vector<CultivationComponent> cultivation_;
     std::vector<BehaviorTreeComponent> bt_;
     std::vector<BlackboardCache> blackboard_;

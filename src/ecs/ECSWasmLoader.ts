@@ -109,6 +109,48 @@ export interface NPCState {
   squadId: number;
 }
 
+export interface RelationEntry {
+  targetSlot: number;
+  affinity: number;
+}
+
+export interface InteractionEntry {
+  timestamp: number;
+  otherSlot: number;
+  type: number;
+  typeName: string;
+  impactScore: number;
+}
+
+export interface CommandMemoryEntryWasm {
+  timestamp: number;
+  issuerSlot: number;
+  commandId: number;
+  result: number;
+  emotionTag: number;
+  influence: number;
+}
+
+export interface WitnessedEventEntry {
+  timestamp: number;
+  eventIndex: number;
+  significance: number;
+  description?: string;
+}
+
+export interface InteractionEventWasm {
+  slotA: number;
+  slotB: number;
+  type: number;
+}
+
+export const InteractionType: Record<number, string> = {
+  0: 'socialize',
+  1: 'trade',
+  2: 'conflict',
+  3: 'duel',
+};
+
 export interface ECSStats {
   npcCount: number;
   avgFrameTime: number;
@@ -120,6 +162,17 @@ type CInitFn = (threadCount: number) => void;
 type CCreateNPCsFn = (count: number, layer: number) => number;
 type CGetStatesFn = (ptr: number, maxCount: number) => void;
 type CGetStatsFn = (npcPtr: number, timePtr: number, framesPtr: number) => void;
+type CGetAffinityFn = (slotA: number, slotB: number) => number;
+type CModifyAffinityFn = (slotA: number, slotB: number, delta: number) => void;
+type CGetTopRelationshipsFn = (slot: number, count: number, ptr: number) => void;
+type CGetRecentInteractionsFn = (slot: number, count: number, ptr: number) => void;
+type CGetRecentCommandMemoryFn = (slot: number, count: number, ptr: number) => void;
+type CGetWitnessedEventsFn = (slot: number, count: number, ptr: number) => void;
+type CGetEventStringFn = (index: number, ptr: number, maxLen: number) => void;
+type CConsumeInteractionEventsFn = (ptr: number, maxCount: number) => void;
+type CRecordWitnessedEventFn = (eventSlot: number, descPtr: number, significance: number) => void;
+type CDumpMemoryFn = (ptr: number, maxSize: number) => number;
+type CLoadMemoryFn = (ptr: number, size: number) => void;
 
 let ecsWasmReady = false;
 let HEAPU8: Uint8Array | null = null;
@@ -127,6 +180,7 @@ let _statesBufferPtr = 0;
 let _statsBufferPtr = 0;
 let _statesBufferSize = 0;
 let _maxNPC = 0;
+let _memBufPtr = 0;
 
 let _init: CInitFn | null = null;
 let _createNPCs: CCreateNPCsFn | null = null;
@@ -135,6 +189,17 @@ let _getNPCStateCount: (() => number) | null = null;
 let _getNPCStates: CGetStatesFn | null = null;
 let _getStats: CGetStatsFn | null = null;
 let _destroy: CVoidFn | null = null;
+let _getAffinity: CGetAffinityFn | null = null;
+let _modifyAffinity: CModifyAffinityFn | null = null;
+let _getTopRelationships: CGetTopRelationshipsFn | null = null;
+let _getRecentInteractions: CGetRecentInteractionsFn | null = null;
+let _getRecentCommandMemory: CGetRecentCommandMemoryFn | null = null;
+let _getWitnessedEvents: CGetWitnessedEventsFn | null = null;
+let _getEventString: CGetEventStringFn | null = null;
+let _consumeInteractionEvents: CConsumeInteractionEventsFn | null = null;
+let _recordWitnessedEvent: CRecordWitnessedEventFn | null = null;
+let _dumpMemory: CDumpMemoryFn | null = null;
+let _loadMemory: CLoadMemoryFn | null = null;
 
 const _decoder = new TextDecoder();
 
@@ -175,6 +240,142 @@ export function readECSStats(): ECSStats {
     avgFrameTime: view.getFloat32(_statsBufferPtr + 4, true),
     frameCount: view.getInt32(_statsBufferPtr + 8, true),
   };
+}
+
+export function wasmGetAffinity(slotA: number, slotB: number): number {
+  return _getAffinity ? _getAffinity(slotA, slotB) : 0;
+}
+
+export function wasmModifyAffinity(slotA: number, slotB: number, delta: number): void {
+  if (_modifyAffinity) _modifyAffinity(slotA, slotB, delta);
+}
+
+export function wasmGetTopRelationships(slot: number, count: number): RelationEntry[] {
+  if (!_getTopRelationships || !HEAPU8) return [];
+  _getTopRelationships(slot, count, _memBufPtr);
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const result: RelationEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const targetSlot = view.getInt32(_memBufPtr + i * 8, true);
+    const affinity = view.getInt32(_memBufPtr + i * 8 + 4, true);
+    if (targetSlot === 0) break;
+    result.push({ targetSlot, affinity });
+  }
+  return result;
+}
+
+export function wasmGetRecentInteractions(slot: number, count: number): InteractionEntry[] {
+  if (!_getRecentInteractions || !HEAPU8) return [];
+  _getRecentInteractions(slot, count, _memBufPtr);
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const n = view.getInt32(_memBufPtr, true);
+  const result: InteractionEntry[] = [];
+  for (let i = 0; i < n && i < count; i++) {
+    const off = _memBufPtr + 4 + i * 16;
+    const tsLo = view.getUint32(off, true);
+    const tsHi = view.getUint32(off + 4, true);
+    const timestamp = tsLo + tsHi * 0x100000000;
+    const otherSlot = view.getUint32(off + 8, true);
+    const packed = view.getInt32(off + 12, true);
+    const type = packed & 0xFFFF;
+    const impactScore = (packed >> 16) & 0xFF;
+    result.push({ timestamp, otherSlot, type, typeName: InteractionType[type] ?? 'unknown', impactScore });
+  }
+  return result;
+}
+
+export function wasmGetCommandMemory(slot: number, count: number): CommandMemoryEntryWasm[] {
+  if (!_getRecentCommandMemory || !HEAPU8) return [];
+  _getRecentCommandMemory(slot, count, _memBufPtr);
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const n = view.getInt32(_memBufPtr, true);
+  const result: CommandMemoryEntryWasm[] = [];
+  for (let i = 0; i < n && i < count; i++) {
+    const off = _memBufPtr + 4 + i * 24;
+    const tsLo = view.getUint32(off, true);
+    const tsHi = view.getUint32(off + 4, true);
+    result.push({
+      timestamp: tsLo + tsHi * 0x100000000,
+      issuerSlot: view.getUint32(off + 8, true),
+      commandId: view.getUint32(off + 12, true),
+      result: view.getInt32(off + 16, true) & 0xFF,
+      emotionTag: (view.getInt32(off + 16, true) >> 8) & 0xFF,
+      influence: view.getInt32(off + 20, true),
+    });
+  }
+  return result;
+}
+
+export function wasmGetWitnessedEvents(slot: number, count: number): WitnessedEventEntry[] {
+  if (!_getWitnessedEvents || !HEAPU8) return [];
+  _getWitnessedEvents(slot, count, _memBufPtr);
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const n = view.getInt32(_memBufPtr, true);
+  const result: WitnessedEventEntry[] = [];
+  for (let i = 0; i < n && i < count; i++) {
+    const off = _memBufPtr + 4 + i * 12;
+    const tsLo = view.getUint32(off, true);
+    const tsHi = view.getUint32(off + 4, true);
+    const packed = view.getInt32(off + 8, true);
+    const eventIndex = packed & 0xFFFF;
+    const significance = (packed >> 16) & 0xFF;
+    result.push({
+      timestamp: tsLo + tsHi * 0x100000000,
+      eventIndex,
+      significance,
+    });
+  }
+  return result;
+}
+
+export function wasmGetEventString(index: number): string {
+  if (!_getEventString || !HEAPU8) return '';
+  const tmpBuf = _memBufPtr + 8192;
+  _getEventString(index, tmpBuf, 256);
+  const end = HEAPU8.subarray(tmpBuf, tmpBuf + 256).indexOf(0);
+  return end === 0 ? '' : _decoder.decode(HEAPU8.subarray(tmpBuf, tmpBuf + (end >= 0 ? end : 256)));
+}
+
+export function wasmConsumeInteractionEvents(): InteractionEventWasm[] {
+  if (!_consumeInteractionEvents || !HEAPU8) return [];
+  _consumeInteractionEvents(_memBufPtr, 256);
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const n = view.getInt32(_memBufPtr, true);
+  const result: InteractionEventWasm[] = [];
+  for (let i = 0; i < n; i++) {
+    result.push({
+      slotA: view.getInt32(_memBufPtr + 4 + i * 12, true),
+      slotB: view.getInt32(_memBufPtr + 4 + i * 12 + 4, true),
+      type: view.getInt32(_memBufPtr + 4 + i * 12 + 8, true),
+    });
+  }
+  return result;
+}
+
+export function wasmRecordWitnessedEvent(slot: number, desc: string, significance: number): void {
+  if (!_recordWitnessedEvent || !HEAPU8) return;
+  const strBuf = _memBufPtr + 14000;
+  const bytes = new TextEncoder().encode(desc);
+  HEAPU8.set(bytes.slice(0, 200), strBuf);
+  _recordWitnessedEvent(slot, strBuf, significance);
+}
+
+export function ecsDumpMemory(): ArrayBuffer | null {
+  if (!_dumpMemory || !HEAPU8) return null;
+  const maxSize = 1024 * 1024;
+  const bufPtr = _memBufPtr;
+  const written = _dumpMemory(bufPtr, maxSize);
+  if (written <= 0) return null;
+  return HEAPU8.slice(bufPtr, bufPtr + written).buffer;
+}
+
+export function ecsLoadMemory(data: ArrayBuffer): boolean {
+  if (!_loadMemory || !HEAPU8 || !data) return false;
+  const bytes = new Uint8Array(data);
+  const bufPtr = _memBufPtr + 12000;
+  HEAPU8.set(bytes.slice(0, 4000), bufPtr);
+  _loadMemory(bufPtr, bytes.byteLength);
+  return true;
 }
 
 export function readNPCStates(): NPCState[] {
@@ -257,6 +458,17 @@ export async function initECSWasm(maxNPC: number = 2000): Promise<boolean> {
     _getNPCStates = Module['_ecs_getNPCStates'] as CGetStatesFn;
     _getStats = Module['_ecs_getStats'] as CGetStatsFn;
     _destroy = Module['_ecs_destroy'] as CVoidFn;
+    _getAffinity = Module['_ecs_getAffinity'] as CGetAffinityFn;
+    _modifyAffinity = Module['_ecs_modifyAffinity'] as CModifyAffinityFn;
+    _getTopRelationships = Module['_ecs_getTopRelationships'] as CGetTopRelationshipsFn;
+    _getRecentInteractions = Module['_ecs_getRecentInteractions'] as CGetRecentInteractionsFn;
+    _getRecentCommandMemory = Module['_ecs_getRecentCommandMemory'] as CGetRecentCommandMemoryFn;
+    _getWitnessedEvents = Module['_ecs_getWitnessedEvents'] as CGetWitnessedEventsFn;
+    _getEventString = Module['_ecs_getEventString'] as CGetEventStringFn;
+    _consumeInteractionEvents = Module['_ecs_consumeInteractionEvents'] as CConsumeInteractionEventsFn;
+    _recordWitnessedEvent = Module['_ecs_recordWitnessedEvent'] as CRecordWitnessedEventFn;
+    _dumpMemory = Module['_ecs_dumpMemory'] as CDumpMemoryFn;
+    _loadMemory = Module['_ecs_loadMemory'] as CLoadMemoryFn;
     const malloc = Module['_malloc'] as (size: number) => number;
     HEAPU8 = Module['HEAPU8'];
 
@@ -265,6 +477,7 @@ export async function initECSWasm(maxNPC: number = 2000): Promise<boolean> {
     _statsBufferPtr = malloc(12);
     _statesBufferSize = maxNPC * NPC_STATE_SIZE;
     _statesBufferPtr = malloc(_statesBufferSize);
+    _memBufPtr = malloc(16384); // 16KB buffer for memory queries
 
     ecsWasmReady = true;
     console.log('[ECS] WASM engine loaded');

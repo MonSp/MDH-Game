@@ -27,6 +27,7 @@ import { PlanAction } from '../llm/PlanParser';
 import { NPCMemoryStore } from '../llm/NPCMemory';
 import { CommandStatus } from '../../shared/types/LLMPlanning';
 import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
+import { wasmConsumeInteractionEvents, isECSWasmReady } from '../../ecs/ECSWasmLoader';
 
 export interface RecruitCandidate {
   id: string;
@@ -115,13 +116,10 @@ export class NPCWorldService extends EventEmitter {
   private static instance: NPCWorldService;
   private npcs: Map<string, NPCState> = new Map();
   private backgrounds: Map<string, string> = new Map();
-  private memory: NPCMemoryStore;
   private tickInterval: NodeJS.Timeout | null = null;
   private ambientInterval: NodeJS.Timeout | null = null;
   private llmMode: boolean = true;
   private llmFallback: boolean = false;
-  /** NPC-to-NPC interaction cooldown tracking — key is "npcA:npcB" sorted alphabetically */
-  private lastInteractionTime: Map<string, number> = new Map();
   private readonly NPC_INTERACTION_COOLDOWN = 25000;
   private readonly NPC_INTERACTION_DIST = 1;
   /** Buffer of recent interactions for client sync */
@@ -133,7 +131,6 @@ export class NPCWorldService extends EventEmitter {
 
   private constructor() {
     super();
-    this.memory = new NPCMemoryStore();
     this.nextNPCId = 1;
   }
 
@@ -184,7 +181,6 @@ export class NPCWorldService extends EventEmitter {
 
   initialize(): void {
     this.seedNPCs();
-    this.initRelationships();
     this.nextNPCId = this.computeNextId();
     console.log(`[NPCWorld] 初始化完成: ${this.npcs.size} 个NPC`);
   }
@@ -231,11 +227,9 @@ export class NPCWorldService extends EventEmitter {
     this.stop();
     this.npcs.clear();
     this.backgrounds.clear();
-    this.memory = new NPCMemoryStore();
     this.nextNPCId = 1;
     this.planningOffset = 0;
     this.llmMode = true;
-    this.lastInteractionTime.clear();
     this.recentInteractions = [];
     this.removeAllListeners('npc:event');
   }
@@ -247,117 +241,6 @@ export class NPCWorldService extends EventEmitter {
     const events = this.recentInteractions;
     this.recentInteractions = [];
     return events;
-  }
-
-  private checkNPCInteractions(now: number): void {
-    const npcIds = [...this.npcs.keys()];
-    for (let i = 0; i < npcIds.length; i++) {
-      for (let j = i + 1; j < npcIds.length; j++) {
-        const idA = npcIds[i];
-        const idB = npcIds[j];
-        const stateA = this.npcs.get(idA)!;
-        const stateB = this.npcs.get(idB)!;
-
-        // Skip if either is dead / inactive
-        if (stateA.npc.hp <= 0 || stateB.npc.hp <= 0) continue;
-
-        // Manhattan distance
-        const dist = Math.abs(stateA.npc.position.x - stateB.npc.position.x)
-                   + Math.abs(stateA.npc.position.y - stateB.npc.position.y);
-        if (dist > this.NPC_INTERACTION_DIST) continue;
-
-        // Pair cooldown
-        const pairKey = idA < idB ? `${idA}:${idB}` : `${idB}:${idA}`;
-        if (now - (this.lastInteractionTime.get(pairKey) ?? 0) < this.NPC_INTERACTION_COOLDOWN) continue;
-        this.lastInteractionTime.set(pairKey, now);
-
-        // Get affinity from relationship matrix
-        const affinity = this.memory.relationships.get(idA, idB);
-        const roll = Math.random();
-
-        // Determine interaction based on affinity + personality
-        let interactionType: NPCInteractionEvent['type'];
-        let description: string;
-        let logMessage: string;
-
-        if (affinity > 40 && roll < 0.35) {
-          interactionType = 'alliance';
-          logMessage = `${stateA.npc.name}与${stateB.npc.name}相谈甚欢，互称道友`;
-          description = `${stateA.npc.name} 与 ${stateB.npc.name} 相谈甚欢，互称道友`;
-          // Both get a small cultivation boost from the exchange
-          this.memory.relationships.modify(idA, idB, 3, '友好交流');
-          this.memory.interactions.add(idA, { timestamp: now, otherNpcId: idB, type: 'socialize', summary: `与${stateB.npc.name}友好交流`, impactScore: 2 });
-          this.memory.interactions.add(idB, { timestamp: now, otherNpcId: idA, type: 'socialize', summary: `与${stateA.npc.name}友好交流`, impactScore: 2 });
-        } else if (affinity > 20 && roll < 0.25) {
-          interactionType = 'trade';
-          const stones = Math.floor(Math.random() * 10 + 3);
-          stateA.npc.resources.spiritStones += stones;
-          stateB.npc.resources.spiritStones += stones;
-          logMessage = `${stateA.npc.name}与${stateB.npc.name}交换了修炼资源，各得${stones}灵石`;
-          description = `${stateA.npc.name} 与 ${stateB.npc.name} 交换了修炼资源，各得 ${stones} 灵石`;
-          this.memory.relationships.modify(idA, idB, 1, '资源交换');
-        } else if (affinity < -20 && roll < 0.25) {
-          interactionType = 'conflict';
-          const dmgA = Math.floor(Math.random() * 40 + 10);
-          const dmgB = Math.floor(Math.random() * 40 + 10);
-          stateA.npc.hp = Math.max(0, stateA.npc.hp - dmgA);
-          stateB.npc.hp = Math.max(0, stateB.npc.hp - dmgB);
-          logMessage = `${stateA.npc.name}与${stateB.npc.name}发生冲突，大打出手！`;
-          description = `${stateA.npc.name} 与 ${stateB.npc.name} 发生冲突，大打出手！(${stateA.npc.name}-${dmgA}HP, ${stateB.npc.name}-${dmgB}HP)`;
-          this.memory.relationships.modify(idA, idB, -8, '争斗冲突');
-          this.memory.interactions.add(idA, { timestamp: now, otherNpcId: idB, type: 'combat', summary: `与${stateB.npc.name}争斗`, impactScore: 4 });
-          this.memory.interactions.add(idB, { timestamp: now, otherNpcId: idA, type: 'combat', summary: `与${stateA.npc.name}争斗`, impactScore: 4 });
-        } else if (affinity < -50 && roll < 0.15) {
-          interactionType = 'duel';
-          const dmgA = Math.floor(Math.random() * 80 + 30);
-          const dmgB = Math.floor(Math.random() * 80 + 30);
-          stateA.npc.hp = Math.max(0, stateA.npc.hp - dmgA);
-          stateB.npc.hp = Math.max(0, stateB.npc.hp - dmgB);
-          const winner = dmgA > dmgB ? stateA : stateB;
-          const loser = dmgA > dmgB ? stateB : stateA;
-          logMessage = `${winner.npc.name}在决斗中击败了${loser.npc.name}！`;
-          description = `${winner.npc.name} 在决斗中击败了 ${loser.npc.name}！`;
-          this.memory.relationships.modify(idA, idB, -15, '生死决斗');
-          this.memory.interactions.add(winner.npc.id, { timestamp: now, otherNpcId: loser.npc.id, type: 'combat', summary: `在决斗中击败了${loser.npc.name}`, impactScore: 6 });
-          this.memory.interactions.add(loser.npc.id, { timestamp: now, otherNpcId: winner.npc.id, type: 'combat', summary: `被${winner.npc.name}在决斗中击败`, impactScore: 8 });
-        } else {
-          continue; // Skip neutral low-chance interactions to reduce noise
-        }
-
-        // Build interaction event
-        const event: NPCInteractionEvent = {
-          id: `interact-${idA}-${idB}-${now}`,
-          type: interactionType,
-          npcIdA: idA,
-          npcNameA: stateA.npc.name,
-          npcIdB: idB,
-          npcNameB: stateB.npc.name,
-          description,
-          position: {
-            x: Math.round((stateA.npc.position.x + stateB.npc.position.x) / 2),
-            y: Math.round((stateA.npc.position.y + stateB.npc.position.y) / 2),
-          },
-          timestamp: now,
-        };
-
-        // Buffer for client sync
-        this.recentInteractions.push(event);
-        if (this.recentInteractions.length > this.MAX_RECENT_INTERACTIONS) {
-          this.recentInteractions.shift();
-        }
-
-        // Emit for chronicle bridge
-        this.emit(event.type === 'duel' || event.type === 'conflict' ? 'npc:major-event' : 'npc:interaction', event);
-        this.emit('npc:event', {
-          npcId: event.npcIdA,
-          npcName: event.npcNameA,
-          description: logMessage,
-          location: '宗门',
-          type: `interaction_${interactionType}`,
-          source: 'deterministic' as const,
-        });
-      }
-    }
   }
 
   private seedNPCs(): void {
@@ -411,19 +294,6 @@ export class NPCWorldService extends EventEmitter {
     }
   }
 
-  private initRelationships(): void {
-    const ids = [...this.npcs.keys()];
-    for (let i = 0; i < ids.length; i++) {
-      for (let j = i + 1; j < ids.length; j++) {
-        const a = this.npcs.get(ids[i])!.npc;
-        const b = this.npcs.get(ids[j])!.npc;
-        const affinity = computeAffinity(a.personality, b.personality);
-        this.memory.relationships.set(ids[i], ids[j], affinity);
-        this.memory.relationships.set(ids[j], ids[i], affinity);
-      }
-    }
-  }
-
   getRelationship(idA: string, idB: string): { affinity: number; reason: string } {
     const aff = this.memory.relationships.get(idA, idB);
     const mods = this.memory.relationships.getModifiers(idA, idB);
@@ -456,7 +326,7 @@ export class NPCWorldService extends EventEmitter {
     }
 
     // 1.5) NPC-to-NPC interaction check
-    this.checkNPCInteractions(now);
+    this.syncInteractionEvents(now);
 
     // 2) Collect planning candidates
     const preplan: string[] = [];
@@ -499,6 +369,30 @@ export class NPCWorldService extends EventEmitter {
     }));
   }
 
+  private syncInteractionEvents(now: number): void {
+    if (!isECSWasmReady()) return;
+
+    const events = wasmConsumeInteractionEvents();
+    for (const ev of events) {
+      const event: NPCInteractionEvent = {
+        id: `interact-cpp-${ev.slotA}-${ev.slotB}-${now}`,
+        type: ev.type === 0 ? 'alliance' : ev.type === 1 ? 'trade' : ev.type === 2 ? 'conflict' : 'duel',
+        npcIdA: `slot-${ev.slotA}`,
+        npcNameA: `NPC#${ev.slotA}`,
+        npcIdB: `slot-${ev.slotB}`,
+        npcNameB: `NPC#${ev.slotB}`,
+        description: `NPC#${ev.slotA} 与 NPC#${ev.slotB} 交互 (type=${ev.type})`,
+        position: { x: 0, y: 0 },
+        timestamp: now,
+      };
+      this.recentInteractions.push(event);
+      if (this.recentInteractions.length > this.MAX_RECENT_INTERACTIONS) {
+        this.recentInteractions.shift();
+      }
+      this.emit('npc:interaction', event);
+    }
+  }
+
   /** Pop expired actions from the queue and start the next one. */
   private advanceQueue(state: NPCState): void {
     if (state.planQueue.length > 0 && state.activityUntil <= Date.now()) {
@@ -527,6 +421,7 @@ export class NPCWorldService extends EventEmitter {
       const s = this.npcs.get(npcId);
       return s ? s.npc.name : npcId;
     };
+    // TODO: use NPCMemoryStore from shared instance
     const memoryContext = this.memory.buildMemoryContext(id, nameResolver);
     // Delegate planning to LLMIntegrationManager (single unified pipeline)
     state.planningNext = true;

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import { ecsDumpMemory, ecsLoadMemory, isECSWasmReady } from '../../ecs/ECSWasmLoader';
 
 export class DataService {
   private static instance: DataService;
@@ -263,6 +264,12 @@ export class DataService {
         death_count INTEGER DEFAULT 0
       );
 
+      CREATE TABLE IF NOT EXISTS npc_memory_blob (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        data BLOB NOT NULL,
+        saved_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_death_records_time ON death_records(death_time);
       CREATE INDEX IF NOT EXISTS idx_death_records_clan ON death_records(clan_id);
       CREATE INDEX IF NOT EXISTS idx_soul_pool_status ON soul_pool(status);
@@ -406,5 +413,21 @@ export class DataService {
       byNation,
       byDeathCause
     };
+  }
+
+  async saveNPCBlob(): Promise<boolean> {
+    if (!isECSWasmReady()) return false;
+    const data = ecsDumpMemory();
+    if (!data) return false;
+    const stmt = this.db.prepare('INSERT OR REPLACE INTO npc_memory_blob (id, data, saved_at) VALUES (1, ?, ?)');
+    stmt.run(Buffer.from(data), Date.now());
+    return true;
+  }
+
+  async loadNPCBlob(): Promise<boolean> {
+    if (!isECSWasmReady()) return false;
+    const row = this.db.prepare('SELECT data FROM npc_memory_blob WHERE id = 1').get() as { data: Buffer } | undefined;
+    if (!row || !row.data) return false;
+    return ecsLoadMemory(row.data.buffer.slice(row.data.byteOffset, row.data.byteOffset + row.data.byteLength));
   }
 }

@@ -6,6 +6,9 @@
 #ifndef __EMSCRIPTEN__
 #include "LLMPlanningSystem.h"
 #endif
+#include "../npc/NPCInteractionSystem.h"
+#include "../EventStringPool.h"
+#include "../../spatial/SpatialIndexCache.h"
 #include "../../job/ThreadPool.h"
 #include "../../npc/NPCCreationSystem.h"
 #include <chrono>
@@ -68,6 +71,11 @@ public:
         // LLMPlanningSystem::getInstance().updatePlanningRequests(currentTimeMs);
 
         NPChunkUpdateSystem::getInstance().updateAllNPCs(deltaTime, currentTimeMs);
+
+        auto& reg = ECS::Registry::getInstance();
+        SpatialIndexCache::getInstance().rebuild(reg.activeSlots_, reg.position_, reg.entityIds_.size());
+
+        NPCInteractionSystem::getInstance().tickInteraction(currentTimeMs, static_cast<uint16_t>(frameCount_));
 
         LifecycleSystem::getInstance().updateAllNPCs(deltaTime / 1000.0f);
 

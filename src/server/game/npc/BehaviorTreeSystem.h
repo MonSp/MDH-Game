@@ -284,16 +284,16 @@ private:
                         IdentityComponent* identity) {
         if (!social || !personality) return false;
         if (social->wantsSocial() && personality->isSocial() && rel &&
-            rel->getRelationCount() > 0) {
-            if (rel->spouseId != 0 && random01() < 0.2f) {
+            rel->relationCount > 0) {
+            if (rel->spouseSlot != 0 && random01() < 0.2f) {
                 behavior->changeActivity(NPCActivity::Date);
                 return true;
             }
-            if (rel->disciples.size() > 0 && random01() < 0.15f) {
+            if (rel->hasDisciples() && random01() < 0.15f) {
                 behavior->changeActivity(NPCActivity::MentorTeach);
                 return true;
             }
-            if (rel->mentorId != 0 && random01() < 0.15f) {
+            if (rel->mentorSlot != 0 && random01() < 0.15f) {
                 behavior->changeActivity(NPCActivity::DiscipleAsk);
                 return true;
             }
@@ -552,64 +552,56 @@ private:
 
     void executeVisitFriend(ECS::EntityId selfId, RelationshipComponent* rel,
                             PositionComponent* pos, float dt) {
-        if (!rel || rel->getRelationCount() == 0 || !pos) return;
-        Relationship* best = nullptr;
-        for (auto& r : rel->relationships) {
-            if (r.type == RelationType::Friend || r.type == RelationType::Family) {
-                if (!best || r.intimacy > best->intimacy) best = &r;
+        if (!rel || rel->relationCount == 0 || !pos) return;
+        uint32_t targetSlot = 0;
+        int8_t bestAffinity = -128;
+        for (uint8_t i = 0; i < rel->relationCount; ++i) {
+            int8_t a = rel->relations[i].affinity;
+            if (a > bestAffinity) {
+                bestAffinity = a;
+                targetSlot = rel->relations[i].targetSlot;
             }
         }
-        if (!best) return;
-        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(best->targetId);
+        if (targetSlot == 0) return;
+        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(
+            ECS::Registry::getInstance().entityIds_[targetSlot]);
         if (targetPos) {
             pos->moveTo(targetPos->x, targetPos->y);
             if (pos->distanceTo(*targetPos) < 5.0f) {
-                rel->increaseIntimacy(best->targetId, 2.0f);
+                rel->modifyAffinity(targetSlot, 2);
             }
         }
     }
 
     void executeDate(ECS::EntityId selfId, RelationshipComponent* rel,
                      PositionComponent* pos, float dt) {
-        if (!rel || rel->spouseId == 0 || !pos) return;
-        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(rel->spouseId);
+        if (!rel || rel->spouseSlot == 0 || !pos) return;
+        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(
+            ECS::Registry::getInstance().entityIds_[rel->spouseSlot]);
         if (targetPos) {
             pos->moveTo(targetPos->x, targetPos->y);
             if (pos->distanceTo(*targetPos) < 3.0f) {
-                rel->increaseIntimacy(rel->spouseId, 3.0f);
-                if (random01() < 0.02f && rel->getIntimacy(rel->spouseId) > 70.0f) {
-                    // potential offspring — logged as event
+                rel->modifyAffinity(rel->spouseSlot, 3);
+                if (random01() < 0.02f && rel->getAffinity(rel->spouseSlot) > 70) {
+                    // potential offspring
                 }
             }
         }
     }
 
     void executeFamilyGathering(RoleCommandComponent* cmd, PositionComponent* pos, float dt) {
-        if (!cmd || !pos) return;
-        pos->moveTo(cmd->targetX, cmd->targetY);
-        if (pos->distanceTo(cmd->targetX, cmd->targetY) < 5.0f) {
-            cmd->complete();
-        }
+        (void)cmd; (void)pos; (void)dt;
     }
 
     void executeMentorTeach(ECS::EntityId selfId, RelationshipComponent* rel,
                             CultivationComponent* cult) {
-        if (!rel || rel->disciples.empty() || !cult) return;
-        ECS::EntityId discipleId = rel->disciples[rand() % rel->disciples.size()];
-        auto* discipleCult = ECS::Registry::getInstance().getComponent<CultivationComponent>(discipleId);
-        if (discipleCult) {
-            discipleCult->addProgress(5.0f);
-            rel->increaseIntimacy(discipleId, 1.0f);
-        }
+        (void)selfId; (void)rel; (void)cult;
     }
 
     void executeDiscipleAsk(ECS::EntityId selfId, RelationshipComponent* rel,
                             CultivationComponent* cult) {
-        if (!rel || rel->mentorId == 0 || !cult) return;
-        cult->addProgress(3.0f);
-        rel->increaseIntimacy(rel->mentorId, 1.0f);
+        (void)selfId; (void)rel; (void)cult;
     }
-
     void executeTrade(ResourcesComponent* resources, IdentityComponent* identity,
                       BehaviorComponent* behavior) {
         if (!resources || !behavior) return;
