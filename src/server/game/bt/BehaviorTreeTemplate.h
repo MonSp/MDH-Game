@@ -50,7 +50,7 @@ inline constexpr FlatBTNode kLeaderNodes[] = {
 inline constexpr BehaviorTreeTemplate kLeader = {
     "Leader",
     kLeaderNodes,
-    8,
+    7,
     0
 };
 
@@ -80,7 +80,7 @@ inline constexpr FlatBTNode kDiscipleNodes[] = {
 inline constexpr BehaviorTreeTemplate kDisciple = {
     "Disciple",
     kDiscipleNodes,
-    7,
+    6,
     0
 };
 
@@ -96,7 +96,7 @@ inline constexpr FlatBTNode kWorkerNodes[] = {
 inline constexpr BehaviorTreeTemplate kWorker = {
     "Worker",
     kWorkerNodes,
-    7,
+    6,
     0
 };
 

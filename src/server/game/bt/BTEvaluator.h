@@ -28,13 +28,15 @@ public:
             uint16_t cursor = nodeIdx;
             int safety = 0;
             while (cursor < tmpl.nodeCount && safety < 32) {
-                if (tmpl.nodes[cursor].type == 2) {
-                    behavior->changeActivity(static_cast<NPCActivity>(tmpl.nodes[cursor].actionId));
-                    bt->currentNode = tmpl.nodes[cursor].next;
+                const auto& cnode = tmpl.nodes[cursor];
+                if (cnode.type == 2) {
+                    if (cnode.next == cursor) break;
+                    behavior->changeActivity(static_cast<NPCActivity>(cnode.actionId));
+                    bt->currentNode = cnode.next;
                     return true;
                 }
                 safety++;
-                uint16_t next = tmpl.nodes[cursor].next;
+                uint16_t next = cnode.next;
                 if (next == cursor || next >= tmpl.nodeCount) break;
                 cursor = next;
             }
@@ -58,7 +60,7 @@ public:
                     uint16_t actId = node.actionId;
                     if (actId == 0 && bb->check(BlackboardCache::HasCommand)) {
                         auto* cmd = registry.getComponent<RoleCommandComponent>(id);
-                        if (cmd && cmd->isActive()) actId = static_cast<uint16_t>(cmd->commandType);
+                        if (cmd && cmd->hasActiveCommand()) actId = static_cast<uint16_t>(cmd->commandType);
                     }
                     if (actId != 0 && actId < 200) {
                         behavior->changeActivity(static_cast<NPCActivity>(actId));
@@ -74,9 +76,32 @@ public:
                     break;
                 }
                 case 4: {
-                    if (sp >= 15) break;
-                    stack[++sp] = node.fail;
-                    nodeIdx = node.next;
+                    uint16_t selectorFail = node.fail;
+                    uint16_t child = node.next;
+                    for (int attempt = 0; attempt < 16 && child < tmpl.nodeCount; attempt++) {
+                        const auto& childNode = tmpl.nodes[child];
+                        if (childNode.type != 1) break;
+                        bool cond = evaluateCondition(bb, registry, id, identity, 
+                            static_cast<uint8_t>(childNode.actionId), currentTime);
+                        if (cond) {
+                            if (childNode.next < tmpl.nodeCount && tmpl.nodes[childNode.next].type == 2) {
+                                const auto& actNode = tmpl.nodes[childNode.next];
+                                uint16_t actId = actNode.actionId;
+                                if (actId == 0 && bb->check(BlackboardCache::HasCommand)) {
+                                    auto* cmd = registry.getComponent<RoleCommandComponent>(id);
+                                    if (cmd && cmd->hasActiveCommand()) actId = static_cast<uint16_t>(cmd->commandType);
+                                }
+                                if (actId != 0 && actId < 200) {
+                                    behavior->changeActivity(static_cast<NPCActivity>(actId));
+                                }
+                                bt->currentNode = actNode.next;
+                                bb->markClean();
+                                return true;
+                            }
+                        }
+                        child = childNode.fail;
+                    }
+                    nodeIdx = selectorFail;
                     break;
                 }
                 default: return false;
@@ -122,14 +147,14 @@ private:
                 auto* personality = registry.getComponent<PersonalityComponent>(id);
                 bool hasSocial = rel && social && personality &&
                     social->wantsSocial() && personality->isSocial() &&
-                    rel->getRelationCount() > 0;
+                    rel->relationCount > 0;
                 if (hasSocial) bb->set(BlackboardCache::HasSocialTarget);
                 else bb->clear(BlackboardCache::HasSocialTarget);
                 return hasSocial;
             }
             case 4: {
                 auto* cmd = registry.getComponent<RoleCommandComponent>(id);
-                bool hasCmd = cmd && cmd->isActive() && !cmd->isExpired(currentTime);
+                bool hasCmd = cmd && cmd->hasActiveCommand() && !cmd->isExpired(currentTime);
                 if (hasCmd) bb->set(BlackboardCache::HasCommand);
                 else bb->clear(BlackboardCache::HasCommand);
                 return hasCmd;

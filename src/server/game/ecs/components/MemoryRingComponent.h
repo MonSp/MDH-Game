@@ -16,7 +16,7 @@ struct InteractionSlot {
 #pragma pack(push, 1)
 struct WitnessedSlot {
     uint64_t timestamp;
-    uint16_t eventIndex;
+    uint32_t slot;
     uint8_t  significance;
     uint8_t  _pad;
 };

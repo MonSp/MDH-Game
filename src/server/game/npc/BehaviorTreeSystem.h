@@ -45,8 +45,7 @@ public:
         }
 
         if (bt && bt->tmpl) {
-            BTEvaluator::evaluate(entityId, currentTime);
-            return;
+            if (BTEvaluator::evaluate(entityId, currentTime)) return;
         }
 
         auto* identity = registry.getComponent<IdentityComponent>(entityId);
@@ -59,7 +58,7 @@ public:
 
         if (evaluateSurvival(stats, behavior)) return;
         auto* cmdRespGet = registry.getComponent<CommandResponseComponent>(entityId);
-        if (evaluateCommand(cmd, cmdRespGet, behavior, personality, currentTime)) return;
+        if (evaluateCommand(entityId, cmd, cmdRespGet, behavior, personality, currentTime)) return;
         if (evaluateLLMPlan(llmPlan, behavior)) return;
         if (evaluateSocial(social, personality, behavior, rel, identity)) return;
         if (evaluateCultivation(cult, stats, behavior, personality, identity)) return;
@@ -205,6 +204,27 @@ private:
         }
     }
 
+    static float getRiskLevel(NPCActivity a) {
+        switch (a) {
+            case NPCActivity::Attack: case NPCActivity::Hunt:
+            case NPCActivity::Ambush: case NPCActivity::Assassinate:
+            case NPCActivity::Duel:
+                return 0.9f;
+            case NPCActivity::Scout: case NPCActivity::Explore:
+                return 0.5f;
+            case NPCActivity::Mine: case NPCActivity::Farm:
+            case NPCActivity::Fish: case NPCActivity::Lumber:
+            case NPCActivity::Gather: case NPCActivity::Craft:
+            case NPCActivity::Refine: case NPCActivity::Cook:
+            case NPCActivity::Construct: case NPCActivity::Repair:
+            case NPCActivity::Build: case NPCActivity::Sell:
+            case NPCActivity::Buy:
+                return 0.1f;
+            default:
+                return 0.3f;
+        }
+    }
+
     // ── Priority Layers ──────────────────────────────────────────
 
     bool evaluateSurvival(StatsComponent* stats, BehaviorComponent* behavior) {
@@ -219,7 +239,7 @@ private:
         return false;
     }
 
-    bool evaluateCommand(RoleCommandComponent* cmd, CommandResponseComponent* cmdResp,
+    bool evaluateCommand(ECS::EntityId entityId, RoleCommandComponent* cmd, CommandResponseComponent* cmdResp,
                          BehaviorComponent* behavior, PersonalityComponent* personality, uint64_t currentTime) {
         if (!cmd || !cmd->hasActiveCommand()) return false;
 
@@ -227,14 +247,29 @@ private:
         if (!slot) return false;
 
         if (cmdResp && !cmdResp->resolved) {
+            auto& reg = ECS::Registry::getInstance();
+            float relVal = 0.0f;
+            if (cmd && cmd->issuerId != 0) {
+                auto* issuerRel = reg.getComponent<RelationshipComponent>(cmd->issuerId);
+                if (issuerRel) {
+                    for (size_t s = 0; s < reg.entityIds_.size(); ++s) {
+                        if (reg.entityIds_[s] == entityId) {
+                            relVal = static_cast<float>(issuerRel->getAffinity(static_cast<uint32_t>(s)));
+                            break;
+                        }
+                    }
+                }
+            }
+            float risk = getRiskLevel(static_cast<NPCActivity>(cmd->commandType));
+
             cmdResp->evaluateResponse(
                 slot->status,
                 personality->loyalty,
                 personality->ambition,
                 personality->caution,
                 personality->greed,
-                0.0f,
-                0.0f
+                relVal,
+                risk
             );
         }
 
@@ -250,22 +285,26 @@ private:
             return true;
         }
 
+        if (behavior->currentActivity == NPCActivity::Patrol ||
+            behavior->currentActivity == NPCActivity::CoordinateSquad) {
+            if (behavior->activityProgress >= 1.0f) {
+                cmd->updateStatus(slot->commandId,
+                    cmdResp && cmdResp->overachieveMult > 1.0f
+                        ? CommandLifecycle::PartiallyCompleted
+                        : CommandLifecycle::Completed);
+                cmd->setFeedback(slot->status, currentTime);
+                behavior->changeActivity(NPCActivity::ReportTask);
+                return true;
+            }
+            return true;
+        }
+
         cmd->updateStatus(slot->commandId, CommandLifecycle::Executing);
 
         if (cmd->issuerTier <= 2) {
             behavior->changeActivity(NPCActivity::Patrol);
         } else {
             behavior->changeActivity(NPCActivity::Patrol);
-        }
-
-        if (behavior->activityProgress >= 1.0f) {
-            cmd->updateStatus(slot->commandId,
-                cmdResp && cmdResp->overachieveMult > 1.0f
-                    ? CommandLifecycle::PartiallyCompleted
-                    : CommandLifecycle::Completed);
-            cmd->setFeedback(slot->status, currentTime);
-            behavior->changeActivity(NPCActivity::ReportTask);
-            return true;
         }
 
         return true;
@@ -590,17 +629,60 @@ private:
     }
 
     void executeFamilyGathering(RoleCommandComponent* cmd, PositionComponent* pos, float dt) {
-        (void)cmd; (void)pos; (void)dt;
+        if (!pos) return;
+        float gatherX = 0.0f;
+        float gatherY = 0.0f;
+        float dx = gatherX - pos->x;
+        float dy = gatherY - pos->y;
+        if (fabs(dx) < 5.0f && fabs(dy) < 5.0f) return;
+        float speed = pos->speed * 0.3f * dt / 1000.0f;
+        float dist = sqrt(dx * dx + dy * dy);
+        if (dist > 0) {
+            pos->x += dx / dist * speed;
+            pos->y += dy / dist * speed;
+        }
     }
 
     void executeMentorTeach(ECS::EntityId selfId, RelationshipComponent* rel,
                             CultivationComponent* cult) {
-        (void)selfId; (void)rel; (void)cult;
+        (void)cult;
+        if (!rel) return;
+        auto& reg = ECS::Registry::getInstance();
+        uint32_t selfSlot = UINT32_MAX;
+        for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
+            if (reg.entityIds_[i] == selfId) { selfSlot = static_cast<uint32_t>(i); break; }
+        }
+        if (selfSlot == UINT32_MAX) return;
+        for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
+            if (!reg.activeSlots_[i] || i == selfSlot) continue;
+            auto* otherRel = reg.getComponent<RelationshipComponent>(reg.entityIds_[i]);
+            if (otherRel && otherRel->mentorSlot == selfSlot) {
+                auto* discipleCult = reg.getComponent<CultivationComponent>(reg.entityIds_[i]);
+                if (discipleCult) discipleCult->addProgress(0.5f * 0.016f);
+            }
+        }
+        auto* stats = reg.getComponent<StatsComponent>(selfId);
+        if (stats) stats->mp = std::max(0, stats->mp - 5);
     }
 
     void executeDiscipleAsk(ECS::EntityId selfId, RelationshipComponent* rel,
                             CultivationComponent* cult) {
-        (void)selfId; (void)rel; (void)cult;
+        if (!cult) return;
+        if (!rel || rel->mentorSlot == 0) {
+            cult->addProgress(1.0f * 0.016f);
+            return;
+        }
+        auto& reg = ECS::Registry::getInstance();
+        auto* selfStats = reg.getComponent<StatsComponent>(selfId);
+        if (rel->mentorSlot < reg.entityIds_.size()) {
+            auto* mentorStats = reg.getComponent<StatsComponent>(reg.entityIds_[rel->mentorSlot]);
+            if (mentorStats && selfStats && 
+                static_cast<uint8_t>(mentorStats->realm) >= static_cast<uint8_t>(selfStats->realm)) {
+                cult->addProgress(1.5f * 0.016f);
+                return;
+            }
+        }
+        cult->addProgress(1.0f * 0.016f);
     }
     void executeTrade(ResourcesComponent* resources, IdentityComponent* identity,
                       BehaviorComponent* behavior) {

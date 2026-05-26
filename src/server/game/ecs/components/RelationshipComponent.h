@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <algorithm>
 
+namespace ECS {
+class Registry;
+}
+
 struct RelationSlot {
     uint32_t targetSlot;
     int8_t affinity;
@@ -90,9 +94,7 @@ struct RelationshipComponent : public ECS::ComponentBase<RelationshipComponent> 
         return toSort;
     }
 
-    bool hasDisciples() const {
-        return false;
-    }
+    bool hasDisciples() const;
 
 private:
     int findSlot(uint32_t targetSlot) const {

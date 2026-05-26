@@ -277,3 +277,19 @@ private:
 };
 
 }
+
+inline bool RelationshipComponent::hasDisciples() const {
+    auto& reg = ECS::Registry::getInstance();
+    const auto& rels = reg.getArray_<RelationshipComponent>();
+    for (size_t i = 0; i < rels.size(); ++i) {
+        if (!reg.activeSlots_[i]) continue;
+        if (&rels[i] == this) {
+            for (size_t j = 0; j < rels.size(); ++j) {
+                if (!reg.activeSlots_[j] || j == i) continue;
+                if (rels[j].mentorSlot == static_cast<uint32_t>(i)) return true;
+            }
+            return false;
+        }
+    }
+    return false;
+}

@@ -85,6 +85,7 @@ public:
 
             registerCommandMeta(subCmdId, 0, npcSlot);
             del->addChildCommand(slot, subCmdId);
+            m_childToParent[subCmdId % 256] = {static_cast<uint32_t>(npcSlot), current->commandId};
         }
 
         cmd.updateStatus(current->commandId, CommandLifecycle::Delegated);
@@ -348,6 +349,9 @@ private:
         for (size_t i = 0; i < MAX_COMMAND_META; ++i) {
             m_commandMeta[i] = {0, 0, UINT32_MAX};
         }
+        for (size_t i = 0; i < 256; ++i) {
+            m_childToParent[i] = {UINT32_MAX, 0};
+        }
     }
 
     struct CommandMeta {
@@ -392,25 +396,20 @@ private:
 
     bool findDelegationParent(uint32_t childCommandId, uint32_t& outParentSlot,
                               uint32_t& outParentCommandId, DelegationSlot*& outSlot) {
-        auto& reg = ECS::Registry::getInstance();
-        for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
-            if (!reg.activeSlots_[i]) continue;
-            CommandDelegationComponent* del = getDelegationComp(static_cast<uint32_t>(i));
-            if (!del) continue;
-            for (uint8_t j = 0; j < del->slotCount; ++j) {
-                DelegationSlot* s = &del->slots[j];
-                for (uint8_t k = 0; k < s->childCount; ++k) {
-                    if (s->childCommandIds[k] == childCommandId) {
-                        outParentSlot = static_cast<uint32_t>(i);
-                        outParentCommandId = s->parentCommandId;
-                        outSlot = s;
-                        return true;
-                    }
-                }
-            }
+        const auto& mapping = m_childToParent[childCommandId % 256];
+        if (mapping.parentSlot == UINT32_MAX) {
+            outParentSlot = UINT32_MAX;
+            outParentCommandId = 0;
+            outSlot = nullptr;
+            return false;
         }
-        outParentSlot = UINT32_MAX;
-        outParentCommandId = 0;
+        outParentSlot = mapping.parentSlot;
+        outParentCommandId = mapping.parentCommandId;
+        CommandDelegationComponent* del = getDelegationComp(mapping.parentSlot);
+        if (del) {
+            outSlot = del->findSlot(mapping.parentCommandId);
+            return outSlot != nullptr;
+        }
         outSlot = nullptr;
         return false;
     }
@@ -502,4 +501,10 @@ private:
 
     bool m_emergencyFlag;
     char m_emergencyDesc[MAX_EMERGENCY_DESC];
+
+    struct ParentMapping {
+        uint32_t parentSlot;
+        uint32_t parentCommandId;
+    };
+    ParentMapping m_childToParent[256];
 };

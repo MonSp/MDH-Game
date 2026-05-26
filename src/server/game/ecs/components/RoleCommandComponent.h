@@ -47,12 +47,15 @@ struct RoleCommandComponent : public ECS::ComponentBase<RoleCommandComponent> {
     uint32_t squadId;
     uint8_t squadRole;
 
+    uint32_t commandType;
+
     RoleCommandComponent()
         : queueHead(0), queueCount(0)
         , parentCommandId(0), childCount(0)
         , issuerId(0), issuerTier(3)
         , feedbackTime(0), feedbackStatus(0), feedbackNoteLen(0)
         , squadId(0), squadRole(0)
+        , commandType(0)
     {
         for (size_t i = 0; i < MAX_QUEUE; ++i) {
             queue[i] = {0, 0, 0, 0};
@@ -120,6 +123,10 @@ struct RoleCommandComponent : public ECS::ComponentBase<RoleCommandComponent> {
 
     bool hasActiveCommand() const {
         return queueCount > 0;
+    }
+
+    bool isExpired(uint64_t) const {
+        return false;
     }
 
     void clearCommand() {

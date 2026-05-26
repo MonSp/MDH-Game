@@ -28,6 +28,8 @@ public/ecs_wasm.wasm
 
 public/atlas/*
 
+*.test
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
