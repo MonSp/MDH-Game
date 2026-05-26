@@ -40,7 +40,11 @@ enum class ActionType : uint8_t {
     HEALING = 24,
     DATING = 25,
     TEACHING = 26,
-    EXPLORING = 27
+    EXPLORING = 27,
+    COMMAND_DELEGATE = 28,
+    REPORT_STATUS = 29,
+    COORDINATE_SQUAD = 30,
+    RESIST_ORDER = 31
 };
 
 enum class PlanStatus : uint8_t {

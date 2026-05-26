@@ -15,9 +15,80 @@
 #include "../ecs/components/CultivationComponent.h"
 #include "../bt/BTEvaluator.h"
 #include "../ecs/Registry.h"
+#include "ExecuteDescriptor.h"
+#include "BehaviorTree_Survival.h"
+#include "BehaviorTree_Daily.h"
+#include "BehaviorTree_Cultivation.h"
+#include "BehaviorTree_Social.h"
+#include "BehaviorTree_Production.h"
+#include "BehaviorTree_Combat.h"
+#include "BehaviorTree_Exploration.h"
+#include "BehaviorTree_Command.h"
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
+
+static constexpr ExecuteDescriptor kExecuteTable[] = {
+    // Survival (3)
+    {NPCActivity::Flee,   "Flee",   ActivityCategory::Survival, REQ_POSITION|REQ_STATS, exec_flee},
+    {NPCActivity::Heal,   "Heal",   ActivityCategory::Survival, REQ_STATS,              exec_heal},
+    {NPCActivity::Defend, "Defend", ActivityCategory::Survival, REQ_STATS,              exec_defend},
+    // Daily (6)
+    {NPCActivity::Eat,         "Eat",         ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_eat},
+    {NPCActivity::Rest,        "Rest",        ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_rest},
+    {NPCActivity::Sleep,       "Sleep",       ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_sleep},
+    {NPCActivity::Walk,        "Walk",        ActivityCategory::Daily, REQ_POSITION,         exec_walk},
+    {NPCActivity::Chat,        "Chat",        ActivityCategory::Daily, REQ_SOCIAL,           exec_gossip},
+    {NPCActivity::AwaitOrders,"AwaitOrders",  ActivityCategory::Daily, REQ_STATS,            exec_awaitOrders},
+    // Cultivation (6)
+    {NPCActivity::Cultivate,    "Cultivate",    ActivityCategory::Cultivation, REQ_CULT,                              exec_cultivate},
+    {NPCActivity::Breakthrough, "Breakthrough", ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_breakthrough},
+    {NPCActivity::Tribulation,  "Tribulation",  ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_tribulation},
+    {NPCActivity::Meditate,     "Meditate",     ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_meditate},
+    {NPCActivity::Alchemy,      "Alchemy",      ActivityCategory::Cultivation, REQ_RESOURCES,                         exec_alchemy},
+    {NPCActivity::SeekFortune,  "SeekFortune",  ActivityCategory::Cultivation, REQ_POSITION,                          exec_seekFortune},
+    // Social (8)
+    {NPCActivity::VisitFriend,     "VisitFriend",    ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_visitFriend},
+    {NPCActivity::Date,            "Date",           ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_date},
+    {NPCActivity::FamilyGathering, "FamilyGathering",ActivityCategory::Social, REQ_POSITION,                  exec_familyGathering},
+    {NPCActivity::MentorTeach,     "MentorTeach",    ActivityCategory::Social, REQ_RELATIONSHIP,              exec_mentorTeach},
+    {NPCActivity::DiscipleAsk,     "DiscipleAsk",    ActivityCategory::Social, REQ_RELATIONSHIP|REQ_CULT,     exec_discipleAsk},
+    {NPCActivity::Trade,           "Trade",          ActivityCategory::Social, REQ_RESOURCES,                 exec_trade},
+    {NPCActivity::Gossip,          "Gossip",         ActivityCategory::Social, REQ_SOCIAL,                    exec_gossip},
+    {NPCActivity::ReportTask,      "ReportTask",     ActivityCategory::Social, REQ_POSITION,                  exec_reportTask},
+    // Production (13)
+    {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES,                exec_build},
+    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_mine},
+    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES,                exec_farm},
+    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES,                exec_fish},
+    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_lumber},
+    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES,                exec_gather},
+    {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES,                exec_craft},
+    {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES,                exec_refine},
+    {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES,                exec_cook},
+    {NPCActivity::Construct, "Construct",  ActivityCategory::Production, REQ_RESOURCES,                exec_construct},
+    {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES,                exec_repair},
+    {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES,                exec_sell},
+    {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES,                exec_buy},
+    // Combat (9)
+    {NPCActivity::Duel,           "Duel",           ActivityCategory::Combat, REQ_STATS,               exec_duel},
+    {NPCActivity::Hunt,           "Hunt",           ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_hunt},
+    {NPCActivity::Ambush,         "Ambush",         ActivityCategory::Combat, REQ_STATS,               exec_ambush},
+    {NPCActivity::Assassinate,    "Assassinate",    ActivityCategory::Combat, REQ_STATS,               exec_assassinate},
+    {NPCActivity::Attack,         "Attack",         ActivityCategory::Combat, REQ_POSITION|REQ_STATS,   exec_attack},
+    {NPCActivity::DefendPosition, "DefendPosition", ActivityCategory::Combat, REQ_STATS,               exec_defendPosition},
+    {NPCActivity::Patrol,         "Patrol",         ActivityCategory::Combat, REQ_POSITION,             exec_patrol},
+    {NPCActivity::Escort,         "Escort",         ActivityCategory::Combat, REQ_POSITION,             exec_escort},
+    {NPCActivity::Scout,          "Scout",          ActivityCategory::Combat, REQ_POSITION,             exec_scout},
+    // Exploration (3)
+    {NPCActivity::Explore,      "Explore",       ActivityCategory::Exploration, REQ_POSITION, exec_explore},
+    {NPCActivity::TreasureHunt, "TreasureHunt",  ActivityCategory::Exploration, REQ_POSITION, exec_treasureHunt},
+    {NPCActivity::MapExplore,   "MapExplore",    ActivityCategory::Exploration, REQ_POSITION, exec_mapExplore},
+    // Command (2)
+    {NPCActivity::RefuseCommand,   "RefuseCommand",    ActivityCategory::Command, REQ_POSITION, exec_refuseCommand},
+    {NPCActivity::CoordinateSquad, "CoordinateSquad",  ActivityCategory::Command, REQ_POSITION, exec_coordinateSquad},
+};
+static constexpr size_t kExecuteTableSize = sizeof(kExecuteTable) / sizeof(kExecuteTable[0]);
 
 class BehaviorTreeSystem {
 public:
@@ -66,74 +137,20 @@ public:
     }
 
     void execute(ECS::EntityId entityId, uint64_t currentTime, float deltaTime) {
-        auto& registry = ECS::Registry::getInstance();
-        auto* behavior = registry.getComponent<BehaviorComponent>(entityId);
-        auto* stats = registry.getComponent<StatsComponent>(entityId);
-        auto* position = registry.getComponent<PositionComponent>(entityId);
-        auto* resources = registry.getComponent<ResourcesComponent>(entityId);
-        auto* social = registry.getComponent<SocialComponent>(entityId);
-        auto* cult = registry.getComponent<CultivationComponent>(entityId);
-        auto* rel = registry.getComponent<RelationshipComponent>(entityId);
-        auto* cmd = registry.getComponent<RoleCommandComponent>(entityId);
-        auto* identity = registry.getComponent<IdentityComponent>(entityId);
-
-        if (!behavior || !stats) return;
+        auto* behavior = ECS::Registry::getInstance().getComponent<BehaviorComponent>(entityId);
+        if (!behavior) return;
         if (behavior->activityStep == 0) {
             behavior->activityStep = 1;
             behavior->activityStartTime = currentTime;
         }
 
-        switch (behavior->currentActivity) {
-            case NPCActivity::Flee:            executeFlee(position, stats, deltaTime); break;
-            case NPCActivity::Heal:            executeHeal(stats, deltaTime); break;
-            case NPCActivity::Defend:          executeDefend(stats, deltaTime); break;
-            case NPCActivity::Eat:             executeEat(social, stats, deltaTime); break;
-            case NPCActivity::Rest:            executeRest(social, stats, deltaTime); break;
-            case NPCActivity::Sleep:           executeSleep(social, stats, deltaTime); break;
-            case NPCActivity::Walk:            executeWalk(position, deltaTime); break;
-            case NPCActivity::Cultivate:       executeCultivate(cult, deltaTime); break;
-            case NPCActivity::Breakthrough:    executeBreakthrough(cult, stats, behavior); break;
-            case NPCActivity::Tribulation:     executeTribulation(cult, stats, behavior); break;
-            case NPCActivity::Meditate:        executeMeditate(cult, stats, deltaTime); break;
-            case NPCActivity::Alchemy:         executeAlchemy(resources, identity, behavior); break;
-            case NPCActivity::SeekFortune:     executeSeekFortune(position, deltaTime); break;
-            case NPCActivity::VisitFriend:     executeVisitFriend(entityId, rel, position, deltaTime); break;
-            case NPCActivity::Date:            executeDate(entityId, rel, position, deltaTime); break;
-            case NPCActivity::FamilyGathering: executeFamilyGathering(cmd, position, deltaTime); break;
-            case NPCActivity::MentorTeach:     executeMentorTeach(entityId, rel, cult); break;
-            case NPCActivity::DiscipleAsk:     executeDiscipleAsk(entityId, rel, cult); break;
-            case NPCActivity::Trade:           executeTrade(resources, identity, behavior); break;
-            case NPCActivity::Gossip:          executeGossip(entityId, rel, social); break;
-            case NPCActivity::Build:           executeBuild(resources, position, behavior); break;
-            case NPCActivity::Mine:            executeMine(resources, position, behavior, deltaTime); break;
-            case NPCActivity::Farm:            executeFarm(resources, position, behavior, deltaTime); break;
-            case NPCActivity::Fish:            executeFish(resources, position, behavior, deltaTime); break;
-            case NPCActivity::Lumber:          executeLumber(resources, position, behavior, deltaTime); break;
-            case NPCActivity::Gather:          executeGather(resources, deltaTime); break;
-            case NPCActivity::Attack:          executeAttack(position, stats, deltaTime); break;
-            case NPCActivity::DefendPosition:  executeDefendPosition(stats, deltaTime); break;
-            case NPCActivity::Patrol:          executePatrol(entityId, position, behavior, deltaTime); break;
-            case NPCActivity::Escort:          executeEscort(position, deltaTime); break;
-            case NPCActivity::Scout:           executeScout(position, deltaTime); break;
-            case NPCActivity::Craft:           executeCraft(resources, identity, behavior); break;
-            case NPCActivity::Refine:          executeRefine(resources, identity, behavior); break;
-            case NPCActivity::Cook:            executeCook(resources, identity, behavior); break;
-            case NPCActivity::Construct:       executeConstruct(resources, identity, behavior); break;
-            case NPCActivity::Repair:          executeRepair(resources, identity, behavior); break;
-            case NPCActivity::Sell:            executeSell(resources, identity, behavior); break;
-            case NPCActivity::Buy:             executeBuy(resources, identity, behavior); break;
-            case NPCActivity::Duel:            executeDuel(entityId, stats, deltaTime); break;
-            case NPCActivity::Hunt:            executeHunt(position, stats, deltaTime); break;
-            case NPCActivity::Ambush:          executeAmbush(stats, deltaTime); break;
-            case NPCActivity::Assassinate:     executeAssassinate(stats, deltaTime); break;
-            case NPCActivity::Explore:         executeExplore(position, deltaTime); break;
-            case NPCActivity::TreasureHunt:    executeTreasureHunt(position, deltaTime); break;
-            case NPCActivity::MapExplore:      executeMapExplore(position, deltaTime); break;
-            case NPCActivity::ReportTask:       executeReportTask(entityId, cmd, position, deltaTime); break;
-            case NPCActivity::RefuseCommand:    executeRefuseCommand(position, deltaTime); break;
-            case NPCActivity::CoordinateSquad:  executeCoordinateSquad(position, deltaTime); break;
-            case NPCActivity::AwaitOrders:      executeAwaitOrders(social, stats, deltaTime); break;
-            default: break;
+        ExecuteContext ctx(entityId, currentTime, deltaTime);
+
+        for (size_t i = 0; i < kExecuteTableSize; ++i) {
+            if (kExecuteTable[i].activity == behavior->currentActivity) {
+                kExecuteTable[i].execute(ctx);
+                return;
+            }
         }
     }
 
@@ -146,62 +163,6 @@ private:
 
     static int randRange(int min, int max) {
         return min + rand() % (max - min + 1);
-    }
-
-    static const char* activityName(NPCActivity a) {
-        switch (a) {
-            case NPCActivity::Flee: return "Flee";
-            case NPCActivity::Heal: return "Heal";
-            case NPCActivity::Defend: return "Defend";
-            case NPCActivity::Eat: return "Eat";
-            case NPCActivity::Rest: return "Rest";
-            case NPCActivity::Sleep: return "Sleep";
-            case NPCActivity::Walk: return "Walk";
-            case NPCActivity::Chat: return "Chat";
-            case NPCActivity::Cultivate: return "Cultivate";
-            case NPCActivity::Breakthrough: return "Breakthrough";
-            case NPCActivity::Tribulation: return "Tribulation";
-            case NPCActivity::Meditate: return "Meditate";
-            case NPCActivity::Alchemy: return "Alchemy";
-            case NPCActivity::SeekFortune: return "SeekFortune";
-            case NPCActivity::VisitFriend: return "VisitFriend";
-            case NPCActivity::Date: return "Date";
-            case NPCActivity::FamilyGathering: return "FamilyGathering";
-            case NPCActivity::MentorTeach: return "MentorTeach";
-            case NPCActivity::DiscipleAsk: return "DiscipleAsk";
-            case NPCActivity::Trade: return "Trade";
-            case NPCActivity::Gossip: return "Gossip";
-            case NPCActivity::Build: return "Build";
-            case NPCActivity::Mine: return "Mine";
-            case NPCActivity::Farm: return "Farm";
-            case NPCActivity::Fish: return "Fish";
-            case NPCActivity::Lumber: return "Lumber";
-            case NPCActivity::Gather: return "Gather";
-            case NPCActivity::Attack: return "Attack";
-            case NPCActivity::DefendPosition: return "DefendPosition";
-            case NPCActivity::Patrol: return "Patrol";
-            case NPCActivity::Escort: return "Escort";
-            case NPCActivity::Scout: return "Scout";
-            case NPCActivity::Craft: return "Craft";
-            case NPCActivity::Refine: return "Refine";
-            case NPCActivity::Cook: return "Cook";
-            case NPCActivity::Construct: return "Construct";
-            case NPCActivity::Repair: return "Repair";
-            case NPCActivity::Buy: return "Buy";
-            case NPCActivity::Sell: return "Sell";
-            case NPCActivity::Duel: return "Duel";
-            case NPCActivity::Hunt: return "Hunt";
-            case NPCActivity::Ambush: return "Ambush";
-            case NPCActivity::Assassinate: return "Assassinate";
-            case NPCActivity::Explore: return "Explore";
-            case NPCActivity::TreasureHunt: return "TreasureHunt";
-            case NPCActivity::MapExplore: return "MapExplore";
-            case NPCActivity::ReportTask: return "ReportTask";
-            case NPCActivity::RefuseCommand: return "RefuseCommand";
-            case NPCActivity::CoordinateSquad: return "CoordinateSquad";
-            case NPCActivity::AwaitOrders: return "AwaitOrders";
-            default: return "Rest";
-        }
     }
 
     static float getRiskLevel(NPCActivity a) {
@@ -224,8 +185,6 @@ private:
                 return 0.3f;
         }
     }
-
-    // ── Priority Layers ──────────────────────────────────────────
 
     bool evaluateSurvival(StatsComponent* stats, BehaviorComponent* behavior) {
         if (stats->hpPercent() < 0.3f) {
@@ -447,490 +406,6 @@ private:
                 if (random01() < 0.15f) return NPCActivity::Fish;
                 if (random01() < 0.1f)  return NPCActivity::Lumber;
                 return NPCActivity::Walk;
-        }
-    }
-
-    // ── Execute: Survival ────────────────────────────────────────
-
-    void executeFlee(PositionComponent* pos, StatsComponent* stats, float dt) {
-        if (pos) {
-            pos->x -= pos->speed * 1.5f * dt / 1000.0f;
-        }
-        if (stats) {
-            stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 20);
-        }
-    }
-
-    void executeHeal(StatsComponent* stats, float dt) {
-        if (!stats) return;
-        int32_t hpRecovery = stats->maxHp / 40;
-        int32_t mpRecovery = stats->maxMp / 20;
-        stats->hp = std::min(stats->maxHp, stats->hp + hpRecovery);
-        stats->mp = std::min(stats->maxMp, stats->mp + mpRecovery);
-    }
-
-    void executeDefend(StatsComponent* stats, float dt) {
-        if (!stats) return;
-        int32_t regen = static_cast<int32_t>(stats->maxHp * 0.01f);
-        stats->hp = std::min(stats->maxHp, stats->hp + regen);
-    }
-
-    // ── Execute: Daily ───────────────────────────────────────────
-
-    void executeEat(SocialComponent* social, StatsComponent* stats, float dt) {
-        if (social) social->onEat();
-        if (stats) stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 50);
-    }
-
-    void executeRest(SocialComponent* social, StatsComponent* stats, float dt) {
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        if (social) social->onRest(hours);
-        if (stats) {
-            int32_t hr = static_cast<int32_t>(stats->maxHp * hours * 0.05f);
-            int32_t mr = static_cast<int32_t>(stats->maxMp * hours * 0.05f);
-            stats->hp = std::min(stats->maxHp, stats->hp + hr);
-            stats->mp = std::min(stats->maxMp, stats->mp + mr);
-        }
-    }
-
-    void executeSleep(SocialComponent* social, StatsComponent* stats, float dt) {
-        if (social) social->onSleep();
-        if (stats) {
-            stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 10);
-            stats->mp = std::min(stats->maxMp, stats->mp + stats->maxMp / 5);
-        }
-    }
-
-    void executeWalk(PositionComponent* pos, float dt) {
-        if (!pos || pos->hasReachedTarget(10.0f)) {
-            if (pos) pos->moveTo(pos->x + randRange(-100, 100), pos->y + randRange(-100, 100));
-        }
-    }
-
-    // ── Execute: Cultivation ─────────────────────────────────────
-
-    void executeCultivate(CultivationComponent* cult, float dt) {
-        if (!cult) return;
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        cult->addProgress(2.0f * hours);
-        cult->bottleneckTimer += static_cast<uint32_t>(hours * 60.0f);
-    }
-
-    void executeBreakthrough(CultivationComponent* cult, StatsComponent* stats,
-                             BehaviorComponent* behavior) {
-        if (!cult || !stats) return;
-        float chance = cult->getBreakthroughChance(stats->realm);
-        if (random01() < chance) {
-            uint8_t current = static_cast<uint8_t>(stats->realm);
-            if (current < static_cast<uint8_t>(RealmLevel::Transcension)) {
-                stats->realm = static_cast<RealmLevel>(current + 1);
-                stats->power = static_cast<int32_t>(stats->power * 1.5f);
-                stats->maxHp = static_cast<int32_t>(stats->maxHp * 1.3f);
-                stats->maxMp = static_cast<int32_t>(stats->maxMp * 1.4f);
-                stats->hp = stats->maxHp;
-                stats->mp = stats->maxMp;
-            }
-            cult->resetProgress();
-            cult->isBreakingThrough = false;
-            behavior->changeActivity(NPCActivity::Rest);
-        } else {
-            stats->hp = static_cast<int32_t>(stats->hp * 0.4f);
-            cult->isBreakingThrough = false;
-            behavior->changeActivity(NPCActivity::Heal);
-        }
-    }
-
-    void executeTribulation(CultivationComponent* cult, StatsComponent* stats,
-                            BehaviorComponent* behavior) {
-        if (!cult || !stats) return;
-        cult->tribulationDamage += randRange(10, 50);
-        stats->takeDamage(cult->tribulationDamage);
-        if (stats->isDead()) {
-            behavior->changeActivity(NPCActivity::Dead);
-            return;
-        }
-        cult->tribulationTimer--;
-        if (cult->tribulationTimer == 0) {
-            uint8_t current = static_cast<uint8_t>(stats->realm);
-            if (current < static_cast<uint8_t>(RealmLevel::Transcension)) {
-                stats->realm = static_cast<RealmLevel>(current + 1);
-                stats->power = static_cast<int32_t>(stats->power * 2.0f);
-                stats->hp = stats->maxHp;
-                stats->mp = stats->maxMp;
-            }
-            behavior->changeActivity(NPCActivity::Rest);
-        }
-    }
-
-    void executeMeditate(CultivationComponent* cult, StatsComponent* stats, float dt) {
-        if (!cult || !stats) return;
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        cult->addProgress(1.0f * hours);
-        int32_t mr = static_cast<int32_t>(stats->maxMp * hours * 0.1f);
-        stats->mp = std::min(stats->maxMp, stats->mp + mr);
-    }
-
-    void executeAlchemy(ResourcesComponent* resources, IdentityComponent* identity,
-                        BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        bool success = random01() < 0.6f;
-        if (success) {
-            resources->spiritStones += randRange(50, 200);
-        }
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeSeekFortune(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        if (pos->hasReachedTarget(5.0f)) {
-            pos->moveTo(pos->x + randRange(-500, 500), pos->y + randRange(-500, 500));
-        }
-    }
-
-    // ── Execute: Social ──────────────────────────────────────────
-
-    void executeVisitFriend(ECS::EntityId selfId, RelationshipComponent* rel,
-                            PositionComponent* pos, float dt) {
-        if (!rel || rel->relationCount == 0 || !pos) return;
-        uint32_t targetSlot = 0;
-        int8_t bestAffinity = -128;
-        for (uint8_t i = 0; i < rel->relationCount; ++i) {
-            int8_t a = rel->relations[i].affinity;
-            if (a > bestAffinity) {
-                bestAffinity = a;
-                targetSlot = rel->relations[i].targetSlot;
-            }
-        }
-        if (targetSlot == 0) return;
-        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(
-            ECS::Registry::getInstance().entityIds_[targetSlot]);
-        if (targetPos) {
-            pos->moveTo(targetPos->x, targetPos->y);
-            if (pos->distanceTo(*targetPos) < 5.0f) {
-                rel->modifyAffinity(targetSlot, 2);
-            }
-        }
-    }
-
-    void executeDate(ECS::EntityId selfId, RelationshipComponent* rel,
-                     PositionComponent* pos, float dt) {
-        if (!rel || rel->spouseSlot == 0 || !pos) return;
-        auto* targetPos = ECS::Registry::getInstance().getComponent<PositionComponent>(
-            ECS::Registry::getInstance().entityIds_[rel->spouseSlot]);
-        if (targetPos) {
-            pos->moveTo(targetPos->x, targetPos->y);
-            if (pos->distanceTo(*targetPos) < 3.0f) {
-                rel->modifyAffinity(rel->spouseSlot, 3);
-                if (random01() < 0.02f && rel->getAffinity(rel->spouseSlot) > 70) {
-                    // potential offspring
-                }
-            }
-        }
-    }
-
-    void executeFamilyGathering(RoleCommandComponent* cmd, PositionComponent* pos, float dt) {
-        if (!pos) return;
-        float gatherX = 0.0f;
-        float gatherY = 0.0f;
-        float dx = gatherX - pos->x;
-        float dy = gatherY - pos->y;
-        if (fabs(dx) < 5.0f && fabs(dy) < 5.0f) return;
-        float speed = pos->speed * 0.3f * dt / 1000.0f;
-        float dist = sqrt(dx * dx + dy * dy);
-        if (dist > 0) {
-            pos->x += dx / dist * speed;
-            pos->y += dy / dist * speed;
-        }
-    }
-
-    void executeMentorTeach(ECS::EntityId selfId, RelationshipComponent* rel,
-                            CultivationComponent* cult) {
-        (void)cult;
-        if (!rel) return;
-        auto& reg = ECS::Registry::getInstance();
-        uint32_t selfSlot = UINT32_MAX;
-        for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
-            if (reg.entityIds_[i] == selfId) { selfSlot = static_cast<uint32_t>(i); break; }
-        }
-        if (selfSlot == UINT32_MAX) return;
-        for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
-            if (!reg.activeSlots_[i] || i == selfSlot) continue;
-            auto* otherRel = reg.getComponent<RelationshipComponent>(reg.entityIds_[i]);
-            if (otherRel && otherRel->mentorSlot == selfSlot) {
-                auto* discipleCult = reg.getComponent<CultivationComponent>(reg.entityIds_[i]);
-                if (discipleCult) discipleCult->addProgress(0.5f * 0.016f);
-            }
-        }
-        auto* stats = reg.getComponent<StatsComponent>(selfId);
-        if (stats) stats->mp = std::max(0, stats->mp - 5);
-    }
-
-    void executeDiscipleAsk(ECS::EntityId selfId, RelationshipComponent* rel,
-                            CultivationComponent* cult) {
-        if (!cult) return;
-        if (!rel || rel->mentorSlot == 0) {
-            cult->addProgress(1.0f * 0.016f);
-            return;
-        }
-        auto& reg = ECS::Registry::getInstance();
-        auto* selfStats = reg.getComponent<StatsComponent>(selfId);
-        if (rel->mentorSlot < reg.entityIds_.size()) {
-            auto* mentorStats = reg.getComponent<StatsComponent>(reg.entityIds_[rel->mentorSlot]);
-            if (mentorStats && selfStats && 
-                static_cast<uint8_t>(mentorStats->realm) >= static_cast<uint8_t>(selfStats->realm)) {
-                cult->addProgress(1.5f * 0.016f);
-                return;
-            }
-        }
-        cult->addProgress(1.0f * 0.016f);
-    }
-    void executeTrade(ResourcesComponent* resources, IdentityComponent* identity,
-                      BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        int64_t profit = randRange(-20, 50);
-        resources->addSpiritStones(profit);
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeGossip(ECS::EntityId selfId, RelationshipComponent* rel, SocialComponent* social) {
-        if (!social) return;
-        social->onSocialize();
-    }
-
-    // ── Execute: Production / Command ────────────────────────────
-
-    void executeBuild(ResourcesComponent* resources, PositionComponent* pos,
-                      BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        behavior->activityProgress += 0.05f;
-        resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 5);
-        if (behavior->activityProgress >= 1.0f) {
-            behavior->changeActivity(NPCActivity::Rest);
-        }
-    }
-
-    void executeMine(ResourcesComponent* resources, PositionComponent* pos,
-                     BehaviorComponent* behavior, float dt) {
-        if (!resources || !behavior) return;
-        if (pos) pos->moveTo(pos->x + randRange(-10, 10), pos->y + randRange(-10, 10));
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        resources->addSpiritStones(static_cast<int64_t>(15.0f * hours));
-        behavior->activityProgress += hours * 0.02f;
-        if (behavior->activityProgress >= 1.0f) {
-            behavior->changeActivity(NPCActivity::Rest);
-        }
-    }
-
-    void executeFarm(ResourcesComponent* resources, PositionComponent* pos,
-                     BehaviorComponent* behavior, float dt) {
-        if (!resources || !behavior) return;
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        behavior->activityProgress += hours * 0.1f;
-        if (behavior->activityProgress >= 1.0f) {
-            resources->addSpiritStones(randRange(20, 60));
-            behavior->changeActivity(NPCActivity::Rest);
-        }
-    }
-
-    void executeFish(ResourcesComponent* resources, PositionComponent* pos,
-                     BehaviorComponent* behavior, float dt) {
-        if (!resources || !behavior) return;
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        resources->addSpiritStones(static_cast<int64_t>(10.0f * hours));
-        behavior->activityProgress += hours * 0.03f;
-        if (behavior->activityProgress >= 1.0f) {
-            behavior->changeActivity(NPCActivity::Rest);
-        }
-    }
-
-    void executeLumber(ResourcesComponent* resources, PositionComponent* pos,
-                       BehaviorComponent* behavior, float dt) {
-        if (!resources || !behavior) return;
-        if (pos) pos->moveTo(pos->x + randRange(-10, 10), pos->y + randRange(-10, 10));
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        resources->addSpiritStones(static_cast<int64_t>(8.0f * hours));
-    }
-
-    void executeGather(ResourcesComponent* resources, float dt) {
-        if (!resources) return;
-        float hours = dt / (1000.0f * 60.0f * 60.0f);
-        resources->addSpiritStones(static_cast<int64_t>(5.0f * hours));
-    }
-
-    void executeAttack(PositionComponent* pos, StatsComponent* stats, float dt) {
-        if (pos) pos->x += pos->speed * 0.5f * dt / 1000.0f;
-        if (stats) stats->mp = std::max(0, stats->mp - 1);
-    }
-
-    void executeDefendPosition(StatsComponent* stats, float dt) {
-        if (!stats) return;
-        int32_t regen = static_cast<int32_t>(stats->maxHp * 0.005f);
-        stats->hp = std::min(stats->maxHp, stats->hp + regen);
-    }
-
-    void executePatrol(ECS::EntityId entityId, PositionComponent* pos,
-                       BehaviorComponent* behavior, float dt) {
-        if (!pos || !behavior) return;
-        float patrolPoints[4][2] = {{-50, -50}, {50, -50}, {50, 50}, {-50, 50}};
-        uint32_t idx = behavior->activityStep % 4;
-        float tx = patrolPoints[idx][0] + randRange(-20, 20);
-        float ty = patrolPoints[idx][1] + randRange(-20, 20);
-        pos->moveTo(tx, ty);
-        if (pos->hasReachedTarget(10.0f)) {
-            behavior->activityStep++;
-        }
-    }
-
-    void executeEscort(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        pos->x += pos->speed * 0.3f * dt / 1000.0f;
-    }
-
-    void executeScout(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        if (pos->hasReachedTarget(5.0f)) {
-            pos->moveTo(pos->x + randRange(-300, 300), pos->y + randRange(-300, 300));
-        }
-    }
-
-    // ── Execute: Crafting ────────────────────────────────────────
-
-    void executeCraft(ResourcesComponent* resources, IdentityComponent* identity,
-                      BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 8);
-        if (random01() < 0.7f) resources->addSpiritStones(randRange(30, 80));
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeRefine(ResourcesComponent* resources, IdentityComponent* identity,
-                       BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 10);
-        if (random01() < 0.5f) resources->addSpiritStones(randRange(50, 120));
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeCook(ResourcesComponent* resources, IdentityComponent* identity,
-                     BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 3);
-        resources->addSpiritStones(randRange(8, 25));
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeConstruct(ResourcesComponent* resources, IdentityComponent* identity,
-                          BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        behavior->activityProgress += 0.05f;
-        resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 12);
-        if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeRepair(ResourcesComponent* resources, IdentityComponent* identity,
-                       BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 2);
-        behavior->activityProgress += 0.1f;
-        if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    // ── Execute: Economy ─────────────────────────────────────────
-
-    void executeSell(ResourcesComponent* resources, IdentityComponent* identity,
-                     BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        resources->addSpiritStones(randRange(10, 50));
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    void executeBuy(ResourcesComponent* resources, IdentityComponent* identity,
-                    BehaviorComponent* behavior) {
-        if (!resources || !behavior) return;
-        int64_t cost = randRange(10, 100);
-        if (resources->removeSpiritStones(cost)) {
-            resources->addSpiritStones(randRange(0, 20));
-        }
-        behavior->changeActivity(NPCActivity::Rest);
-    }
-
-    // ── Execute: Combat ──────────────────────────────────────────
-
-    void executeDuel(ECS::EntityId selfId, StatsComponent* stats, float dt) {
-        if (!stats) return;
-        stats->mp = std::max(0, stats->mp - 2);
-        if (random01() < 0.3f) stats->takeDamage(stats->power / 10);
-    }
-
-    void executeHunt(PositionComponent* pos, StatsComponent* stats, float dt) {
-        if (!pos || !stats) return;
-        pos->moveTo(pos->x + stats->power / 10, pos->y + stats->power / 10);
-        if (random01() < 0.1f) stats->takeDamage(stats->power / 20);
-        if (random01() < 0.05f) stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 30);
-    }
-
-    void executeAmbush(StatsComponent* stats, float dt) {
-        if (!stats) return;
-        if (random01() < 0.4f) {
-            stats->hp = std::max(1, stats->hp / 2);
-        }
-    }
-
-    void executeAssassinate(StatsComponent* stats, float dt) {
-        if (!stats) return;
-        stats->mp = std::max(0, stats->mp - 5);
-        if (random01() < 0.15f) {
-            stats->hp = std::max(1, stats->hp / 3);
-        }
-    }
-
-    // ── Execute: Exploration ─────────────────────────────────────
-
-    void executeExplore(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        if (pos->hasReachedTarget(5.0f)) {
-            pos->moveTo(pos->x + randRange(-500, 500), pos->y + randRange(-500, 500));
-        }
-    }
-
-    void executeTreasureHunt(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        if (pos->hasReachedTarget(3.0f)) {
-            pos->moveTo(pos->x + randRange(-200, 200), pos->y + randRange(-200, 200));
-        }
-    }
-
-    void executeMapExplore(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        if (pos->hasReachedTarget(2.0f)) {
-            pos->moveTo(pos->x + randRange(-1000, 1000), pos->y + randRange(-1000, 1000));
-        }
-    }
-
-    void executeReportTask(ECS::EntityId entityId, RoleCommandComponent* cmd,
-                           PositionComponent* pos, float dt) {
-        if (!pos) return;
-        if (pos->x > 0) pos->x -= pos->speed * dt / 1000.0f;
-        else pos->x += pos->speed * dt / 1000.0f;
-        if (pos->y > 0) pos->y -= pos->speed * dt / 1000.0f;
-        else pos->y += pos->speed * dt / 1000.0f;
-    }
-
-    void executeRefuseCommand(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        pos->x += (random01() * 2.0f - 1.0f) * pos->speed * 0.3f * dt / 1000.0f;
-        pos->y += (random01() * 2.0f - 1.0f) * pos->speed * 0.3f * dt / 1000.0f;
-    }
-
-    void executeCoordinateSquad(PositionComponent* pos, float dt) {
-        if (!pos) return;
-        pos->x += (random01() * 2.0f - 1.0f) * pos->speed * 0.1f * dt / 1000.0f;
-        pos->y += (random01() * 2.0f - 1.0f) * pos->speed * 0.1f * dt / 1000.0f;
-    }
-
-    void executeAwaitOrders(SocialComponent* social, StatsComponent* stats, float dt) {
-        if (stats) {
-            stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 60);
         }
     }
 };
