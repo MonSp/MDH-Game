@@ -11,6 +11,7 @@
 #include "../ecs/components/SocialComponent.h"
 #include "../ecs/components/RelationshipComponent.h"
 #include "../ecs/components/RoleCommandComponent.h"
+#include "../ecs/components/CommandResponseComponent.h"
 #include "../ecs/components/CultivationComponent.h"
 #include "../bt/BTEvaluator.h"
 #include "../ecs/Registry.h"
@@ -57,7 +58,8 @@ public:
         if (!identity || !personality) return;
 
         if (evaluateSurvival(stats, behavior)) return;
-        if (evaluateCommand(cmd, behavior, personality, currentTime)) return;
+        auto* cmdRespGet = registry.getComponent<CommandResponseComponent>(entityId);
+        if (evaluateCommand(cmd, cmdRespGet, behavior, personality, currentTime)) return;
         if (evaluateLLMPlan(llmPlan, behavior)) return;
         if (evaluateSocial(social, personality, behavior, rel, identity)) return;
         if (evaluateCultivation(cult, stats, behavior, personality, identity)) return;
@@ -128,6 +130,10 @@ public:
             case NPCActivity::Explore:         executeExplore(position, deltaTime); break;
             case NPCActivity::TreasureHunt:    executeTreasureHunt(position, deltaTime); break;
             case NPCActivity::MapExplore:      executeMapExplore(position, deltaTime); break;
+            case NPCActivity::ReportTask:       executeReportTask(entityId, cmd, position, deltaTime); break;
+            case NPCActivity::RefuseCommand:    executeRefuseCommand(position, deltaTime); break;
+            case NPCActivity::CoordinateSquad:  executeCoordinateSquad(position, deltaTime); break;
+            case NPCActivity::AwaitOrders:      executeAwaitOrders(social, stats, deltaTime); break;
             default: break;
         }
     }
@@ -191,6 +197,10 @@ private:
             case NPCActivity::Explore: return "Explore";
             case NPCActivity::TreasureHunt: return "TreasureHunt";
             case NPCActivity::MapExplore: return "MapExplore";
+            case NPCActivity::ReportTask: return "ReportTask";
+            case NPCActivity::RefuseCommand: return "RefuseCommand";
+            case NPCActivity::CoordinateSquad: return "CoordinateSquad";
+            case NPCActivity::AwaitOrders: return "AwaitOrders";
             default: return "Rest";
         }
     }
@@ -209,30 +219,56 @@ private:
         return false;
     }
 
-    bool evaluateCommand(RoleCommandComponent* cmd, BehaviorComponent* behavior,
-                         PersonalityComponent* personality, uint64_t currentTime) {
-        if (!cmd || !cmd->isActive()) return false;
-        if (cmd->isExpired(currentTime)) {
-            cmd->fail();
-            return false;
+    bool evaluateCommand(RoleCommandComponent* cmd, CommandResponseComponent* cmdResp,
+                         BehaviorComponent* behavior, PersonalityComponent* personality, uint64_t currentTime) {
+        if (!cmd || !cmd->hasActiveCommand()) return false;
+
+        CommandSlot* slot = cmd->peekCommandMut();
+        if (!slot) return false;
+
+        if (cmdResp && !cmdResp->resolved) {
+            cmdResp->evaluateResponse(
+                slot->status,
+                personality->loyalty,
+                personality->ambition,
+                personality->caution,
+                personality->greed,
+                0.0f,
+                0.0f
+            );
         }
-        if (cmd->isPending()) {
-            if (personality->loyalty < 30.0f && random01() < 0.15f) {
-                cmd->reject();
-                return false;
-            }
-            cmd->execute();
-            behavior->changeActivity(cmd->commandType);
+
+        if (cmdResp && cmdResp->isRefusing()) {
+            cmd->updateStatus(slot->commandId, CommandLifecycle::Refused);
+            behavior->changeActivity(NPCActivity::RefuseCommand);
+            cmd->setFeedback(static_cast<uint8_t>(CommandLifecycle::Refused), currentTime);
             return true;
         }
-        if (cmd->status == CommandStatus::Executing) {
-            behavior->changeActivity(cmd->commandType);
-            if (behavior->activityProgress >= 1.0f) {
-                cmd->complete();
-            }
+
+        if (cmd->squadId != 0) {
+            behavior->changeActivity(NPCActivity::CoordinateSquad);
             return true;
         }
-        return false;
+
+        cmd->updateStatus(slot->commandId, CommandLifecycle::Executing);
+
+        if (cmd->issuerTier <= 2) {
+            behavior->changeActivity(NPCActivity::Patrol);
+        } else {
+            behavior->changeActivity(NPCActivity::Patrol);
+        }
+
+        if (behavior->activityProgress >= 1.0f) {
+            cmd->updateStatus(slot->commandId,
+                cmdResp && cmdResp->overachieveMult > 1.0f
+                    ? CommandLifecycle::PartiallyCompleted
+                    : CommandLifecycle::Completed);
+            cmd->setFeedback(slot->status, currentTime);
+            behavior->changeActivity(NPCActivity::ReportTask);
+            return true;
+        }
+
+        return true;
     }
 
     bool evaluateLLMPlan(LLMPlanComponent* llmPlan, BehaviorComponent* behavior) {
@@ -340,6 +376,10 @@ private:
             case ActionType::DOMAIN_WAR:        return NPCActivity::Attack;
             case ActionType::ALLIANCE_FORMATION: return NPCActivity::Trade;
             case ActionType::CULTIVATE_BREAKTHROUGH: return NPCActivity::Breakthrough;
+            case ActionType::COMMAND_DELEGATE:   return NPCActivity::Rest;
+            case ActionType::REPORT_STATUS:      return NPCActivity::ReportTask;
+            case ActionType::COORDINATE_SQUAD:   return NPCActivity::CoordinateSquad;
+            case ActionType::RESIST_ORDER:       return NPCActivity::RefuseCommand;
             default: return NPCActivity::Rest;
         }
     }
@@ -790,6 +830,33 @@ private:
         if (!pos) return;
         if (pos->hasReachedTarget(2.0f)) {
             pos->moveTo(pos->x + randRange(-1000, 1000), pos->y + randRange(-1000, 1000));
+        }
+    }
+
+    void executeReportTask(ECS::EntityId entityId, RoleCommandComponent* cmd,
+                           PositionComponent* pos, float dt) {
+        if (!pos) return;
+        if (pos->x > 0) pos->x -= pos->speed * dt / 1000.0f;
+        else pos->x += pos->speed * dt / 1000.0f;
+        if (pos->y > 0) pos->y -= pos->speed * dt / 1000.0f;
+        else pos->y += pos->speed * dt / 1000.0f;
+    }
+
+    void executeRefuseCommand(PositionComponent* pos, float dt) {
+        if (!pos) return;
+        pos->x += (random01() * 2.0f - 1.0f) * pos->speed * 0.3f * dt / 1000.0f;
+        pos->y += (random01() * 2.0f - 1.0f) * pos->speed * 0.3f * dt / 1000.0f;
+    }
+
+    void executeCoordinateSquad(PositionComponent* pos, float dt) {
+        if (!pos) return;
+        pos->x += (random01() * 2.0f - 1.0f) * pos->speed * 0.1f * dt / 1000.0f;
+        pos->y += (random01() * 2.0f - 1.0f) * pos->speed * 0.1f * dt / 1000.0f;
+    }
+
+    void executeAwaitOrders(SocialComponent* social, StatsComponent* stats, float dt) {
+        if (stats) {
+            stats->hp = std::min(stats->maxHp, stats->hp + stats->maxHp / 60);
         }
     }
 };

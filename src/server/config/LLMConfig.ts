@@ -8,7 +8,8 @@ import {
   LLMEligibility,
   TierConfig,
   LLMServiceConfig,
-  PlanStatus
+  PlanStatus,
+  CommandScope
 } from '../../shared/types/LLMPlanning';
 
 export const LLM_SERVICE_CONFIG: LLMServiceConfig = {
@@ -95,10 +96,52 @@ export function getFallbackBehavior(tier: LLMTier): ActionType[] {
     case LLMTier.T0:
       return [ActionType.DOMAIN_WAR, ActionType.ALLIANCE_FORMATION];
     case LLMTier.T1:
-      return [ActionType.MILITARY_ORDER, ActionType.DIPLOMACY];
+      return [ActionType.MILITARY_ORDER, ActionType.DIPLOMACY, ActionType.COMMAND_DELEGATE];
     case LLMTier.T2:
-      return [ActionType.CULTIVATE, ActionType.RESOURCE_ALLOCATION];
+      return [ActionType.CULTIVATE, ActionType.RESOURCE_ALLOCATION, ActionType.COMMAND_DELEGATE, ActionType.REPORT_STATUS];
     default:
-      return [ActionType.REST, ActionType.PATROL];
+      return [ActionType.REST, ActionType.PATROL, ActionType.REPORT_STATUS, ActionType.COORDINATE_SQUAD];
+  }
+}
+
+export function resolveCommandScope(issuerTier: LLMTier): CommandScope {
+  switch (issuerTier) {
+    case LLMTier.T0:
+      return CommandScope.STRATEGIC;
+    case LLMTier.T1:
+      return CommandScope.TACTICAL;
+    case LLMTier.T2:
+      return CommandScope.OPERATIONAL;
+    default:
+      return CommandScope.OPERATIONAL;
+  }
+}
+
+export function getTargetRoleForTier(issuerTier: LLMTier): string[] {
+  switch (issuerTier) {
+    case LLMTier.T0:
+      return ['family_head', 'general'];
+    case LLMTier.T1:
+      return ['elder', 'core_disciple'];
+    case LLMTier.T2:
+      return ['core_disciple', 'inner_disciple', 'branch_disciple'];
+    default:
+      return [];
+  }
+}
+
+export function determineCommandRisk(actionType: ActionType, params: Record<string, any>): 'LOW' | 'MEDIUM' | 'HIGH' {
+  switch (actionType) {
+    case ActionType.COMBAT_RAID:
+    case ActionType.DOMAIN_WAR:
+    case ActionType.ASSASSINATE:
+      return 'HIGH';
+    case ActionType.PATROL:
+    case ActionType.EXPLORE:
+    case ActionType.SCOUT:
+    case ActionType.RESOURCE_RAID:
+      return 'MEDIUM';
+    default:
+      return 'LOW';
   }
 }

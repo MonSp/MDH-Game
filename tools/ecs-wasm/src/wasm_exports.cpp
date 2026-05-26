@@ -8,6 +8,7 @@
 #include "game/ecs/components/SocialComponent.h"
 #include "game/ecs/components/ResourcesComponent.h"
 #include "game/ecs/components/LifecycleComponent.h"
+#include "game/ecs/components/RoleCommandComponent.h"
 #include "game/npc/NPCCreationSystem.h"
 #include <cstdint>
 #include <cstring>
@@ -33,10 +34,14 @@ struct NPCStateWasm {
     float fatigue;
     float socialDesire;
     char name[52];
+    uint32_t activeCommandId;
+    uint8_t commandStatus;
+    uint8_t _pad[3];
+    uint32_t squadId;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(NPCStateWasm) == 128, "NPCStateWasm must be 128 bytes");
+static_assert(sizeof(NPCStateWasm) == 140, "NPCStateWasm must be 140 bytes");
 
 extern "C" {
 
@@ -90,6 +95,7 @@ void ecs_getNPCStates(NPCStateWasm* outBuffer, int maxCount) {
         auto* cultivation = registry.getComponent<CultivationComponent>(entityId);
         auto* social = registry.getComponent<SocialComponent>(entityId);
         auto* resources = registry.getComponent<ResourcesComponent>(entityId);
+        auto* cmd = registry.getComponent<RoleCommandComponent>(entityId);
 
         NPCStateWasm& out = outBuffer[written];
 
@@ -110,6 +116,20 @@ void ecs_getNPCStates(NPCStateWasm* outBuffer, int maxCount) {
         out.fatigue = social ? social->fatigue : 0.0f;
         out.socialDesire = social ? social->socialDesire : 0.0f;
         out.spiritStones = resources ? resources->spiritStones : 0;
+        out.activeCommandId = 0;
+        out.commandStatus = 0;
+        out.squadId = 0;
+        out._pad[0] = 0;
+        out._pad[1] = 0;
+        out._pad[2] = 0;
+        if (cmd && cmd->hasActiveCommand()) {
+            const CommandSlot* slot = cmd->peekCommand();
+            if (slot) {
+                out.activeCommandId = slot->commandId;
+                out.commandStatus = slot->status;
+            }
+        }
+        out.squadId = cmd ? cmd->squadId : 0;
 
         if (identity) {
             size_t len = std::min(identity->name.length(), sizeof(out.name) - 1);

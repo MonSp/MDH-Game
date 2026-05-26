@@ -25,6 +25,7 @@ import * as path from 'path';
 import { NPCEntity, NPCRole, RealmLevel, NPCActivity, NPCLifeState, BirthType, EventBus, NPCEvent, NPCInteractionEvent } from '../../shared';
 import { PlanAction } from '../llm/PlanParser';
 import { NPCMemoryStore } from '../llm/NPCMemory';
+import { CommandStatus } from '../../shared/types/LLMPlanning';
 import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
 
 export interface RecruitCandidate {
@@ -833,6 +834,18 @@ export class NPCWorldService extends EventEmitter {
 
   getAllNPCs(): Map<string, NPCState> {
     return this.npcs;
+  }
+
+  /** Record a command interaction in the NPC's command memory */
+  recordCommandEvent(npcId: string, issuerId: string, commandId: string, result: CommandStatus, emotionTag: string = ''): void {
+    if (this.memory) {
+      this.memory.updateCommandMemory(npcId, issuerId, commandId, result, emotionTag);
+    }
+  }
+
+  /** Get command memory influence for an NPC towards an issuer */
+  getCommandInfluence(npcId: string, issuerId: string): number {
+    return this.memory ? this.memory.getCommandInfluence(npcId, issuerId) : 0;
   }
 
   // --- Events ---

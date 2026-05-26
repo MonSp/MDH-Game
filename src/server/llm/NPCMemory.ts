@@ -1,9 +1,12 @@
+import { CommandStatus, CommandMemoryEntry } from '../../shared/types/LLMPlanning';
+
 // NPC Memory Data Model
 //
 // Three structures per design doc:
 // 1. NPCRelationshipMatrix — 50x50 sparse matrix, -100 to +100 affinity
 // 2. NPCInteractionRingBuffer — per-NPC last 20 interactions
 // 3. NPCWitnessedEvents — per-NPC ring buffer of witnessed events
+// 4. CommandMemoryRingBuffer — per-NPC last 30 command history entries
 
 export interface RelationshipModifier {
   reason: string;
@@ -34,6 +37,7 @@ export interface WitnessedEvent {
 
 const MAX_INTERACTIONS = 20;
 const MAX_WITNESSED = 30;
+const MAX_COMMAND_MEMORY = 30;
 
 export class NPCRelationshipMatrix {
   private matrix: Map<string, Map<string, RelationshipEntry>> = new Map();
@@ -178,15 +182,121 @@ export class NPCWitnessedEvents {
   }
 }
 
+export class CommandMemoryRingBuffer {
+  private entries: Map<string, CommandMemoryEntry[]> = new Map();
+
+  add(npcId: string, entry: CommandMemoryEntry): void {
+    if (!this.entries.has(npcId)) {
+      this.entries.set(npcId, []);
+    }
+    const list = this.entries.get(npcId)!;
+    list.push(entry);
+    if (list.length > MAX_COMMAND_MEMORY) {
+      list.shift();
+    }
+  }
+
+  getRecent(npcId: string, count: number): CommandMemoryEntry[] {
+    const list = this.entries.get(npcId);
+    if (!list) return [];
+    return list.slice(-count);
+  }
+
+  getByIssuer(npcId: string, issuerId: string): CommandMemoryEntry[] {
+    const list = this.entries.get(npcId);
+    if (!list) return [];
+    return list.filter((e) => e.issuer_id === issuerId);
+  }
+
+  getConsecutiveFailures(npcId: string, issuerId: string): number {
+    const list = this.entries.get(npcId);
+    if (!list) return 0;
+    const filtered = list.filter((e) => e.issuer_id === issuerId);
+    let consecutive = 0;
+    for (let i = filtered.length - 1; i >= 0; i--) {
+      if (filtered[i].result === CommandStatus.FAILED || filtered[i].result === CommandStatus.REFUSED) {
+        consecutive++;
+      } else {
+        break;
+      }
+    }
+    return consecutive;
+  }
+
+  getOverachieveCount(npcId: string, issuerId: string): number {
+    const list = this.entries.get(npcId);
+    if (!list) return 0;
+    return list.filter(
+      (e) => e.issuer_id === issuerId && e.result === CommandStatus.COMPLETED && e.emotion_tag === 'overachieve'
+    ).length;
+  }
+
+  toJSON(): Record<string, CommandMemoryEntry[]> {
+    return Object.fromEntries(this.entries);
+  }
+
+  static fromJSON(json: Record<string, CommandMemoryEntry[]>): CommandMemoryRingBuffer {
+    const buf = new CommandMemoryRingBuffer();
+    buf.entries = new Map(Object.entries(json));
+    return buf;
+  }
+}
+
 export class NPCMemoryStore {
   relationships: NPCRelationshipMatrix;
   interactions: NPCInteractionRingBuffer;
   witnessedEvents: NPCWitnessedEvents;
+  commandMemory: CommandMemoryRingBuffer;
 
   constructor() {
     this.relationships = new NPCRelationshipMatrix();
     this.interactions = new NPCInteractionRingBuffer();
     this.witnessedEvents = new NPCWitnessedEvents();
+    this.commandMemory = new CommandMemoryRingBuffer();
+  }
+
+  getCommandInfluence(npcId: string, issuerId: string): number {
+    const failures = this.commandMemory.getConsecutiveFailures(npcId, issuerId);
+    if (failures >= 3) {
+      return -25;
+    }
+    const overachieve = this.commandMemory.getOverachieveCount(npcId, issuerId);
+    if (overachieve > 0) {
+      return Math.min(overachieve * 10, 40);
+    }
+    return 0;
+  }
+
+  updateCommandMemory(
+    npcId: string,
+    issuerId: string,
+    commandId: string,
+    result: CommandStatus,
+    emotionTag: string,
+  ): void {
+    const entry: CommandMemoryEntry = {
+      issuer_id: issuerId,
+      command_id: commandId,
+      result,
+      emotion_tag: emotionTag,
+      timestamp: Date.now(),
+      influence: 0,
+    };
+
+    this.commandMemory.add(npcId, entry);
+
+    const failures = this.commandMemory.getConsecutiveFailures(npcId, issuerId);
+    const isOverachieve = result === CommandStatus.COMPLETED && emotionTag === 'overachieve';
+
+    if (failures >= 3) {
+      this.relationships.modify(npcId, issuerId, -25, `连续拒绝/失败命令 (${failures}次)`);
+    }
+
+    if (isOverachieve) {
+      const overachieveCount = this.commandMemory.getOverachieveCount(npcId, issuerId);
+      const influence = Math.min(overachieveCount * 10, 40);
+      this.relationships.modify(npcId, issuerId, influence, `超额完成任务 (第${overachieveCount}次)`);
+    }
   }
 
   /**
@@ -229,6 +339,21 @@ export class NPCMemoryStore {
       }
     }
 
+    // Last 3 command memories
+    const recentCmd = this.commandMemory.getRecent(npcId, 3);
+    if (recentCmd.length > 0) {
+      parts.push('近期命令记录:');
+      for (const cmd of recentCmd) {
+        const issuerName = nameResolver ? nameResolver(cmd.issuer_id) : cmd.issuer_id;
+        const statusLabel =
+          cmd.result === CommandStatus.COMPLETED ? '已完成' :
+          cmd.result === CommandStatus.FAILED ? '失败' :
+          cmd.result === CommandStatus.REFUSED ? '已拒绝' :
+          cmd.result;
+        parts.push(`  - 来自 ${issuerName}: ${statusLabel}${cmd.emotion_tag ? ` (${cmd.emotion_tag})` : ''}`);
+      }
+    }
+
     return parts.join('\n');
   }
 
@@ -237,6 +362,7 @@ export class NPCMemoryStore {
       relationships: this.relationships.toJSON(),
       interactions: this.interactions.toJSON(),
       witnessedEvents: this.witnessedEvents.toJSON(),
+      commandMemory: this.commandMemory.toJSON(),
     };
   }
 
@@ -250,6 +376,9 @@ export class NPCMemoryStore {
     }
     if (json.witnessedEvents) {
       store.witnessedEvents = NPCWitnessedEvents.fromJSON(json.witnessedEvents);
+    }
+    if (json.commandMemory) {
+      store.commandMemory = CommandMemoryRingBuffer.fromJSON(json.commandMemory);
     }
     return store;
   }

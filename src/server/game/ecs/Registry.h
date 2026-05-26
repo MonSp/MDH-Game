@@ -15,6 +15,8 @@
 #include "components/SocialComponent.h"
 #include "components/RelationshipComponent.h"
 #include "components/RoleCommandComponent.h"
+#include "components/CommandDelegationComponent.h"
+#include "components/CommandResponseComponent.h"
 #include "components/CultivationComponent.h"
 #include <vector>
 #include <unordered_map>
@@ -44,6 +46,8 @@ public:
             social_.emplace_back();
             relationship_.emplace_back();
             roleCommand_.emplace_back();
+            cmdDelegation_.emplace_back();
+            cmdResponse_.emplace_back();
             cultivation_.emplace_back();
             bt_.emplace_back();
             blackboard_.emplace_back();
@@ -64,6 +68,8 @@ public:
             social_[slot] = SocialComponent();
             relationship_[slot] = RelationshipComponent();
             roleCommand_[slot] = RoleCommandComponent();
+            cmdDelegation_[slot] = CommandDelegationComponent();
+            cmdResponse_[slot] = CommandResponseComponent();
             cultivation_[slot] = CultivationComponent();
             bt_[slot] = BehaviorTreeComponent();
             blackboard_[slot] = BlackboardCache();
@@ -169,6 +175,8 @@ public:
         social_.clear();
         relationship_.clear();
         roleCommand_.clear();
+        cmdDelegation_.clear();
+        cmdResponse_.clear();
         cultivation_.clear();
         bt_.clear();
         blackboard_.clear();
@@ -210,6 +218,8 @@ private:
         if constexpr (std::is_same_v<T, SocialComponent>)          return social_;
         if constexpr (std::is_same_v<T, RelationshipComponent>)    return relationship_;
         if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
+        if constexpr (std::is_same_v<T, CommandDelegationComponent>) return cmdDelegation_;
+        if constexpr (std::is_same_v<T, CommandResponseComponent>)  return cmdResponse_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
         if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
         if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
@@ -227,6 +237,8 @@ private:
         if constexpr (std::is_same_v<T, SocialComponent>)          return social_;
         if constexpr (std::is_same_v<T, RelationshipComponent>)    return relationship_;
         if constexpr (std::is_same_v<T, RoleCommandComponent>)     return roleCommand_;
+        if constexpr (std::is_same_v<T, CommandDelegationComponent>) return cmdDelegation_;
+        if constexpr (std::is_same_v<T, CommandResponseComponent>)  return cmdResponse_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
         if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
         if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
@@ -243,6 +255,8 @@ private:
     std::vector<SocialComponent> social_;
     std::vector<RelationshipComponent> relationship_;
     std::vector<RoleCommandComponent> roleCommand_;
+    std::vector<CommandDelegationComponent> cmdDelegation_;
+    std::vector<CommandResponseComponent> cmdResponse_;
     std::vector<CultivationComponent> cultivation_;
     std::vector<BehaviorTreeComponent> bt_;
     std::vector<BlackboardCache> blackboard_;

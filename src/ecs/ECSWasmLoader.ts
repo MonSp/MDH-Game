@@ -4,7 +4,7 @@ type WasmModule = Record<string, unknown> & {
   HEAPU8: Uint8Array;
 };
 
-const NPC_STATE_SIZE = 128;
+const NPC_STATE_SIZE = 140;
 
 export const RealmLevel: Record<number, string> = {
   0: '凡人',
@@ -35,6 +35,7 @@ export const NPCActivity: Record<number, string> = {
   22: 'Sleep',
   23: 'Walk',
   24: 'Chat',
+  25: 'AwaitOrders',
   30: 'Cultivate',
   31: 'Breakthrough',
   32: 'Tribulation',
@@ -48,6 +49,9 @@ export const NPCActivity: Record<number, string> = {
   44: 'DiscipleAsk',
   45: 'Trade',
   46: 'Gossip',
+  47: 'ReportTask',
+  48: 'RefuseCommand',
+  49: 'CoordinateSquad',
   50: 'Build',
   51: 'Mine',
   52: 'Farm',
@@ -100,6 +104,9 @@ export interface NPCState {
   socialDesire: number;
   spiritStones: number;
   name: string;
+  activeCommandId: number;
+  commandStatus: number;
+  squadId: number;
 }
 
 export interface ECSStats {
@@ -215,6 +222,10 @@ export function readNPCStates(): NPCState[] {
     const nameBytes = HEAPU8.subarray(offset + 76, offset + 76 + (nameEnd >= 0 ? nameEnd : 52));
     const name = nameEnd === 0 ? '' : _decoder.decode(nameBytes);
 
+    const activeCommandId = view.getUint32(offset + 128, true);
+    const commandStatus = HEAPU8[offset + 132];
+    const squadId = view.getUint32(offset + 136, true);
+
     result.push({
       entityId, x, y, hp, maxHp, mp, maxMp, power,
       realm,
@@ -224,6 +235,7 @@ export function readNPCStates(): NPCState[] {
       activity,
       activityName: NPCActivity[activity] ?? 'Rest',
       layer, cultivationProgress, hunger, fatigue, socialDesire, spiritStones, name,
+      activeCommandId, commandStatus, squadId,
     });
   }
 

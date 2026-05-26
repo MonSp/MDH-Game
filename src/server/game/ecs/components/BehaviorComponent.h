@@ -16,6 +16,7 @@ enum class NPCActivity : uint8_t {
     Sleep = 22,
     Walk = 23,
     Chat = 24,
+    AwaitOrders = 25,
 
     Cultivate = 30,
     Breakthrough = 31,
@@ -31,6 +32,9 @@ enum class NPCActivity : uint8_t {
     DiscipleAsk = 44,
     Trade = 45,
     Gossip = 46,
+    ReportTask = 47,
+    RefuseCommand = 48,
+    CoordinateSquad = 49,
 
     Build = 50,
     Mine = 51,

@@ -27,7 +27,28 @@ export enum ActionType {
   CAPTURE_RESOURCE_POINT = 'CAPTURE_RESOURCE_POINT',
   DOMAIN_WAR = 'DOMAIN_WAR',
   ALLIANCE_FORMATION = 'ALLIANCE_FORMATION',
-  CULTIVATE_BREAKTHROUGH = 'CULTIVATE_BREAKTHROUGH'
+  CULTIVATE_BREAKTHROUGH = 'CULTIVATE_BREAKTHROUGH',
+  ISSUE_ORDER = 'ISSUE_ORDER',
+  MOBILIZE = 'MOBILIZE',
+  ASSASSINATE = 'ASSASSINATE',
+  TEACH = 'TEACH',
+  COMBAT_RAID = 'COMBAT_RAID',
+  COMMAND_DELEGATE = 'COMMAND_DELEGATE',
+  REPORT_STATUS = 'REPORT_STATUS',
+  COORDINATE_SQUAD = 'COORDINATE_SQUAD',
+  RESIST_ORDER = 'RESIST_ORDER'
+}
+
+export enum CommandStatus {
+  ISSUED = 'ISSUED',
+  RECEIVED = 'RECEIVED',
+  DELEGATED = 'DELEGATED',
+  EXECUTING = 'EXECUTING',
+  COMPLETED = 'COMPLETED',
+  PARTIALLY_COMPLETED = 'PARTIALLY_COMPLETED',
+  FAILED = 'FAILED',
+  REFUSED = 'REFUSED',
+  EXPIRED = 'EXPIRED'
 }
 
 export enum PlanStatus {
@@ -35,6 +56,70 @@ export enum PlanStatus {
   COMPLETED = 'COMPLETED',
   INTERRUPTED = 'INTERRUPTED',
   FAILED = 'FAILED'
+}
+
+export enum CommandScope {
+  STRATEGIC = 'STRATEGIC',
+  TACTICAL = 'TACTICAL',
+  OPERATIONAL = 'OPERATIONAL'
+}
+
+export enum ResponseType {
+  ACCEPT = 'ACCEPT',
+  REFUSE = 'REFUSE',
+  DELAY = 'DELAY',
+  OVERACHIEVE = 'OVERACHIEVE'
+}
+
+export interface CommandFeedback {
+  status: CommandStatus;
+  time_consumed_ms: number;
+  output: Record<string, number>;
+  note: string;
+}
+
+export interface Command {
+  id: string;
+  parent_command_id: string;
+  issuer_id: string;
+  issuer_tier: LLMTier;
+  target_role: string;
+  scope: CommandScope;
+  action_type: ActionType;
+  params: Record<string, any>;
+  status: CommandStatus;
+  priority: number;
+  issued_at: number;
+  expires_at: number;
+  feedback: CommandFeedback | null;
+}
+
+export interface SquadMember {
+  npc_id: string;
+  role: 'leader' | 'member';
+}
+
+export interface Squad {
+  id: string;
+  task_id: string;
+  members: SquadMember[];
+  leader_id: string;
+}
+
+export interface CommandResponse {
+  accept_probability: number;
+  response_type: ResponseType;
+  overachieve_mult: number;
+  resource_intercept_ratio: number;
+}
+
+export interface CommandMemoryEntry {
+  issuer_id: string;
+  command_id: string;
+  result: CommandStatus;
+  emotion_tag: string;
+  timestamp: number;
+  influence: number;
 }
 
 export interface SubTask {
