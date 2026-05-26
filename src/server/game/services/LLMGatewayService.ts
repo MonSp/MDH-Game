@@ -2,7 +2,8 @@ import {
   LLMPlanningRequest,
   LLMPlanningResponse,
   LLMServiceConfig,
-  ActionType
+  ActionType,
+  LLMIntent
 } from '../../../shared/types/LLMPlanning';
 import { LLM_SERVICE_CONFIG } from '../../config/LLMConfig';
 
@@ -162,12 +163,13 @@ export class LLMGatewayService {
   private parseLLMOutput(output: string): LLMPlanningResponse {
     try {
       const parsed = JSON.parse(output);
-      return {
+      const tasks = parsed.suggested_tasks || parsed.sub_tasks || [];
+      const response: LLMPlanningResponse = {
         plan_id: `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         npc_id: '',
         horizon_days: this.horizonToDays(parsed.horizon || '1天'),
         primary_goal: parsed.primary_goal || '',
-        sub_tasks: (parsed.sub_tasks || []).map((task: any, idx: number) => ({
+        sub_tasks: tasks.map((task: any, idx: number) => ({
           task_id: idx,
           description: task.description || '',
           priority: task.priority || 5,
@@ -177,6 +179,16 @@ export class LLMGatewayService {
         })),
         fallback_behavior: parsed.fallback_behavior || 'REST'
       };
+      if (parsed.intent) {
+        response.intent = {
+          goal: parsed.intent.goal || '',
+          metric: parsed.intent.metric || '',
+          target_value: parsed.intent.target_value ?? 0,
+          deadline_frames: parsed.intent.deadline_frames ?? 10000,
+          validity_condition: parsed.intent.validity_condition || 'true'
+        };
+      }
+      return response;
     } catch {
       return this.getDefaultResponse();
     }

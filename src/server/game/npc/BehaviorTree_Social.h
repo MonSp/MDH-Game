@@ -9,6 +9,7 @@
 #include "../ecs/components/RelationshipComponent.h"
 #include "../ecs/components/PersonalityComponent.h"
 #include "../ecs/components/MemoryRingComponent.h"
+#include "../ecs/components/IdentityComponent.h"
 #include <cmath>
 #include <algorithm>
 #include <climits>
@@ -423,6 +424,176 @@ static void exec_reportTask(ExecuteContext& ctx) {
     else pos->y += pos->speed * ctx.deltaTime / 1000.0f;
 }
 
+static void exec_socialHelp(ExecuteContext& ctx) {
+    auto* rel = ctx.getRelationship();
+    auto* pos = ctx.getPosition();
+    auto* behavior = ctx.getBehavior();
+    if (!rel || !pos || !behavior) return;
+
+    auto& reg = ctx.reg();
+    uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
+    if (selfSlot == UINT32_MAX) return;
+
+    uint32_t helpTargetSlot = 0;
+
+    if (rel->mentorSlot != 0 && rel->mentorSlot < reg.entityIds_.size() &&
+        reg.activeSlots_[rel->mentorSlot]) {
+        helpTargetSlot = rel->mentorSlot;
+    }
+
+    if (helpTargetSlot == 0) {
+        int8_t bestAffinity = 60;
+        for (uint8_t i = 0; i < rel->relationCount; i++) {
+            if (rel->relations[i].affinity > bestAffinity &&
+                rel->relations[i].targetSlot < reg.entityIds_.size() &&
+                reg.activeSlots_[rel->relations[i].targetSlot]) {
+                bestAffinity = rel->relations[i].affinity;
+                helpTargetSlot = rel->relations[i].targetSlot;
+            }
+        }
+    }
+
+    if (helpTargetSlot == 0) {
+        auto* identity = ctx.getIdentity();
+        if (identity && identity->factionCareerHeritage != 0) {
+            for (size_t i = 0; i < reg.entityIds_.size(); i++) {
+                if (!reg.activeSlots_[i] || i == selfSlot) continue;
+                auto* otherIdent = reg.getComponent<IdentityComponent>(reg.entityIds_[i]);
+                if (otherIdent && (otherIdent->role == NPCRole::Elder ||
+                    otherIdent->role == NPCRole::FamilyHead)) {
+                    auto* otherPos = reg.getComponent<PositionComponent>(reg.entityIds_[i]);
+                    if (otherPos) {
+                        float dx = otherPos->x - pos->x;
+                        float dy = otherPos->y - pos->y;
+                        if (dx * dx + dy * dy < 200.0f * 200.0f) {
+                            helpTargetSlot = static_cast<uint32_t>(i);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (helpTargetSlot == 0) return;
+
+    auto* tp = reg.getComponent<PositionComponent>(reg.entityIds_[helpTargetSlot]);
+    if (!tp) return;
+
+    pos->moveTo(tp->x, tp->y);
+
+    behavior->activityProgress += 0.1f;
+
+    if (pos->distanceTo(*tp) < 5.0f && behavior->activityProgress >= 1.0f) {
+        NPCActivity recommendedActivity = NPCActivity::Rest;
+
+        if (helpTargetSlot == rel->mentorSlot) {
+            auto* mentorBehavior = reg.getComponent<BehaviorComponent>(reg.entityIds_[helpTargetSlot]);
+            if (mentorBehavior) {
+                NPCActivity mentorAct = mentorBehavior->currentActivity;
+                uint16_t mentorCareerTags = getActivityTagBundle(mentorAct).careerTags;
+
+                auto* myIdentity = ctx.getIdentity();
+                float bestBaseline = 0.0f;
+                NPCActivity candidateActs[] = {
+                    NPCActivity::Mine, NPCActivity::Farm, NPCActivity::Fish,
+                    NPCActivity::Lumber, NPCActivity::Gather, NPCActivity::Craft,
+                    NPCActivity::Refine, NPCActivity::Cook, NPCActivity::Hunt,
+                    NPCActivity::Cultivate, NPCActivity::Meditate, NPCActivity::Alchemy,
+                    NPCActivity::Trade, NPCActivity::Patrol, NPCActivity::Explore,
+                };
+                constexpr int nCands = sizeof(candidateActs) / sizeof(candidateActs[0]);
+                for (int i = 0; i < nCands; i++) {
+                    uint16_t candCareer = getActivityTagBundle(candidateActs[i]).careerTags;
+                    if (candCareer & mentorCareerTags) {
+                        float bw = myIdentity ?
+                            RoleBaselineWeights::getRoleBaselineWeight(candidateActs[i], myIdentity) : 1.0f;
+                        if (bw > bestBaseline) {
+                            bestBaseline = bw;
+                            recommendedActivity = candidateActs[i];
+                        }
+                    }
+                }
+                if (bestBaseline == 0.0f) {
+                    recommendedActivity = mentorAct;
+                }
+            }
+        } else {
+            auto* friendBehavior = reg.getComponent<BehaviorComponent>(reg.entityIds_[helpTargetSlot]);
+            if (friendBehavior) {
+                recommendedActivity = friendBehavior->currentActivity;
+                if (recommendedActivity == NPCActivity::Idle ||
+                    recommendedActivity == NPCActivity::Rest ||
+                    recommendedActivity == NPCActivity::Walk) {
+                    recommendedActivity = NPCActivity::Mine;
+                }
+            }
+        }
+
+        if (helpTargetSlot != rel->mentorSlot &&
+            !(helpTargetSlot != 0 && rel->getAffinity(helpTargetSlot) > 60)) {
+            auto* myIdentity = ctx.getIdentity();
+            if (myIdentity && myIdentity->factionCareerHeritage != 0 &&
+                recommendedActivity == NPCActivity::Rest) {
+                float bestBaseline = 0.0f;
+                NPCActivity candidateActs[] = {
+                    NPCActivity::Mine, NPCActivity::Farm, NPCActivity::Fish,
+                    NPCActivity::Lumber, NPCActivity::Gather, NPCActivity::Craft,
+                    NPCActivity::Refine, NPCActivity::Cook, NPCActivity::Hunt,
+                    NPCActivity::Cultivate, NPCActivity::Meditate, NPCActivity::Alchemy,
+                    NPCActivity::Trade, NPCActivity::Patrol, NPCActivity::Explore,
+                };
+                constexpr int nCands = sizeof(candidateActs) / sizeof(candidateActs[0]);
+                for (int i = 0; i < nCands; i++) {
+                    uint16_t candCareer = getActivityTagBundle(candidateActs[i]).careerTags;
+                    if (candCareer & myIdentity->factionCareerHeritage) {
+                        float bw = RoleBaselineWeights::getRoleBaselineWeight(candidateActs[i], myIdentity);
+                        if (bw > bestBaseline) {
+                            bestBaseline = bw;
+                            recommendedActivity = candidateActs[i];
+                        }
+                    }
+                }
+                if (bestBaseline == 0.0f) {
+                    recommendedActivity = NPCActivity::Mine;
+                }
+            }
+        }
+
+        auto& ref = behavior->reflection;
+        ref.microPlanActivity = recommendedActivity;
+        ref.microPlanTriggered = 1;
+        ref.setTemporaryBoost(recommendedActivity, 0.3f, ctx.currentTime + 300);
+
+        rel->modifyAffinity(helpTargetSlot, 5);
+        rel->markInteraction(helpTargetSlot, ctx.currentTime);
+
+        auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+        auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[helpTargetSlot]);
+        InteractionSlot slotMine;
+        slotMine.timestamp = ctx.currentTime;
+        slotMine.otherSlot = helpTargetSlot;
+        slotMine.type = 0;
+        slotMine.impactScore = 3;
+        if (myMemory) myMemory->interactions.push(slotMine);
+        InteractionSlot slotOther;
+        slotOther.timestamp = ctx.currentTime;
+        slotOther.otherSlot = selfSlot;
+        slotOther.type = 0;
+        slotOther.impactScore = 3;
+        if (otherMemory) otherMemory->interactions.push(slotOther);
+
+        auto* social = ctx.getSocial();
+        if (social) {
+            social->onSocialSuccess();
+        }
+
+        behavior->reflection.recordResult(NPCActivity::SocialHelp, 5);
+
+        behavior->changeActivity(recommendedActivity);
+    }
+}
+
 constexpr ExecuteDescriptor kSocialTable[] = {
     {NPCActivity::VisitFriend,     "VisitFriend",     ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP,        exec_visitFriend},
     {NPCActivity::Date,            "Date",             ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP,        exec_date},
@@ -432,4 +603,5 @@ constexpr ExecuteDescriptor kSocialTable[] = {
     {NPCActivity::Trade,           "Trade",            ActivityCategory::Social, REQ_RESOURCES,                        exec_trade},
     {NPCActivity::Gossip,          "Gossip",           ActivityCategory::Social, REQ_SOCIAL,                           exec_gossip},
     {NPCActivity::ReportTask,      "ReportTask",       ActivityCategory::Social, REQ_POSITION,                         exec_reportTask},
+    {NPCActivity::SocialHelp,      "SocialHelp",       ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP,         exec_socialHelp},
 };

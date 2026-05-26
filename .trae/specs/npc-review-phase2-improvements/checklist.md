@@ -1,0 +1,33 @@
+# Checklist
+
+- [x] 角色基线权重：5种角色模板各定义了50项行为的基线权重（FamilyHead/Elder/CoreDisciple/InnerDisciple/BranchDisciple）
+- [x] 矿工模板的Mine基线权重（≥1.2）显著高于Fish（≤0.5），体现职业本能
+- [x] ReflectionData.getBaselineWeight() 根据NPC角色返回正确的基线权重
+- [x] getWeightWithDecay() 恢复目标从固定 1.0 改为向 baselineWeight 回归
+- [x] recordResult() 惩罚下限从固定 0.5 改为 baselineWeight × 0.5
+- [x] 基线权重动态调节：微规划/社交求助成功后新行为 baselineWeight 临时提升至 1.2（500帧），原职业基线不受影响
+- [x] 矿工NPC连续采矿失败5次后采矿权重不低于 baselineWeight × 0.5，500帧后向基线回归
+- [x] 玩家可读性：getReadableDecisionSummary() 返回第一人称叙事摘要
+- [x] DecisionLogService.getPlayerFacingSummary() 返回玩家可读的中文描述
+- [x] NPC对话中自然嵌入决策原因文本（反思惩罚→"最近手头紧"，阵营偏见→"不想和你们打交道"）
+- [x] 对话透露概率：谨慎≥70时30%透露，谨慎<30时80%透露
+- [x] 行为观察窗口展示NPC当前状态的一句话描述（如"（矿工·沮丧中）最近连续挖不到好矿"）
+- [x] LLM PlanIntent 接口定义完整：goal、metric、target_value、deadline_frames、validity_condition
+- [x] buildPlanPromptWithFrontline() 被重构为要求LLM产出意图+建议任务双结构
+- [x] parseResponse() 兼容新旧两种LLM响应格式
+- [x] LLMIntentValidator 每30帧检查 validity_condition 和 metric 进度
+- [x] 目标失效（如"楚国.exists"=false）时所有下游CommandSlot立即标记为Cancelled
+- [x] 目标已达成（metric达标）时自动上报并中断任务链
+- [x] 目标超时（deadline_frames耗尽）时触发LLM重新规划
+- [x] RuleBasedDecomposer 基于意图的metric和target_value，用纯规则拆解为具体CommandSlot
+- [x] T1白起能自动将"削弱楚国至50%战力"拆解为三路兵马的具体命令
+- [x] 社交求助：NPCActivity枚举新增 SocialHelp
+- [x] exec_socialHelp() 实现：移动→交互→获取推荐→更新behavior
+- [x] 微规划标签得分 < 0.3 时触发社交求助条件检查（有师父/朋友/长老）
+- [x] 求助对象推荐逻辑：师父→同系行为、朋友→朋友当前行为、长老→家族需要行为
+- [x] 推荐行为获得临时 baselineWeight 加成 1.3（持续300帧）
+- [x] 社交求助冷却 600 帧，冷却期内触发微规划≥2次则冷却后立即触发
+- [x] 求助过程生成严重度3的流言
+- [x] 社交求助增加亲密度+5
+- [x] TypeScript 编译零错误，C++ WASM编译零错误零警告
+- [x] 性能回归：10K NPC场景下决策帧耗时不劣于V7.1基线（设计层面 O(1)，需 bench 最终验证）

@@ -48,14 +48,16 @@ export enum CommandStatus {
   PARTIALLY_COMPLETED = 'PARTIALLY_COMPLETED',
   FAILED = 'FAILED',
   REFUSED = 'REFUSED',
-  EXPIRED = 'EXPIRED'
+  EXPIRED = 'EXPIRED',
+  CANCELLED = 'CANCELLED'
 }
 
 export enum PlanStatus {
   ACTIVE = 'ACTIVE',
   COMPLETED = 'COMPLETED',
   INTERRUPTED = 'INTERRUPTED',
-  FAILED = 'FAILED'
+  FAILED = 'FAILED',
+  PENDING_REPLAN = 'PENDING_REPLAN'
 }
 
 export enum CommandScope {
@@ -131,6 +133,20 @@ export interface SubTask {
   action_params: Record<string, any>;
 }
 
+export interface LLMIntent {
+  goal: string;
+  metric: string;
+  target_value: number;
+  deadline_frames: number;
+  validity_condition: string;
+}
+
+export interface IntentValidationResult {
+  status: 'active' | 'completed' | 'invalidated' | 'timed_out';
+  currentValue?: number;
+  message?: string;
+}
+
 export interface LLMPlan {
   plan_id: string;
   generated_at: number;
@@ -138,6 +154,8 @@ export interface LLMPlan {
   tasks: SubTask[];
   current_task_index: number;
   status: PlanStatus;
+  intent?: LLMIntent;
+  decomposed_commands?: Array<{ activity: string; target: string; priority: number }>;
 }
 
 export interface NPCData {
@@ -183,6 +201,7 @@ export interface LLMPlanningResponse {
   primary_goal: string;
   sub_tasks: SubTask[];
   fallback_behavior: string;
+  intent?: LLMIntent;
 }
 
 export interface LLMEligibility {

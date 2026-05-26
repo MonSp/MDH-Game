@@ -28,6 +28,15 @@
 #include <ctime>
 #include <cmath>
 
+#ifdef NPC_DECISION_LOG_ENABLED
+#define LOG_DECISION(behavior, frame, oldAct, newAct, reason, layer, weightDelta, tagScore) \
+    do { \
+        if (behavior) behavior->appendDecisionLog(frame, oldAct, newAct, reason, layer, weightDelta, tagScore, generateNarrativeSnippet(reason, oldAct, newAct)); \
+    } while(0)
+#else
+#define LOG_DECISION(behavior, frame, oldAct, newAct, reason, layer, weightDelta, tagScore) ((void)0)
+#endif
+
 extern bool canExecute_mine(ExecuteContext& ctx);
 extern bool canExecute_farm(ExecuteContext& ctx);
 extern bool canExecute_fish(ExecuteContext& ctx);
@@ -56,7 +65,7 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     {NPCActivity::Meditate,     "Meditate",     ActivityCategory::Cultivation, REQ_CULT|REQ_STATS,                    exec_meditate, nullptr},
     {NPCActivity::Alchemy,      "Alchemy",      ActivityCategory::Cultivation, REQ_RESOURCES,                         exec_alchemy, nullptr},
     {NPCActivity::SeekFortune,  "SeekFortune",  ActivityCategory::Cultivation, REQ_POSITION,                          exec_seekFortune, nullptr},
-    // Social (8)
+    // Social (9)
     {NPCActivity::VisitFriend,     "VisitFriend",    ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_visitFriend, nullptr},
     {NPCActivity::Date,            "Date",           ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP, exec_date, nullptr},
     {NPCActivity::FamilyGathering, "FamilyGathering",ActivityCategory::Social, REQ_POSITION,                  exec_familyGathering, nullptr},
@@ -65,6 +74,7 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     {NPCActivity::Trade,           "Trade",          ActivityCategory::Social, REQ_RESOURCES,                 exec_trade, nullptr},
     {NPCActivity::Gossip,          "Gossip",         ActivityCategory::Social, REQ_SOCIAL,                    exec_gossip, nullptr},
     {NPCActivity::ReportTask,      "ReportTask",     ActivityCategory::Social, REQ_POSITION,                  exec_reportTask, nullptr},
+    {NPCActivity::SocialHelp,      "SocialHelp",     ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP,  exec_socialHelp, nullptr},
     // Production (13)
     {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES,                exec_build, nullptr},
     {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_mine, canExecute_mine},
@@ -124,19 +134,25 @@ public:
             if (stats->hpPercent() < 0.3f) {
                 llmPlan->status = PlanStatus::INTERRUPTED;
                 if (shouldInterrupt(behavior, NPCActivity::Flee, 6)) {
+                    NPCActivity oldAct = behavior->currentActivity;
                     behavior->changeActivity(NPCActivity::Flee);
+                    LOG_DECISION(behavior, currentTime, oldAct, NPCActivity::Flee, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
                 }
                 return;
             }
             if (stats->hpPercent() < 0.5f) {
                 llmPlan->status = PlanStatus::INTERRUPTED;
                 if (shouldInterrupt(behavior, NPCActivity::Heal, 6)) {
+                    NPCActivity oldAct = behavior->currentActivity;
                     behavior->changeActivity(NPCActivity::Heal);
+                    LOG_DECISION(behavior, currentTime, oldAct, NPCActivity::Heal, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
                 }
                 return;
             }
             if (shouldInterrupt(behavior, newAct, 6)) {
+                NPCActivity oldAct = behavior->currentActivity;
                 behavior->changeActivity(newAct);
+                LOG_DECISION(behavior, currentTime, oldAct, newAct, DecisionReason::LLMPlanStep, 6, 0.0f, 0);
             }
             return;
         }
@@ -224,15 +240,17 @@ private:
     }
 
     static float applyReflection(BehaviorComponent* behavior, NPCActivity activity,
-                          uint64_t currentFrame = 0, PersonalityComponent* personality = nullptr) {
+                          uint64_t currentFrame = 0, PersonalityComponent* personality = nullptr,
+                          IdentityComponent* identity = nullptr) {
         if (!behavior) return 1.0f;
         if (currentFrame == 0 || !personality) {
             return behavior->reflection.getWeight(activity);
         }
-        return behavior->reflection.getWeightWithDecay(activity, currentFrame, personality->diligence);
+        return behavior->reflection.getWeightWithDecay(activity, currentFrame, personality->diligence, behavior, identity);
     }
 
     static NPCActivity tryMicroPlan(BehaviorComponent* behavior, PersonalityComponent* p,
+                             IdentityComponent* identity, RelationshipComponent* rel,
                              uint64_t currentFrame) {
         if (!behavior) return NPCActivity::Idle;
         auto& ref = behavior->reflection;
@@ -255,29 +273,149 @@ private:
 
         NPCActivity best = ref.getHighestWeightedActivity();
 
-        NPCActivity creative = NPCActivity::Rest;
+        uint16_t factionHeritage = 0;
+        if (identity) {
+            factionHeritage = identity->factionCareerHeritage;
+        }
+
+        float ambitionMod = 1.0f;
+        float loyaltyMod = 1.0f;
+        if (p) {
+            if (p->ambition > 70.0f) ambitionMod = 0.5f;
+            if (p->loyalty > 70.0f) loyaltyMod = 1.2f;
+        }
+
+        uint16_t bestCareerTags = getActivityTagBundle(best).careerTags;
+
+        bool allSameCareerFailed = true;
+        for (uint8_t i = 0; i < ref.trackedCount; i++) {
+            uint16_t trackCareer = getActivityTagBundle(ref.trackedTypes[i]).careerTags;
+            if (bestCareerTags & trackCareer) {
+                if (ref.weightMultiplier[i] >= 0.7f) {
+                    allSameCareerFailed = false;
+                    break;
+                }
+            }
+        }
+        if (allSameCareerFailed && bestCareerTags != 0) {
+            ref.stickinessDecay++;
+        } else {
+            ref.stickinessDecay = 0;
+        }
+
+        uint8_t effectiveDecay = ref.stickinessDecay;
 
         NPCActivity allActivities[] = {
-            NPCActivity::Mine, NPCActivity::Farm, NPCActivity::Fish, NPCActivity::Lumber,
-            NPCActivity::Gather, NPCActivity::Craft, NPCActivity::Refine, NPCActivity::Cook,
-            NPCActivity::Trade, NPCActivity::Explore, NPCActivity::TreasureHunt, NPCActivity::MapExplore,
-            NPCActivity::Patrol, NPCActivity::Scout, NPCActivity::Hunt,
-            NPCActivity::Cultivate, NPCActivity::Meditate, NPCActivity::SeekFortune, NPCActivity::Alchemy,
-            NPCActivity::Walk, NPCActivity::Rest, NPCActivity::Gossip
+            NPCActivity::Flee, NPCActivity::Heal, NPCActivity::Defend,
+            NPCActivity::Eat, NPCActivity::Rest, NPCActivity::Sleep, NPCActivity::Walk,
+            NPCActivity::Chat, NPCActivity::AwaitOrders,
+            NPCActivity::Cultivate, NPCActivity::Breakthrough, NPCActivity::Tribulation,
+            NPCActivity::Meditate, NPCActivity::Alchemy, NPCActivity::SeekFortune,
+            NPCActivity::VisitFriend, NPCActivity::Date, NPCActivity::FamilyGathering,
+            NPCActivity::MentorTeach, NPCActivity::DiscipleAsk, NPCActivity::Trade,
+            NPCActivity::Gossip, NPCActivity::ReportTask, NPCActivity::RefuseCommand,
+            NPCActivity::CoordinateSquad,
+            NPCActivity::Build, NPCActivity::Mine, NPCActivity::Farm, NPCActivity::Fish,
+            NPCActivity::Lumber, NPCActivity::Gather,
+            NPCActivity::Attack, NPCActivity::DefendPosition, NPCActivity::Patrol,
+            NPCActivity::Escort, NPCActivity::Scout,
+            NPCActivity::Craft, NPCActivity::Refine, NPCActivity::Cook, NPCActivity::Tailor,
+            NPCActivity::Construct, NPCActivity::Repair,
+            NPCActivity::Buy, NPCActivity::Sell, NPCActivity::Bargain,
+            NPCActivity::Duel, NPCActivity::Hunt, NPCActivity::Ambush, NPCActivity::Assassinate,
+            NPCActivity::Explore, NPCActivity::TreasureHunt, NPCActivity::MapExplore,
+            NPCActivity::SocialHelp,
         };
         constexpr int numAll = sizeof(allActivities) / sizeof(allActivities[0]);
 
-        float bestSimilarity = -1.0f;
+        NPCActivity creative = NPCActivity::Rest;
+        float bestScore = -1.0f;
+        NPCActivity tieCandidate = NPCActivity::Rest;
+        float tieScore = -1.0f;
+
         for (int i = 0; i < numAll; i++) {
             if (allActivities[i] == best) continue;
-            float sim = jaccardSimilarity(best, allActivities[i]);
-            if (sim > bestSimilarity) {
-                bestSimilarity = sim;
+            float score = computeTagSimilarity(best, allActivities[i], p,
+                                                factionHeritage, effectiveDecay);
+
+            if (p) {
+                if (p->ambition > 70.0f) score *= ambitionMod;
+                if (p->loyalty > 70.0f) score *= loyaltyMod;
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
                 creative = allActivities[i];
+                tieCandidate = allActivities[i];
+                tieScore = score;
+            } else if (score == bestScore && bestScore > 0.0f) {
+                float jacA = jaccardSimilarity(best, creative);
+                float jacB = jaccardSimilarity(best, allActivities[i]);
+                if (jacB > jacA) {
+                    creative = allActivities[i];
+                    tieCandidate = allActivities[i];
+                    tieScore = score;
+                }
             }
         }
 
-        if (bestSimilarity <= 0.0f) {
+        if (ref.socialHelpCooldownUntil > 0 && currentFrame >= ref.socialHelpCooldownUntil) {
+            ref.socialHelpCooldownUntil = 0;
+            if (ref.microPlanCountDuringCooldown >= 2) {
+                bool hasSocialTarget = false;
+                if (rel) {
+                    if (rel->mentorSlot != 0) hasSocialTarget = true;
+                    else {
+                        for (uint8_t i = 0; i < rel->relationCount; i++) {
+                            if (rel->relations[i].affinity > 60) { hasSocialTarget = true; break; }
+                        }
+                    }
+                }
+                if (!hasSocialTarget && identity && identity->factionCareerHeritage != 0) {
+                    hasSocialTarget = true;
+                }
+                if (hasSocialTarget) {
+                    ref.microPlanCountDuringCooldown = 0;
+                    ref.microPlanTriggered = 1;
+                    ref.microPlanActivity = NPCActivity::SocialHelp;
+                    ref.stuckCount = 0;
+                    ref.socialHelpCooldownUntil = currentFrame + 600;
+                    LOG_DECISION(behavior, currentFrame, best, NPCActivity::SocialHelp, DecisionReason::SocialHelp, 7, 0.0f, 0);
+                    return NPCActivity::SocialHelp;
+                }
+            }
+            ref.microPlanCountDuringCooldown = 0;
+        }
+
+        if (bestScore < 0.3f) {
+            bool hasSocialTarget = false;
+            if (rel) {
+                if (rel->mentorSlot != 0) {
+                    hasSocialTarget = true;
+                } else {
+                    for (uint8_t i = 0; i < rel->relationCount; i++) {
+                        if (rel->relations[i].affinity > 60) { hasSocialTarget = true; break; }
+                    }
+                }
+            }
+            if (!hasSocialTarget && identity && identity->factionCareerHeritage != 0) {
+                hasSocialTarget = true;
+            }
+            if (hasSocialTarget && currentFrame >= ref.socialHelpCooldownUntil) {
+                ref.microPlanTriggered = 1;
+                ref.microPlanActivity = NPCActivity::SocialHelp;
+                ref.stuckCount = 0;
+                ref.socialHelpCooldownUntil = currentFrame + 600;
+                ref.microPlanCountDuringCooldown = 0;
+                LOG_DECISION(behavior, currentFrame, best, NPCActivity::SocialHelp, DecisionReason::SocialHelp, 7, 0.0f, 0);
+                return NPCActivity::SocialHelp;
+            }
+            if (hasSocialTarget) {
+                ref.microPlanCountDuringCooldown++;
+            }
+        }
+
+        if (bestScore <= 0.0f) {
             if (p && p->ambition > 60.0f) creative = NPCActivity::Explore;
             else if (p && p->caution > 60.0f) creative = NPCActivity::Meditate;
             else creative = NPCActivity::Walk;
@@ -286,6 +424,9 @@ private:
         ref.microPlanTriggered = 1;
         ref.microPlanActivity = creative;
         ref.stuckCount = 0;
+        ref.setTemporaryBoost(creative, 0.2f, currentFrame + 500);
+
+        LOG_DECISION(behavior, currentFrame, best, creative, DecisionReason::DailyMicroPlan, 7, 0.0f, static_cast<int8_t>(bestScore > 0.0f ? bestScore * 100.0f : 0.0f));
 
         return creative;
     }
@@ -328,6 +469,7 @@ private:
             case NPCActivity::Trade:
             case NPCActivity::Gossip:
             case NPCActivity::ReportTask:
+            case NPCActivity::SocialHelp:
                 return 4;
             case NPCActivity::Cultivate:
             case NPCActivity::Breakthrough:
@@ -398,17 +540,23 @@ private:
 
         if (ctx.stats->hpPercent() < 0.3f) {
             if (!shouldInterrupt(ctx.behavior, NPCActivity::Flee, 1)) return true;
+            NPCActivity oldAct = ctx.behavior->currentActivity;
             ctx.behavior->changeActivity(NPCActivity::Flee);
+            LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Flee, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
             return true;
         }
         if (ctx.stats->hpPercent() < 0.5f) {
             if (ctx.behavior->currentActivity == NPCActivity::Flee && ctx.stats->hpPercent() >= 0.4f) {
                 if (!shouldInterrupt(ctx.behavior, NPCActivity::Heal, 1)) return true;
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Heal);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Heal, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
                 return true;
             }
             if (!wasInSurvival) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Heal);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Heal, DecisionReason::SurvivalLowHP, 1, 0.0f, 0);
                 return true;
             }
             return true;
@@ -417,6 +565,7 @@ private:
             float exitThreshold = (ctx.behavior->currentActivity == NPCActivity::Heal) ? 0.6f : 0.4f;
             if (ctx.stats->hpPercent() >= exitThreshold) {
                 if (!shouldInterrupt(ctx.behavior, NPCActivity::Rest, 1)) return true;
+                LOG_DECISION(ctx.behavior, ctx.currentTime, ctx.behavior->currentActivity, NPCActivity::Rest, DecisionReason::SurvivalRecovery, 1, 0.0f, 0);
                 return false;
             }
             return true;
@@ -442,10 +591,12 @@ private:
             }
             if (targetSlot != 0 && ctx.social->isInCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, ctx.currentTime)) {
             } else if (shouldInterrupt(ctx.behavior, NPCActivity::Flee, 4)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Flee);
                 if (targetSlot != 0) {
                     ctx.social->addCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, ctx.currentTime);
                 }
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Flee, DecisionReason::EmotionFear, 2, 0.0f, 0);
                 return true;
             }
         }
@@ -467,17 +618,21 @@ private:
                 return false;
             }
             if (shouldInterrupt(ctx.behavior, NPCActivity::Duel, 4)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Duel);
                 if (targetSlot != 0) {
                     ctx.social->addCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, ctx.currentTime);
                 }
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Duel, DecisionReason::EmotionAnger, 2, 0.0f, 0);
                 return true;
             }
         }
 
         if (ctx.social->isElated(ctx.personality->sociability)) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::Gossip, 4)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Gossip);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Gossip, DecisionReason::EmotionJoy, 2, 0.0f, 0);
                 return true;
             }
         }
@@ -521,7 +676,9 @@ private:
         if (ctx.cmdResp && ctx.cmdResp->isRefusing()) {
             ctx.cmd->updateStatus(slot->commandId, CommandLifecycle::Refused);
             if (shouldInterrupt(ctx.behavior, NPCActivity::RefuseCommand, 6)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::RefuseCommand);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::RefuseCommand, DecisionReason::CommandRefuse, 3, 0.0f, 0);
             }
             ctx.cmd->setFeedback(static_cast<uint8_t>(CommandLifecycle::Refused), ctx.currentTime);
             return true;
@@ -529,7 +686,9 @@ private:
 
         if (ctx.cmd->squadId != 0) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::CoordinateSquad, 6)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::CoordinateSquad);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::CoordinateSquad, DecisionReason::CommandExecute, 3, 0.0f, 0);
             }
             return true;
         }
@@ -553,7 +712,9 @@ private:
         ctx.cmd->updateStatus(slot->commandId, CommandLifecycle::Executing);
 
         if (shouldInterrupt(ctx.behavior, NPCActivity::Patrol, 6)) {
+            NPCActivity oldAct = ctx.behavior->currentActivity;
             ctx.behavior->changeActivity(NPCActivity::Patrol);
+            LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Patrol, DecisionReason::CommandExecute, 3, 0.0f, 0);
         }
 
         return true;
@@ -563,7 +724,10 @@ private:
         if (!ctx.llmPlan || ctx.llmPlan->tier == LLMTier::T3 ||
             ctx.llmPlan->status != PlanStatus::ACTIVE) return false;
         ActionType action = ctx.llmPlan->getCurrentAction();
-        ctx.behavior->changeActivity(translateActionType(action));
+        NPCActivity newAct = translateActionType(action);
+        NPCActivity oldAct = ctx.behavior->currentActivity;
+        ctx.behavior->changeActivity(newAct);
+        LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, newAct, DecisionReason::LLMPlanStep, 6, 0.0f, 0);
         return true;
     }
 
@@ -573,13 +737,17 @@ private:
             ctx.rel->relationCount > 0) {
             if (ctx.rel->spouseSlot != 0 && random01() < 0.2f) {
                 if (shouldInterrupt(ctx.behavior, NPCActivity::Date, 5)) {
+                    NPCActivity oldAct = ctx.behavior->currentActivity;
                     ctx.behavior->changeActivity(NPCActivity::Date);
+                    LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Date, DecisionReason::SocialDate, 4, 0.0f, 0);
                 }
                 return true;
             }
             if (ctx.rel->hasDisciples() && random01() < 0.15f) {
                 if (shouldInterrupt(ctx.behavior, NPCActivity::MentorTeach, 5)) {
+                    NPCActivity oldAct = ctx.behavior->currentActivity;
                     ctx.behavior->changeActivity(NPCActivity::MentorTeach);
+                    LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::MentorTeach, DecisionReason::SocialTeach, 4, 0.0f, 0);
                 }
                 return true;
             }
@@ -591,12 +759,16 @@ private:
             }
             if (random01() < 0.3f) {
                 if (shouldInterrupt(ctx.behavior, NPCActivity::VisitFriend, 5)) {
+                    NPCActivity oldAct = ctx.behavior->currentActivity;
                     ctx.behavior->changeActivity(NPCActivity::VisitFriend);
+                    LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::VisitFriend, DecisionReason::SocialVisit, 4, 0.0f, 0);
                 }
                 return true;
             }
             if (shouldInterrupt(ctx.behavior, NPCActivity::Gossip, 5)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Gossip);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Gossip, DecisionReason::SocialGossip, 4, 0.0f, 0);
             }
             return true;
         }
@@ -607,32 +779,42 @@ private:
         if (!ctx.cult || !ctx.stats) return false;
         if (ctx.cult->isBreakingThrough) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::Breakthrough, 7)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Breakthrough);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Breakthrough, DecisionReason::CultivationBreakthrough, 5, 0.0f, 0);
             }
             return true;
         }
         if (ctx.cult->tribulationTimer > 0) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::Tribulation, 7)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Tribulation);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Tribulation, DecisionReason::CultivationTribulation, 5, 0.0f, 0);
             }
             return true;
         }
         if (ctx.cult->isReadyForBreakthrough() &&
             ctx.cult->bottleneckTimer > 1000 && !ctx.cult->isBreakingThrough) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::Breakthrough, 7)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Breakthrough);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Breakthrough, DecisionReason::CultivationBreakthrough, 5, 0.0f, 0);
             }
             return true;
         }
         if (ctx.personality->isDiligent() && random01() < 0.4f) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::Cultivate, 7)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::Cultivate);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Cultivate, DecisionReason::CultivationDaily, 5, 0.0f, 0);
             }
             return true;
         }
         if (ctx.cult->bottleneckTimer > 500 && ctx.personality->ambition > 70.0f && random01() < 0.2f) {
             if (shouldInterrupt(ctx.behavior, NPCActivity::SeekFortune, 7)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(NPCActivity::SeekFortune);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::SeekFortune, DecisionReason::CultivationSeekFortune, 5, 0.0f, 0);
             }
             return true;
         }
@@ -649,13 +831,17 @@ private:
         if (ctx.social) {
             if (ctx.social->isHungry()) {
                 if (shouldInterrupt(ctx.behavior, NPCActivity::Eat, 7)) {
+                    NPCActivity oldAct = ctx.behavior->currentActivity;
                     ctx.behavior->changeActivity(NPCActivity::Eat);
+                    LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Eat, DecisionReason::DailyNeed, 7, 0.0f, 0);
                 }
                 return true;
             }
             if (ctx.social->isExhausted()) {
                 if (shouldInterrupt(ctx.behavior, NPCActivity::Sleep, 7)) {
+                    NPCActivity oldAct = ctx.behavior->currentActivity;
                     ctx.behavior->changeActivity(NPCActivity::Sleep);
+                    LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Sleep, DecisionReason::DailyNeed, 7, 0.0f, 0);
                 }
                 return true;
             }
@@ -663,25 +849,38 @@ private:
 
         if (ctx.identity && ctx.personality) {
             NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime);
-            float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality);
+            float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality, ctx.identity);
+            DecisionReason reason = DecisionReason::DailyRoleDefault;
+            float delta = 0.0f;
             if (weight < 0.7f && random01() < 0.5f) {
+                NPCActivity prevChosen = chosen;
                 chosen = chooseByRole(ctx.identity->role, ctx.personality, nullptr, ctx.currentTime);
+                if (chosen != prevChosen) {
+                    reason = DecisionReason::DailyReflection;
+                    delta = 1.0f - weight;
+                }
             }
             if (weight < 0.5f && random01() < 0.3f) {
-                NPCActivity microPlan = tryMicroPlan(ctx.behavior, ctx.personality, ctx.currentTime);
+                NPCActivity microPlan = tryMicroPlan(ctx.behavior, ctx.personality, ctx.identity, ctx.rel, ctx.currentTime);
                 if (microPlan != NPCActivity::Idle && shouldInterrupt(ctx.behavior, microPlan, 7)) {
+                    NPCActivity oldAct = ctx.behavior->currentActivity;
                     ctx.behavior->changeActivity(microPlan);
+                    LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, microPlan, DecisionReason::DailyMicroPlan, 7, 0.0f, 0);
                     return true;
                 }
             }
             if (shouldInterrupt(ctx.behavior, chosen, 7)) {
+                NPCActivity oldAct = ctx.behavior->currentActivity;
                 ctx.behavior->changeActivity(chosen);
+                LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, chosen, reason, 7, delta, 0);
             }
             return true;
         }
 
         if (shouldInterrupt(ctx.behavior, NPCActivity::Rest, 7)) {
+            NPCActivity oldAct = ctx.behavior->currentActivity;
             ctx.behavior->changeActivity(NPCActivity::Rest);
+            LOG_DECISION(ctx.behavior, ctx.currentTime, oldAct, NPCActivity::Rest, DecisionReason::DailyRoleDefault, 7, 0.0f, 0);
         }
         return true;
     }

@@ -11,13 +11,15 @@ struct IdentityComponent : public ECS::ComponentBase<IdentityComponent> {
     std::string nation;
     NPCRole role;
     uint8_t layer;
+    uint16_t factionCareerHeritage;
 
-    IdentityComponent() : role(NPCRole::BranchDisciple), layer(9) {}
+    IdentityComponent() : role(NPCRole::BranchDisciple), layer(9), factionCareerHeritage(0) {}
 
     IdentityComponent(const std::string& nid, const std::string& nname,
                       const std::string& clid, const std::string& nat,
                       NPCRole r, uint8_t lyr)
-        : id(nid), name(nname), clanId(clid), nation(nat), role(r), layer(lyr) {}
+        : id(nid), name(nname), clanId(clid), nation(nat), role(r), layer(lyr),
+          factionCareerHeritage(0) {}
 
     bool isImportant() const {
         return role == NPCRole::FamilyHead ||

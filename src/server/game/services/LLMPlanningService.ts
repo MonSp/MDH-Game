@@ -5,9 +5,73 @@ import {
   LLMPlanningResponse,
   LLMEligibility,
   ActionType,
-  PlanStatus
+  PlanStatus,
+  CommandStatus,
+  LLMIntent,
+  IntentValidationResult,
+  Command
 } from '../../../shared/types/LLMPlanning';
 import { LLMGatewayService } from './LLMGatewayService';
+import { determineTier } from '../../config/LLMConfig';
+
+export enum NarrativeDimension {
+  BATTLE_STATUS = '战况',
+  RESOURCE_STATUS = '资源',
+  MORALE_STATUS = '士气',
+  TERRITORY_STATUS = '领地'
+}
+
+export enum BattleStatusLevel {
+  STALEMATE = '战况胶着',
+  HEAVY_CASUALTIES = '伤亡惨重',
+  MEAT_GRINDER = '血肉磨盘'
+}
+
+export enum ResourceStatusLevel {
+  ABUNDANT = '资源充足',
+  SHORTAGE = '资源告急',
+  ARMAMENT_CRISIS = '军械告急'
+}
+
+export enum MoraleStatusLevel {
+  HIGH = '士气高昂',
+  STABLE = '士气平稳',
+  LOW = '士气低迷'
+}
+
+export enum TerritoryStatusLevel {
+  SECURE = '固若金汤',
+  THREATENED = '领地受胁',
+  FALLEN = '领地沦陷'
+}
+
+export type NarrativeStatusLevel =
+  | BattleStatusLevel
+  | ResourceStatusLevel
+  | MoraleStatusLevel
+  | TerritoryStatusLevel;
+
+export interface NarrativeState {
+  dimension: NarrativeDimension;
+  level: NarrativeStatusLevel;
+  description: string;
+  severity: number;
+}
+
+export interface DecomposedCommand {
+  activity: string;
+  target: string;
+  priority: number;
+}
+
+export interface NarrativeRawData {
+  casualtyRate: number;
+  resourcesAvailable: boolean;
+  resourceStockpile: number;
+  moraleLevel: number;
+  territoryThreatened: boolean;
+  resourcePointsLost: number;
+}
 
 export class LLMPlanningService {
   private static instance: LLMPlanningService;
@@ -49,6 +113,23 @@ export class LLMPlanningService {
       const plan = this.parseResponse(response);
       this.activePlans.set(request.npc_id, plan);
       this.planningQueue.set(request.npc_id, Date.now());
+
+      const tier = determineTier({
+        role: request.npc_data.role,
+        realm: request.npc_data.realm,
+        power: request.npc_data.power
+      });
+
+      const tierNum = tier === LLMTier.T0 ? 0 : tier === LLMTier.T1 ? 1 : tier === LLMTier.T2 ? 2 : 3;
+
+      if (tierNum <= 2 && plan.intent) {
+        plan.decomposed_commands = LLMPlanningService.decomposeIntent(
+          request.npc_id,
+          plan.intent,
+          tierNum
+        );
+      }
+
       return plan;
     } catch (error) {
       console.error(`LLM Planning failed for NPC ${request.npc_id}:`, error);
@@ -60,10 +141,164 @@ export class LLMPlanningService {
     return null;
   }
 
+  static deriveNarrativeState(data: NarrativeRawData): NarrativeState[] {
+    const states: NarrativeState[] = [];
+
+    if (data.casualtyRate > 0.3) {
+      states.push({
+        dimension: NarrativeDimension.BATTLE_STATUS,
+        level: BattleStatusLevel.MEAT_GRINDER,
+        description: `前线伤亡率高达${Math.round(data.casualtyRate * 100)}%，已沦为血肉磨盘，每一寸土地都在吞噬修士的生命`,
+        severity: 3
+      });
+    } else if (data.casualtyRate >= 0.1) {
+      states.push({
+        dimension: NarrativeDimension.BATTLE_STATUS,
+        level: BattleStatusLevel.HEAVY_CASUALTIES,
+        description: `前线伤亡率达${Math.round(data.casualtyRate * 100)}%，伤亡惨重，后备兵员补充压力巨大`,
+        severity: 2
+      });
+    } else {
+      states.push({
+        dimension: NarrativeDimension.BATTLE_STATUS,
+        level: BattleStatusLevel.STALEMATE,
+        description: `战况胶着，双方列阵对峙暂无大规模伤亡`,
+        severity: 0
+      });
+    }
+
+    if (!data.resourcesAvailable && data.resourceStockpile < 0.1) {
+      states.push({
+        dimension: NarrativeDimension.RESOURCE_STATUS,
+        level: ResourceStatusLevel.ARMAMENT_CRISIS,
+        description: `矿脉失守且储备枯竭，军械告急，前线将士已无可用之兵刃法器`,
+        severity: 3
+      });
+    } else if (!data.resourcesAvailable || data.resourceStockpile < 0.3) {
+      states.push({
+        dimension: NarrativeDimension.RESOURCE_STATUS,
+        level: ResourceStatusLevel.SHORTAGE,
+        description: `资源告急，灵石与军械储备已跌破警戒线，难以支撑持久战`,
+        severity: 2
+      });
+    } else {
+      states.push({
+        dimension: NarrativeDimension.RESOURCE_STATUS,
+        level: ResourceStatusLevel.ABUNDANT,
+        description: `资源充足，灵石与军械储备足以支撑长期作战`,
+        severity: 0
+      });
+    }
+
+    if (data.moraleLevel < 0.3) {
+      states.push({
+        dimension: NarrativeDimension.MORALE_STATUS,
+        level: MoraleStatusLevel.LOW,
+        description: `士气低迷，前线将士战意消沉，逃兵与动摇者日渐增多`,
+        severity: 2
+      });
+    } else if (data.moraleLevel <= 0.7) {
+      states.push({
+        dimension: NarrativeDimension.MORALE_STATUS,
+        level: MoraleStatusLevel.STABLE,
+        description: `士气平稳，将士尚能坚守阵线，但缺乏进取锐气`,
+        severity: 1
+      });
+    } else {
+      states.push({
+        dimension: NarrativeDimension.MORALE_STATUS,
+        level: MoraleStatusLevel.HIGH,
+        description: `士气高昂，将士求战心切，军心可用`,
+        severity: 0
+      });
+    }
+
+    if (data.territoryThreatened && data.resourcePointsLost > 2) {
+      states.push({
+        dimension: NarrativeDimension.TERRITORY_STATUS,
+        level: TerritoryStatusLevel.FALLEN,
+        description: `领地沦陷，${data.resourcePointsLost}处资源点已落入敌手，防线岌岌可危`,
+        severity: 3
+      });
+    } else if (data.territoryThreatened && data.resourcePointsLost > 0) {
+      states.push({
+        dimension: NarrativeDimension.TERRITORY_STATUS,
+        level: TerritoryStatusLevel.THREATENED,
+        description: `领地受胁，${data.resourcePointsLost}处资源点面临威胁，需紧急调配兵力固守`,
+        severity: 2
+      });
+    } else {
+      states.push({
+        dimension: NarrativeDimension.TERRITORY_STATUS,
+        level: TerritoryStatusLevel.SECURE,
+        description: `固若金汤，领地防线完整，资源点安然无恙`,
+        severity: 0
+      });
+    }
+
+    return states;
+  }
+
+  static composeNarrativeDigest(states: NarrativeState[]): string {
+    const sorted = [...states].sort((a, b) => b.severity - a.severity);
+    const top = sorted.slice(0, 3);
+    const lines = top.map(
+      s => `【${s.dimension}】${s.level}：${s.description}`
+    );
+    return lines.join('\n');
+  }
+
+  static decomposeIntent(npcId: string, intent: LLMIntent, tier: number): DecomposedCommand[] {
+    if (tier > 2) {
+      return [];
+    }
+
+    const metric = intent.metric.toLowerCase();
+    const commands: DecomposedCommand[] = [];
+
+    if (metric.includes('fightingstrength') || metric.includes('战力')) {
+      commands.push(
+        { activity: 'Attack', target: '敌方主力', priority: 1 },
+        { activity: 'Ambush', target: '敌方薄弱点', priority: 2 },
+        { activity: 'Assassinate', target: '敌方指挥官', priority: 2 },
+        { activity: 'CaptureResourcePoint', target: '敌方资源点', priority: 3 }
+      );
+    }
+
+    if (metric.includes('resource') || metric.includes('资源')) {
+      commands.push(
+        { activity: 'Scout', target: '资源富集区', priority: 1 },
+        { activity: 'Gather', target: '已知资源点', priority: 1 },
+        { activity: 'Trade', target: '市场/商队', priority: 2 },
+        { activity: 'Build', target: '资源设施', priority: 3 }
+      );
+    }
+
+    if (metric.includes('territory') || metric.includes('领土')) {
+      commands.push(
+        { activity: 'Patrol', target: '边境区域', priority: 1 },
+        { activity: 'DefendPosition', target: '关键据点', priority: 1 },
+        { activity: 'Explore', target: '未探明区域', priority: 2 },
+        { activity: 'Scout', target: '敌方动向', priority: 2 }
+      );
+    }
+
+    if (commands.length === 0) {
+      commands.push(
+        { activity: 'Patrol', target: '防区', priority: 1 },
+        { activity: 'Scout', target: '周边区域', priority: 2 },
+        { activity: 'Explore', target: '未探明区域', priority: 3 }
+      );
+    }
+
+    return commands;
+  }
+
   buildPlanPromptWithFrontline(
     request: LLMPlanningRequest,
     frontlineSummary: string,
-    revisionFlags: string[]
+    revisionFlags: string[],
+    narrativeStates?: NarrativeState[]
   ): string {
     const parts: string[] = [];
 
@@ -74,6 +309,12 @@ export class LLMPlanningService {
     if (frontlineSummary && frontlineSummary.length > 0) {
       parts.push('');
       parts.push(frontlineSummary);
+    }
+
+    if (narrativeStates && narrativeStates.length > 0) {
+      parts.push('');
+      parts.push('【前线态势感知】');
+      parts.push(LLMPlanningService.composeNarrativeDigest(narrativeStates));
     }
 
     if (revisionFlags && revisionFlags.length > 0) {
@@ -90,7 +331,15 @@ export class LLMPlanningService {
     }
 
     parts.push('');
+    parts.push('请制定战略意图（而非具体命令）：');
+    parts.push('- 目标：你希望达成的状态变化（如"削弱X国至50%战力"）');
+    parts.push('- 衡量指标：如何判断目标达成（如"X国.fightingStrength"）');
+    parts.push('- 目标值：指标应达到的具体数值');
+    parts.push('- 失效条件：什么情况下此计划自动作废（如"X国被其他势力灭国"）');
+    parts.push('- 建议手段：你可建议一些具体行动，但最终由下属根据战场态势决定');
+    parts.push('');
     parts.push(`请基于以上信息，为${request.npc_data.name}制定接下来${request.planning_horizon}的行动规划。`);
+    parts.push('请以JSON格式回复，包含intent和suggested_tasks两个字段。');
 
     return parts.join('\n');
   }
@@ -141,6 +390,78 @@ export class LLMPlanningService {
     }
   }
 
+  validateIntent(npcId: string, intent: LLMIntent): IntentValidationResult {
+    const factionName = this.extractFactionFromCondition(intent.validity_condition);
+    if (factionName && !this.factionExists(factionName)) {
+      return {
+        status: 'invalidated',
+        message: `目标势力${factionName}已不存在，意图自动失效`
+      };
+    }
+
+    const currentFrame = this.getCurrentFrame();
+    const plan = this.activePlans.get(npcId);
+    if (plan && intent.deadline_frames > 0) {
+      const elapsed = currentFrame - Math.floor(plan.generated_at / 16);
+      if (elapsed > intent.deadline_frames) {
+        return {
+          status: 'timed_out',
+          message: `意图已超过截止帧数 ${intent.deadline_frames}`
+        };
+      }
+    }
+
+    return { status: 'active' };
+  }
+
+  checkAllActiveIntents(): void {
+    for (const [npcId, plan] of this.activePlans.entries()) {
+      if (!plan.intent || plan.status !== PlanStatus.ACTIVE) {
+        continue;
+      }
+
+      const result = this.validateIntent(npcId, plan.intent);
+
+      switch (result.status) {
+        case 'invalidated':
+          this.interruptPlan(npcId, result.message || '目标已失效');
+          plan.decomposed_commands = undefined;
+          break;
+        case 'completed':
+          plan.status = PlanStatus.COMPLETED;
+          break;
+        case 'timed_out':
+          plan.status = PlanStatus.PENDING_REPLAN;
+          break;
+        case 'active':
+        default:
+          break;
+      }
+    }
+  }
+
+  registerFaction(factionName: string, exists: boolean): void {
+    this.factionRegistry.set(factionName, exists);
+  }
+
+  private factionRegistry: Map<string, boolean> = new Map();
+
+  private factionExists(factionName: string): boolean {
+    if (!factionName || factionName === 'true') return true;
+    if (factionName === 'false') return false;
+    return this.factionRegistry.get(factionName) ?? true;
+  }
+
+  private extractFactionFromCondition(condition: string): string | null {
+    if (!condition || condition === 'true' || condition === 'false') return null;
+    const match = condition.match(/^([\u4e00-\u9fa5a-zA-Z_]+)\.exists$/);
+    return match ? match[1] : null;
+  }
+
+  private getCurrentFrame(): number {
+    return Math.floor(Date.now() / 16);
+  }
+
   cleanupExpiredPlans(): void {
     const now = Date.now();
     for (const [npcId, plan] of this.activePlans.entries()) {
@@ -160,7 +481,7 @@ export class LLMPlanningService {
   }
 
   private parseResponse(response: LLMPlanningResponse): LLMPlan {
-    return {
+    const plan: LLMPlan = {
       plan_id: response.plan_id,
       generated_at: Date.now(),
       expires_at: Date.now() + response.horizon_days * 24 * 60 * 60 * 1000,
@@ -168,5 +489,19 @@ export class LLMPlanningService {
       current_task_index: 0,
       status: PlanStatus.ACTIVE
     };
+
+    if (response.intent) {
+      plan.intent = response.intent;
+    } else {
+      plan.intent = {
+        goal: '执行战略规划',
+        metric: 'plan.progress',
+        target_value: 100,
+        deadline_frames: 10000,
+        validity_condition: 'true'
+      };
+    }
+
+    return plan;
   }
 }
