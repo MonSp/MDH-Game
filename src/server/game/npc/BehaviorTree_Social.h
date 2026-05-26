@@ -1,6 +1,7 @@
 #pragma once
 #include "ExecuteDescriptor.h"
 #include "../ecs/components/PositionComponent.h"
+#include "../spatial/SpatialIndexCache.h"
 #include "../ecs/components/StatsComponent.h"
 #include "../ecs/components/ResourcesComponent.h"
 #include "../ecs/components/SocialComponent.h"
@@ -11,6 +12,13 @@
 #include <cmath>
 #include <algorithm>
 #include <climits>
+
+static uint32_t findSelfSlot(ECS::Registry& reg, ECS::EntityId entityId) {
+    for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
+        if (reg.entityIds_[i] == entityId) return static_cast<uint32_t>(i);
+    }
+    return UINT32_MAX;
+}
 
 static void exec_visitFriend(ExecuteContext& ctx) {
     auto* rel = ctx.getRelationship();
@@ -29,6 +37,26 @@ static void exec_visitFriend(ExecuteContext& ctx) {
             int8_t affinityChange = 2;
             rel->modifyAffinity(ts, affinityChange);
             rel->markInteraction(ts, ctx.currentTime);
+
+            auto& reg = ctx.reg();
+            uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
+            if (selfSlot != UINT32_MAX) {
+                auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+                auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[ts]);
+                InteractionSlot slotMine;
+                slotMine.timestamp = ctx.currentTime;
+                slotMine.otherSlot = ts;
+                slotMine.type = 0;
+                slotMine.impactScore = 2;
+                if (myMemory) myMemory->interactions.push(slotMine);
+                InteractionSlot slotOther;
+                slotOther.timestamp = ctx.currentTime;
+                slotOther.otherSlot = selfSlot;
+                slotOther.type = 0;
+                slotOther.impactScore = 2;
+                if (otherMemory) otherMemory->interactions.push(slotOther);
+            }
+
             auto* social = ctx.getSocial();
             if (social) social->onSocialSuccess();
             auto* behavior = ctx.getBehavior();
@@ -50,6 +78,26 @@ static void exec_date(ExecuteContext& ctx) {
             int8_t affinityChange = 3;
             rel->modifyAffinity(rel->spouseSlot, affinityChange);
             rel->markInteraction(rel->spouseSlot, ctx.currentTime);
+
+            auto& reg = ctx.reg();
+            uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
+            if (selfSlot != UINT32_MAX) {
+                auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+                auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[rel->spouseSlot]);
+                InteractionSlot slotMine;
+                slotMine.timestamp = ctx.currentTime;
+                slotMine.otherSlot = rel->spouseSlot;
+                slotMine.type = 0;
+                slotMine.impactScore = 3;
+                if (myMemory) myMemory->interactions.push(slotMine);
+                InteractionSlot slotOther;
+                slotOther.timestamp = ctx.currentTime;
+                slotOther.otherSlot = selfSlot;
+                slotOther.type = 0;
+                slotOther.impactScore = 3;
+                if (otherMemory) otherMemory->interactions.push(slotOther);
+            }
+
             auto* social = ctx.getSocial();
             if (social) social->onSocialSuccess();
             auto* behavior = ctx.getBehavior();
@@ -74,10 +122,7 @@ static void exec_mentorTeach(ExecuteContext& ctx) {
     auto* rel = ctx.getRelationship();
     if (!rel) return;
     auto& reg = ctx.reg();
-    uint32_t selfSlot = UINT32_MAX;
-    for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
-        if (reg.entityIds_[i] == ctx.entityId) { selfSlot = static_cast<uint32_t>(i); break; }
-    }
+    uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
     if (selfSlot == UINT32_MAX) return;
     int disciplesTaught = 0;
     for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
@@ -87,6 +132,22 @@ static void exec_mentorTeach(ExecuteContext& ctx) {
             auto* dc = reg.getComponent<CultivationComponent>(reg.entityIds_[i]);
             if (dc) dc->addProgress(0.5f * 0.016f);
             rel->markInteraction(static_cast<uint32_t>(i), ctx.currentTime);
+
+            auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+            auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[i]);
+            InteractionSlot slotMine;
+            slotMine.timestamp = ctx.currentTime;
+            slotMine.otherSlot = static_cast<uint32_t>(i);
+            slotMine.type = 0;
+            slotMine.impactScore = 5;
+            if (myMemory) myMemory->interactions.push(slotMine);
+            InteractionSlot slotOther;
+            slotOther.timestamp = ctx.currentTime;
+            slotOther.otherSlot = selfSlot;
+            slotOther.type = 0;
+            slotOther.impactScore = 5;
+            if (otherMemory) otherMemory->interactions.push(slotOther);
+
             disciplesTaught++;
         }
     }
@@ -111,6 +172,25 @@ static void exec_discipleAsk(ExecuteContext& ctx) {
         if (ms && selfStats && static_cast<uint8_t>(ms->realm) >= static_cast<uint8_t>(selfStats->realm)) {
             cult->addProgress(1.5f * 0.016f);
             rel->markInteraction(rel->mentorSlot, ctx.currentTime);
+
+            uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
+            if (selfSlot != UINT32_MAX) {
+                auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+                auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[rel->mentorSlot]);
+                InteractionSlot slotMine;
+                slotMine.timestamp = ctx.currentTime;
+                slotMine.otherSlot = rel->mentorSlot;
+                slotMine.type = 0;
+                slotMine.impactScore = 5;
+                if (myMemory) myMemory->interactions.push(slotMine);
+                InteractionSlot slotOther;
+                slotOther.timestamp = ctx.currentTime;
+                slotOther.otherSlot = selfSlot;
+                slotOther.type = 0;
+                slotOther.impactScore = 5;
+                if (otherMemory) otherMemory->interactions.push(slotOther);
+            }
+
             score = 5;
         }
     }
@@ -146,13 +226,13 @@ static void tryEmotionalContagion(ExecuteContext& ctx, uint32_t listenerSlot) {
     float centerY = (selfPos->y + listenerPos->y) * 0.5f;
     const float RADIUS_SQ = 200.0f * 200.0f;
 
-    for (size_t i = 0; i < reg.entityIds_.size(); i++) {
-        if (!reg.activeSlots_[i]) continue;
+    auto processEntity = [&](uint32_t i) {
+        if (!reg.activeSlots_[i]) return;
         auto* pos = reg.getComponent<PositionComponent>(reg.entityIds_[i]);
-        if (!pos) continue;
+        if (!pos) return;
         float dx = pos->x - centerX;
         float dy = pos->y - centerY;
-        if (dx * dx + dy * dy > RADIUS_SQ) continue;
+        if (dx * dx + dy * dy > RADIUS_SQ) return;
 
         nearbyCount++;
         auto* soc = reg.getComponent<SocialComponent>(reg.entityIds_[i]);
@@ -160,6 +240,18 @@ static void tryEmotionalContagion(ExecuteContext& ctx, uint32_t listenerSlot) {
             if (soc->fear >= SocialComponent::HIGH_FEAR_THRESHOLD) highFearCount++;
             if (soc->anger >= SocialComponent::HIGH_ANGER_THRESHOLD) highAngerCount++;
             if (soc->joy >= SocialComponent::HIGH_JOY_THRESHOLD) highJoyCount++;
+        }
+    };
+
+    auto& spatialIdx = SpatialIndexCache::getInstance();
+    auto neighbors = spatialIdx.queryNeighbors(centerX, centerY, 200.0f);
+    if (!neighbors.empty()) {
+        for (uint32_t i : neighbors) {
+            processEntity(i);
+        }
+    } else {
+        for (size_t i = 0; i < reg.entityIds_.size(); i++) {
+            processEntity(static_cast<uint32_t>(i));
         }
     }
 
@@ -180,10 +272,7 @@ static void tryEmotionalContagion(ExecuteContext& ctx, uint32_t listenerSlot) {
 static void trySpreadRumor(ExecuteContext& ctx, uint32_t listenerSlot) {
     auto& reg = ctx.reg();
 
-    uint32_t selfSlot = UINT32_MAX;
-    for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
-        if (reg.entityIds_[i] == ctx.entityId) { selfSlot = static_cast<uint32_t>(i); break; }
-    }
+    uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
     if (selfSlot == UINT32_MAX) return;
 
     auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
@@ -271,17 +360,37 @@ static void exec_gossip(ExecuteContext& ctx) {
     }
 
     auto& reg = ctx.reg();
-    uint32_t selfSlot = UINT32_MAX;
-    for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
-        if (reg.entityIds_[i] == ctx.entityId) { selfSlot = static_cast<uint32_t>(i); break; }
-    }
+    uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
     if (selfSlot == UINT32_MAX) return;
 
+    auto* selfPos = ctx.getPosition();
     size_t candidateCount = 0;
     uint32_t candidates[32];
-    for (size_t i = 0; i < reg.entityIds_.size() && candidateCount < 32; ++i) {
-        if (i != selfSlot && reg.activeSlots_[i]) {
-            candidates[candidateCount++] = static_cast<uint32_t>(i);
+
+    if (selfPos) {
+        auto& spatialIdx = SpatialIndexCache::getInstance();
+        auto neighbors = spatialIdx.queryNeighbors(selfPos->x, selfPos->y, 200.0f);
+
+        for (uint32_t neighborSlot : neighbors) {
+            if (candidateCount >= 32) break;
+            if (neighborSlot != selfSlot && reg.activeSlots_[neighborSlot]) {
+                auto* npos = reg.getComponent<PositionComponent>(reg.entityIds_[neighborSlot]);
+                if (npos) {
+                    float dx = npos->x - selfPos->x;
+                    float dy = npos->y - selfPos->y;
+                    if (dx * dx + dy * dy <= 200.0f * 200.0f) {
+                        candidates[candidateCount++] = neighborSlot;
+                    }
+                }
+            }
+        }
+    }
+
+    if (candidateCount == 0) {
+        for (size_t i = 0; i < reg.entityIds_.size() && candidateCount < 32; ++i) {
+            if (i != selfSlot && reg.activeSlots_[i]) {
+                candidates[candidateCount++] = static_cast<uint32_t>(i);
+            }
         }
     }
     if (candidateCount == 0) return;
@@ -289,6 +398,21 @@ static void exec_gossip(ExecuteContext& ctx) {
     uint32_t listenerSlot = candidates[exec_randRange(0, static_cast<int>(candidateCount) - 1)];
     trySpreadRumor(ctx, listenerSlot);
     tryEmotionalContagion(ctx, listenerSlot);
+
+    auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+    auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[listenerSlot]);
+    InteractionSlot slotMine;
+    slotMine.timestamp = ctx.currentTime;
+    slotMine.otherSlot = listenerSlot;
+    slotMine.type = 0;
+    slotMine.impactScore = 1;
+    if (myMemory) myMemory->interactions.push(slotMine);
+    InteractionSlot slotOther;
+    slotOther.timestamp = ctx.currentTime;
+    slotOther.otherSlot = selfSlot;
+    slotOther.type = 0;
+    slotOther.impactScore = 1;
+    if (otherMemory) otherMemory->interactions.push(slotOther);
 }
 static void exec_reportTask(ExecuteContext& ctx) {
     auto* pos = ctx.getPosition();

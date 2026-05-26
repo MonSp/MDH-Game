@@ -48,8 +48,9 @@ public:
         int cx = cellX(x);
         int cy = cellY(y);
 
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
+        int range = static_cast<int>(std::ceil(radius / kGridSize));
+        for (int dy = -range; dy <= range; ++dy) {
+            for (int dx = -range; dx <= range; ++dx) {
                 int nx = cx + dx;
                 int ny = cy + dy;
                 if (nx < 0 || nx >= kGridDim || ny < 0 || ny >= kGridDim) continue;

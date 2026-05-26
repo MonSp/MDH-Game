@@ -75,7 +75,7 @@ public:
         auto& reg = ECS::Registry::getInstance();
         SpatialIndexCache::getInstance().rebuild(reg.activeSlots_, reg.getArray_<PositionComponent>(), reg.entityIds_.size());
 
-        NPCInteractionSystem::getInstance().tickInteraction(currentTimeMs, static_cast<uint16_t>(frameCount_));
+        NPCInteractionSystem::getInstance().tickInteraction(currentTimeMs, static_cast<uint16_t>(frameCount_), frameCount_);
 
         LifecycleSystem::getInstance().updateAllNPCs(deltaTime / 1000.0f);
 

@@ -68,9 +68,9 @@ struct RelationshipComponent : public ECS::ComponentBase<RelationshipComponent> 
 
     static uint8_t computeDecayRate(float loyalty, float greed) {
         float rate = 3.0f;
-        if (loyalty >= 70.0f) rate -= 1.5f;
+        if (loyalty >= 70.0f) rate -= 2.0f;
         else if (loyalty < 30.0f) rate += 1.0f;
-        if (greed >= 70.0f) rate += 1.5f;
+        if (greed >= 70.0f) rate += 2.0f;
         if (rate < 1.0f) rate = 1.0f;
         if (rate > 10.0f) rate = 10.0f;
         return static_cast<uint8_t>(rate);

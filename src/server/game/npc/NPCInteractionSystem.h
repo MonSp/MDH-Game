@@ -29,7 +29,7 @@ public:
         return s;
     }
 
-    void tickInteraction(uint64_t currentTimeMs, uint16_t frameCounter) {
+    void tickInteraction(uint64_t currentTimeMs, uint16_t frameCounter, uint64_t currentFrame) {
         if (frameCounter % 5 != 0) return;
 
         eventCount_ = 0;
@@ -76,14 +76,14 @@ public:
                     relationships[i].modifyAffinity(j, 3);
 
                     InteractionSlot slotI;
-                    slotI.timestamp = currentTimeMs;
+                    slotI.timestamp = currentFrame;
                     slotI.otherSlot = j;
                     slotI.type = 0;
                     slotI.impactScore = 3;
                     memoryRings[i].interactions.push(slotI);
 
                     InteractionSlot slotJ;
-                    slotJ.timestamp = currentTimeMs;
+                    slotJ.timestamp = currentFrame;
                     slotJ.otherSlot = static_cast<uint32_t>(i);
                     slotJ.type = 0;
                     slotJ.impactScore = 3;

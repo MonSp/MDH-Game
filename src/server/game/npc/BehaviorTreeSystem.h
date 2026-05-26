@@ -121,6 +121,20 @@ public:
             llmPlan->status == PlanStatus::ACTIVE) {
             ActionType action = llmPlan->getCurrentAction();
             NPCActivity newAct = translateActionType(action);
+            if (stats->hpPercent() < 0.3f) {
+                llmPlan->status = PlanStatus::INTERRUPTED;
+                if (shouldInterrupt(behavior, NPCActivity::Flee, 6)) {
+                    behavior->changeActivity(NPCActivity::Flee);
+                }
+                return;
+            }
+            if (stats->hpPercent() < 0.5f) {
+                llmPlan->status = PlanStatus::INTERRUPTED;
+                if (shouldInterrupt(behavior, NPCActivity::Heal, 6)) {
+                    behavior->changeActivity(NPCActivity::Heal);
+                }
+                return;
+            }
             if (shouldInterrupt(behavior, newAct, 6)) {
                 behavior->changeActivity(newAct);
             }
@@ -139,14 +153,19 @@ public:
 
         if (!identity || !personality) return;
 
-        if (evaluateSurvival(stats, behavior)) return;
-        if (evaluateEmotion(social, personality, behavior, stats, rel, registry, entityId, currentTime)) return;
         auto* cmdRespGet = registry.getComponent<CommandResponseComponent>(entityId);
-        if (evaluateCommand(entityId, cmd, cmdRespGet, behavior, personality, currentTime)) return;
-        if (evaluateLLMPlan(llmPlan, behavior)) return;
-        if (evaluateSocial(social, personality, behavior, rel, identity)) return;
-        if (evaluateCultivation(cult, stats, behavior, personality, identity)) return;
-        evaluateDaily(social, personality, behavior, identity, cult, currentTime);
+
+        // WARNING: field order MUST match EvaluateContext struct declaration.
+        // Reordering fields in EvaluateContext without updating this line will cause silent data corruption.
+        EvaluateContext ctx{
+            registry, currentTime, entityId,
+            stats, behavior, bt, bb, llmPlan, cmd, cmdRespGet,
+            identity, personality, social, rel, cult
+        };
+
+        for (const auto& layer : kEvaluateLayers) {
+            if (layer(ctx)) return;
+        }
     }
 
     void execute(ECS::EntityId entityId, uint64_t currentTime, float deltaTime) {
@@ -176,6 +195,26 @@ public:
 private:
     BehaviorTreeSystem() = default;
 
+    struct EvaluateContext {
+        ECS::Registry& reg;
+        uint64_t currentTime;
+        ECS::EntityId entityId;
+        StatsComponent* stats;
+        BehaviorComponent* behavior;
+        BehaviorTreeComponent* bt;
+        BlackboardCache* bb;
+        LLMPlanComponent* llmPlan;
+        RoleCommandComponent* cmd;
+        CommandResponseComponent* cmdResp;
+        IdentityComponent* identity;
+        PersonalityComponent* personality;
+        SocialComponent* social;
+        RelationshipComponent* rel;
+        CultivationComponent* cult;
+    };
+
+    using EvaluateFn = bool (*)(EvaluateContext&);
+
     static float random01() {
         return static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
     }
@@ -184,7 +223,7 @@ private:
         return min + rand() % (max - min + 1);
     }
 
-    float applyReflection(BehaviorComponent* behavior, NPCActivity activity,
+    static float applyReflection(BehaviorComponent* behavior, NPCActivity activity,
                           uint64_t currentFrame = 0, PersonalityComponent* personality = nullptr) {
         if (!behavior) return 1.0f;
         if (currentFrame == 0 || !personality) {
@@ -193,7 +232,7 @@ private:
         return behavior->reflection.getWeightWithDecay(activity, currentFrame, personality->diligence);
     }
 
-    NPCActivity tryMicroPlan(BehaviorComponent* behavior, PersonalityComponent* p,
+    static NPCActivity tryMicroPlan(BehaviorComponent* behavior, PersonalityComponent* p,
                              uint64_t currentFrame) {
         if (!behavior) return NPCActivity::Idle;
         auto& ref = behavior->reflection;
@@ -302,7 +341,7 @@ private:
         }
     }
 
-    bool shouldInterrupt(BehaviorComponent* behavior, NPCActivity newActivity, uint8_t interruptSource) {
+    static bool shouldInterrupt(BehaviorComponent* behavior, NPCActivity newActivity, uint8_t interruptSource) {
         if (!behavior) return false;
         if (behavior->currentActivity == NPCActivity::Idle ||
             behavior->currentActivity == NPCActivity::Dead ||
@@ -352,32 +391,32 @@ private:
         return true;
     }
 
-    bool evaluateSurvival(StatsComponent* stats, BehaviorComponent* behavior) {
-        bool wasInSurvival = (behavior->currentActivity == NPCActivity::Flee ||
-                              behavior->currentActivity == NPCActivity::Heal ||
-                              behavior->currentActivity == NPCActivity::Defend);
+    static bool evaluateSurvival(EvaluateContext& ctx) {
+        bool wasInSurvival = (ctx.behavior->currentActivity == NPCActivity::Flee ||
+                              ctx.behavior->currentActivity == NPCActivity::Heal ||
+                              ctx.behavior->currentActivity == NPCActivity::Defend);
 
-        if (stats->hpPercent() < 0.3f) {
-            if (!shouldInterrupt(behavior, NPCActivity::Flee, 1)) return true;
-            behavior->changeActivity(NPCActivity::Flee);
+        if (ctx.stats->hpPercent() < 0.3f) {
+            if (!shouldInterrupt(ctx.behavior, NPCActivity::Flee, 1)) return true;
+            ctx.behavior->changeActivity(NPCActivity::Flee);
             return true;
         }
-        if (stats->hpPercent() < 0.5f) {
-            if (behavior->currentActivity == NPCActivity::Flee && stats->hpPercent() >= 0.4f) {
-                if (!shouldInterrupt(behavior, NPCActivity::Heal, 1)) return true;
-                behavior->changeActivity(NPCActivity::Heal);
+        if (ctx.stats->hpPercent() < 0.5f) {
+            if (ctx.behavior->currentActivity == NPCActivity::Flee && ctx.stats->hpPercent() >= 0.4f) {
+                if (!shouldInterrupt(ctx.behavior, NPCActivity::Heal, 1)) return true;
+                ctx.behavior->changeActivity(NPCActivity::Heal);
                 return true;
             }
             if (!wasInSurvival) {
-                behavior->changeActivity(NPCActivity::Heal);
+                ctx.behavior->changeActivity(NPCActivity::Heal);
                 return true;
             }
             return true;
         }
         if (wasInSurvival) {
-            float exitThreshold = (behavior->currentActivity == NPCActivity::Heal) ? 0.6f : 0.4f;
-            if (stats->hpPercent() >= exitThreshold) {
-                if (!shouldInterrupt(behavior, NPCActivity::Rest, 1)) return true;
+            float exitThreshold = (ctx.behavior->currentActivity == NPCActivity::Heal) ? 0.6f : 0.4f;
+            if (ctx.stats->hpPercent() >= exitThreshold) {
+                if (!shouldInterrupt(ctx.behavior, NPCActivity::Rest, 1)) return true;
                 return false;
             }
             return true;
@@ -385,63 +424,60 @@ private:
         return false;
     }
 
-    bool evaluateEmotion(SocialComponent* social, PersonalityComponent* personality,
-                         BehaviorComponent* behavior, StatsComponent* stats,
-                         RelationshipComponent* rel, ECS::Registry& reg, ECS::EntityId entityId,
-                         uint64_t currentFrame) {
-        if (!social || !personality) return false;
+    static bool evaluateEmotion(EvaluateContext& ctx) {
+        if (!ctx.social || !ctx.personality) return false;
 
-        social->cleanupExpiredCooldowns(currentFrame);
+        ctx.social->cleanupExpiredCooldowns(ctx.currentTime);
 
-        if (social->isTerrified() && stats && stats->hpPercent() > 0.15f) {
+        if (ctx.social->isTerrified() && ctx.stats && ctx.stats->hpPercent() > 0.15f) {
             uint32_t targetSlot = 0;
-            if (rel && rel->relationCount > 0) {
+            if (ctx.rel && ctx.rel->relationCount > 0) {
                 int8_t lowestAffinity = 127;
-                for (uint8_t i = 0; i < rel->relationCount; i++) {
-                    if (rel->relations[i].affinity < lowestAffinity) {
-                        lowestAffinity = rel->relations[i].affinity;
-                        targetSlot = rel->relations[i].targetSlot;
+                for (uint8_t i = 0; i < ctx.rel->relationCount; i++) {
+                    if (ctx.rel->relations[i].affinity < lowestAffinity) {
+                        lowestAffinity = ctx.rel->relations[i].affinity;
+                        targetSlot = ctx.rel->relations[i].targetSlot;
                     }
                 }
             }
-            if (targetSlot != 0 && social->isInCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, currentFrame)) {
-            } else if (shouldInterrupt(behavior, NPCActivity::Flee, 4)) {
-                behavior->changeActivity(NPCActivity::Flee);
+            if (targetSlot != 0 && ctx.social->isInCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, ctx.currentTime)) {
+            } else if (shouldInterrupt(ctx.behavior, NPCActivity::Flee, 4)) {
+                ctx.behavior->changeActivity(NPCActivity::Flee);
                 if (targetSlot != 0) {
-                    social->addCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, currentFrame);
+                    ctx.social->addCooldown(targetSlot, EmotionType::Fear, NPCActivity::Flee, ctx.currentTime);
                 }
                 return true;
             }
         }
 
-        if (social->isEnraged(personality->caution)) {
+        if (ctx.social->isEnraged(ctx.personality->caution)) {
             uint32_t targetSlot = 0;
-            if (rel && rel->relationCount > 0) {
+            if (ctx.rel && ctx.rel->relationCount > 0) {
                 int8_t lowestAffinity = 127;
-                for (uint8_t i = 0; i < rel->relationCount; i++) {
-                    if (rel->relations[i].affinity < lowestAffinity) {
-                        lowestAffinity = rel->relations[i].affinity;
-                        targetSlot = rel->relations[i].targetSlot;
+                for (uint8_t i = 0; i < ctx.rel->relationCount; i++) {
+                    if (ctx.rel->relations[i].affinity < lowestAffinity) {
+                        lowestAffinity = ctx.rel->relations[i].affinity;
+                        targetSlot = ctx.rel->relations[i].targetSlot;
                     }
                 }
             }
-            if (targetSlot != 0 && social->isInCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, currentFrame)) {
-                float threshold = 70.0f - personality->caution * 0.3f;
-                social->addFear((social->anger - threshold) * 0.5f);
+            if (targetSlot != 0 && ctx.social->isInCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, ctx.currentTime)) {
+                float threshold = 70.0f - ctx.personality->caution * 0.3f;
+                ctx.social->addFear((ctx.social->anger - threshold) * 0.5f);
                 return false;
             }
-            if (shouldInterrupt(behavior, NPCActivity::Duel, 4)) {
-                behavior->changeActivity(NPCActivity::Duel);
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Duel, 4)) {
+                ctx.behavior->changeActivity(NPCActivity::Duel);
                 if (targetSlot != 0) {
-                    social->addCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, currentFrame);
+                    ctx.social->addCooldown(targetSlot, EmotionType::Anger, NPCActivity::Duel, ctx.currentTime);
                 }
                 return true;
             }
         }
 
-        if (social->isElated(personality->sociability)) {
-            if (shouldInterrupt(behavior, NPCActivity::Gossip, 4)) {
-                behavior->changeActivity(NPCActivity::Gossip);
+        if (ctx.social->isElated(ctx.personality->sociability)) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Gossip, 4)) {
+                ctx.behavior->changeActivity(NPCActivity::Gossip);
                 return true;
             }
         }
@@ -449,214 +485,220 @@ private:
         return false;
     }
 
-    bool evaluateCommand(ECS::EntityId entityId, RoleCommandComponent* cmd, CommandResponseComponent* cmdResp,
-                         BehaviorComponent* behavior, PersonalityComponent* personality, uint64_t currentTime) {
-        if (!cmd || !cmd->hasActiveCommand()) return false;
+    static bool evaluateCommand(EvaluateContext& ctx) {
+        if (!ctx.cmd || !ctx.cmd->hasActiveCommand()) return false;
 
-        CommandSlot* slot = cmd->peekCommandMut();
+        CommandSlot* slot = ctx.cmd->peekCommandMut();
         if (!slot) return false;
 
-        if (cmdResp && !cmdResp->resolved) {
-            auto& reg = ECS::Registry::getInstance();
+        if (ctx.cmdResp && !ctx.cmdResp->resolved) {
+            auto& reg = ctx.reg;
             float relVal = 0.0f;
-            if (cmd && cmd->issuerId != 0) {
-                auto* issuerRel = reg.getComponent<RelationshipComponent>(cmd->issuerId);
+            if (ctx.cmd && ctx.cmd->issuerId != 0) {
+                auto* issuerRel = reg.getComponent<RelationshipComponent>(ctx.cmd->issuerId);
                 if (issuerRel) {
                     for (size_t s = 0; s < reg.entityIds_.size(); ++s) {
-                        if (reg.entityIds_[s] == entityId) {
+                        if (reg.entityIds_[s] == ctx.entityId) {
                             relVal = static_cast<float>(issuerRel->getAffinity(static_cast<uint32_t>(s)));
                             break;
                         }
                     }
                 }
             }
-            float risk = getRiskLevel(static_cast<NPCActivity>(cmd->commandType));
+            float risk = getRiskLevel(static_cast<NPCActivity>(ctx.cmd->commandType));
 
-            cmdResp->evaluateResponse(
+            ctx.cmdResp->evaluateResponse(
                 slot->status,
-                personality->loyalty,
-                personality->ambition,
-                personality->caution,
-                personality->greed,
+                ctx.personality->loyalty,
+                ctx.personality->ambition,
+                ctx.personality->caution,
+                ctx.personality->greed,
                 relVal,
                 risk
             );
         }
 
-        if (cmdResp && cmdResp->isRefusing()) {
-            cmd->updateStatus(slot->commandId, CommandLifecycle::Refused);
-            if (shouldInterrupt(behavior, NPCActivity::RefuseCommand, 6)) {
-                behavior->changeActivity(NPCActivity::RefuseCommand);
+        if (ctx.cmdResp && ctx.cmdResp->isRefusing()) {
+            ctx.cmd->updateStatus(slot->commandId, CommandLifecycle::Refused);
+            if (shouldInterrupt(ctx.behavior, NPCActivity::RefuseCommand, 6)) {
+                ctx.behavior->changeActivity(NPCActivity::RefuseCommand);
             }
-            cmd->setFeedback(static_cast<uint8_t>(CommandLifecycle::Refused), currentTime);
+            ctx.cmd->setFeedback(static_cast<uint8_t>(CommandLifecycle::Refused), ctx.currentTime);
             return true;
         }
 
-        if (cmd->squadId != 0) {
-            if (shouldInterrupt(behavior, NPCActivity::CoordinateSquad, 6)) {
-                behavior->changeActivity(NPCActivity::CoordinateSquad);
+        if (ctx.cmd->squadId != 0) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::CoordinateSquad, 6)) {
+                ctx.behavior->changeActivity(NPCActivity::CoordinateSquad);
             }
             return true;
         }
 
-        if (behavior->currentActivity == NPCActivity::Patrol ||
-            behavior->currentActivity == NPCActivity::CoordinateSquad) {
-            if (behavior->activityProgress >= 1.0f) {
-                cmd->updateStatus(slot->commandId,
-                    cmdResp && cmdResp->overachieveMult > 1.0f
+        if (ctx.behavior->currentActivity == NPCActivity::Patrol ||
+            ctx.behavior->currentActivity == NPCActivity::CoordinateSquad) {
+            if (ctx.behavior->activityProgress >= 1.0f) {
+                ctx.cmd->updateStatus(slot->commandId,
+                    ctx.cmdResp && ctx.cmdResp->overachieveMult > 1.0f
                         ? CommandLifecycle::PartiallyCompleted
                         : CommandLifecycle::Completed);
-                cmd->setFeedback(slot->status, currentTime);
-                if (shouldInterrupt(behavior, NPCActivity::ReportTask, 6)) {
-                    behavior->changeActivity(NPCActivity::ReportTask);
+                ctx.cmd->setFeedback(slot->status, ctx.currentTime);
+                if (shouldInterrupt(ctx.behavior, NPCActivity::ReportTask, 6)) {
+                    ctx.behavior->changeActivity(NPCActivity::ReportTask);
                 }
                 return true;
             }
             return true;
         }
 
-        cmd->updateStatus(slot->commandId, CommandLifecycle::Executing);
+        ctx.cmd->updateStatus(slot->commandId, CommandLifecycle::Executing);
 
-        if (shouldInterrupt(behavior, NPCActivity::Patrol, 6)) {
-            behavior->changeActivity(NPCActivity::Patrol);
+        if (shouldInterrupt(ctx.behavior, NPCActivity::Patrol, 6)) {
+            ctx.behavior->changeActivity(NPCActivity::Patrol);
         }
 
         return true;
     }
 
-    bool evaluateLLMPlan(LLMPlanComponent* llmPlan, BehaviorComponent* behavior) {
-        if (!llmPlan || llmPlan->tier == LLMTier::T3 ||
-            llmPlan->status != PlanStatus::ACTIVE) return false;
-        ActionType action = llmPlan->getCurrentAction();
-        behavior->changeActivity(translateActionType(action));
+    static bool evaluateLLMPlan(EvaluateContext& ctx) {
+        if (!ctx.llmPlan || ctx.llmPlan->tier == LLMTier::T3 ||
+            ctx.llmPlan->status != PlanStatus::ACTIVE) return false;
+        ActionType action = ctx.llmPlan->getCurrentAction();
+        ctx.behavior->changeActivity(translateActionType(action));
         return true;
     }
 
-    bool evaluateSocial(SocialComponent* social, PersonalityComponent* personality,
-                        BehaviorComponent* behavior, RelationshipComponent* rel,
-                        IdentityComponent* identity) {
-        if (!social || !personality) return false;
-        if (social->wantsSocial() && personality->isSocial() && rel &&
-            rel->relationCount > 0) {
-            if (rel->spouseSlot != 0 && random01() < 0.2f) {
-                if (shouldInterrupt(behavior, NPCActivity::Date, 5)) {
-                    behavior->changeActivity(NPCActivity::Date);
+    static bool evaluateSocial(EvaluateContext& ctx) {
+        if (!ctx.social || !ctx.personality) return false;
+        if (ctx.social->wantsSocial() && ctx.personality->isSocial() && ctx.rel &&
+            ctx.rel->relationCount > 0) {
+            if (ctx.rel->spouseSlot != 0 && random01() < 0.2f) {
+                if (shouldInterrupt(ctx.behavior, NPCActivity::Date, 5)) {
+                    ctx.behavior->changeActivity(NPCActivity::Date);
                 }
                 return true;
             }
-            if (rel->hasDisciples() && random01() < 0.15f) {
-                if (shouldInterrupt(behavior, NPCActivity::MentorTeach, 5)) {
-                    behavior->changeActivity(NPCActivity::MentorTeach);
+            if (ctx.rel->hasDisciples() && random01() < 0.15f) {
+                if (shouldInterrupt(ctx.behavior, NPCActivity::MentorTeach, 5)) {
+                    ctx.behavior->changeActivity(NPCActivity::MentorTeach);
                 }
                 return true;
             }
-            if (rel->mentorSlot != 0 && random01() < 0.15f) {
-                if (shouldInterrupt(behavior, NPCActivity::DiscipleAsk, 5)) {
-                    behavior->changeActivity(NPCActivity::DiscipleAsk);
+            if (ctx.rel->mentorSlot != 0 && random01() < 0.15f) {
+                if (shouldInterrupt(ctx.behavior, NPCActivity::DiscipleAsk, 5)) {
+                    ctx.behavior->changeActivity(NPCActivity::DiscipleAsk);
                 }
                 return true;
             }
             if (random01() < 0.3f) {
-                if (shouldInterrupt(behavior, NPCActivity::VisitFriend, 5)) {
-                    behavior->changeActivity(NPCActivity::VisitFriend);
+                if (shouldInterrupt(ctx.behavior, NPCActivity::VisitFriend, 5)) {
+                    ctx.behavior->changeActivity(NPCActivity::VisitFriend);
                 }
                 return true;
             }
-            if (shouldInterrupt(behavior, NPCActivity::Gossip, 5)) {
-                behavior->changeActivity(NPCActivity::Gossip);
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Gossip, 5)) {
+                ctx.behavior->changeActivity(NPCActivity::Gossip);
             }
             return true;
         }
         return false;
     }
 
-    bool evaluateCultivation(CultivationComponent* cult, StatsComponent* stats,
-                             BehaviorComponent* behavior, PersonalityComponent* personality,
-                             IdentityComponent* identity) {
-        if (!cult || !stats) return false;
-        if (cult->isBreakingThrough) {
-            if (shouldInterrupt(behavior, NPCActivity::Breakthrough, 7)) {
-                behavior->changeActivity(NPCActivity::Breakthrough);
+    static bool evaluateCultivation(EvaluateContext& ctx) {
+        if (!ctx.cult || !ctx.stats) return false;
+        if (ctx.cult->isBreakingThrough) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Breakthrough, 7)) {
+                ctx.behavior->changeActivity(NPCActivity::Breakthrough);
             }
             return true;
         }
-        if (cult->tribulationTimer > 0) {
-            if (shouldInterrupt(behavior, NPCActivity::Tribulation, 7)) {
-                behavior->changeActivity(NPCActivity::Tribulation);
+        if (ctx.cult->tribulationTimer > 0) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Tribulation, 7)) {
+                ctx.behavior->changeActivity(NPCActivity::Tribulation);
             }
             return true;
         }
-        if (cult->isReadyForBreakthrough() &&
-            cult->bottleneckTimer > 1000 && !cult->isBreakingThrough) {
-            if (shouldInterrupt(behavior, NPCActivity::Breakthrough, 7)) {
-                behavior->changeActivity(NPCActivity::Breakthrough);
+        if (ctx.cult->isReadyForBreakthrough() &&
+            ctx.cult->bottleneckTimer > 1000 && !ctx.cult->isBreakingThrough) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Breakthrough, 7)) {
+                ctx.behavior->changeActivity(NPCActivity::Breakthrough);
             }
             return true;
         }
-        if (personality->isDiligent() && random01() < 0.4f) {
-            if (shouldInterrupt(behavior, NPCActivity::Cultivate, 7)) {
-                behavior->changeActivity(NPCActivity::Cultivate);
+        if (ctx.personality->isDiligent() && random01() < 0.4f) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Cultivate, 7)) {
+                ctx.behavior->changeActivity(NPCActivity::Cultivate);
             }
             return true;
         }
-        if (cult->bottleneckTimer > 500 && personality->ambition > 70.0f && random01() < 0.2f) {
-            if (shouldInterrupt(behavior, NPCActivity::SeekFortune, 7)) {
-                behavior->changeActivity(NPCActivity::SeekFortune);
+        if (ctx.cult->bottleneckTimer > 500 && ctx.personality->ambition > 70.0f && random01() < 0.2f) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::SeekFortune, 7)) {
+                ctx.behavior->changeActivity(NPCActivity::SeekFortune);
             }
             return true;
         }
-        if (personality->caution > 60.0f && random01() < 0.1f) {
-            if (shouldInterrupt(behavior, NPCActivity::Alchemy, 7)) {
-                behavior->changeActivity(NPCActivity::Alchemy);
+        if (ctx.personality->caution > 60.0f && random01() < 0.1f) {
+            if (shouldInterrupt(ctx.behavior, NPCActivity::Alchemy, 7)) {
+                ctx.behavior->changeActivity(NPCActivity::Alchemy);
             }
             return true;
         }
         return false;
     }
 
-    void evaluateDaily(SocialComponent* social, PersonalityComponent* personality,
-                       BehaviorComponent* behavior, IdentityComponent* identity,
-                       CultivationComponent* cult, uint64_t currentTime) {
-        if (social) {
-            if (social->isHungry()) {
-                if (shouldInterrupt(behavior, NPCActivity::Eat, 7)) {
-                    behavior->changeActivity(NPCActivity::Eat);
+    static bool evaluateDaily(EvaluateContext& ctx) {
+        if (ctx.social) {
+            if (ctx.social->isHungry()) {
+                if (shouldInterrupt(ctx.behavior, NPCActivity::Eat, 7)) {
+                    ctx.behavior->changeActivity(NPCActivity::Eat);
                 }
-                return;
+                return true;
             }
-            if (social->isExhausted()) {
-                if (shouldInterrupt(behavior, NPCActivity::Sleep, 7)) {
-                    behavior->changeActivity(NPCActivity::Sleep);
+            if (ctx.social->isExhausted()) {
+                if (shouldInterrupt(ctx.behavior, NPCActivity::Sleep, 7)) {
+                    ctx.behavior->changeActivity(NPCActivity::Sleep);
                 }
-                return;
+                return true;
             }
         }
 
-        if (identity && personality) {
-            NPCActivity chosen = chooseByRole(identity->role, personality, behavior, currentTime);
-            float weight = applyReflection(behavior, chosen, currentTime, personality);
+        if (ctx.identity && ctx.personality) {
+            NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime);
+            float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality);
             if (weight < 0.7f && random01() < 0.5f) {
-                chosen = chooseByRole(identity->role, personality, nullptr, currentTime);
+                chosen = chooseByRole(ctx.identity->role, ctx.personality, nullptr, ctx.currentTime);
             }
             if (weight < 0.5f && random01() < 0.3f) {
-                NPCActivity microPlan = tryMicroPlan(behavior, personality, currentTime);
-                if (microPlan != NPCActivity::Idle && shouldInterrupt(behavior, microPlan, 7)) {
-                    behavior->changeActivity(microPlan);
-                    return;
+                NPCActivity microPlan = tryMicroPlan(ctx.behavior, ctx.personality, ctx.currentTime);
+                if (microPlan != NPCActivity::Idle && shouldInterrupt(ctx.behavior, microPlan, 7)) {
+                    ctx.behavior->changeActivity(microPlan);
+                    return true;
                 }
             }
-            if (shouldInterrupt(behavior, chosen, 7)) {
-                behavior->changeActivity(chosen);
+            if (shouldInterrupt(ctx.behavior, chosen, 7)) {
+                ctx.behavior->changeActivity(chosen);
             }
-            return;
+            return true;
         }
 
-        if (shouldInterrupt(behavior, NPCActivity::Rest, 7)) {
-            behavior->changeActivity(NPCActivity::Rest);
+        if (shouldInterrupt(ctx.behavior, NPCActivity::Rest, 7)) {
+            ctx.behavior->changeActivity(NPCActivity::Rest);
         }
+        return true;
     }
 
-    NPCActivity translateActionType(ActionType action) {
+    // LLM planning (T1/T2 ACTIVE) is handled at the top of evaluate() before this array.
+    // evaluateLLMPlan exists as a standalone function but is not listed here
+    // because the top-level catch intercepts all T1/T2 ACTIVE plans first.
+    static constexpr EvaluateFn kEvaluateLayers[] = {
+        evaluateSurvival,
+        evaluateEmotion,
+        evaluateCommand,
+        evaluateSocial,
+        evaluateCultivation,
+        evaluateDaily,
+    };
+
+    static NPCActivity translateActionType(ActionType action) {
         switch (action) {
             case ActionType::REST:              return NPCActivity::Rest;
             case ActionType::PATROL:            return NPCActivity::Patrol;
@@ -678,7 +720,7 @@ private:
         }
     }
 
-    NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p, BehaviorComponent* behavior = nullptr,
+    static NPCActivity chooseByRole(NPCRole role, PersonalityComponent* p, BehaviorComponent* behavior = nullptr,
                              uint64_t currentTime = 0) {
         switch (role) {
             case NPCRole::FamilyHead:

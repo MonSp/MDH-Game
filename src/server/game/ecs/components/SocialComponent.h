@@ -150,9 +150,21 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
             return;
         }
 
-        fprintf(stderr, "[WARNING] EmotionCooldown overflow: NPC has %zu active cooldowns, "
-                "refusing new cooldown for targetSlot=%u type=%d behavior=%d\n",
-                MAX_COOLDOWNS, targetSlot, static_cast<int>(type), static_cast<int>(behavior));
+        uint8_t lruIdx = 0;
+        uint64_t minFrame = emotionCooldowns[0].cooldownUntilFrame;
+        for (uint8_t i = 1; i < cooldownCount; i++) {
+            if (emotionCooldowns[i].cooldownUntilFrame < minFrame) {
+                minFrame = emotionCooldowns[i].cooldownUntilFrame;
+                lruIdx = i;
+            }
+        }
+        emotionCooldowns[lruIdx].targetSlot = targetSlot;
+        emotionCooldowns[lruIdx].emotionType = type;
+        emotionCooldowns[lruIdx].triggerBehavior = behavior;
+        emotionCooldowns[lruIdx].cooldownUntilFrame = currentFrame + 72;
+        fprintf(stderr, "[DEBUG] EmotionCooldown LRU eviction: replaced slot=%u (oldest frame=%lu) "
+                "with targetSlot=%u type=%d behavior=%d\n",
+                lruIdx, (unsigned long)minFrame, targetSlot, static_cast<int>(type), static_cast<int>(behavior));
     }
 
     void cleanupExpiredCooldowns(uint64_t currentFrame) {

@@ -140,8 +140,6 @@ export class NPCWorldService extends EventEmitter {
   private clanIdPool: string[] = [];
   private clanIdIndex: number = 0;
   private factionAffinities: Map<string, Map<string, number>> = new Map();
- private lastDecayTime: number = 0;
-  private readonly DECAY_INTERVAL_MS = 8000;
   private memory!: NPCMemoryStore;
 
   private frontlineMetrics: FrontlineMetrics = {
@@ -262,7 +260,6 @@ export class NPCWorldService extends EventEmitter {
     this.planningOffset = 0;
     this.llmMode = true;
     this.recentInteractions = [];
-    this.lastDecayTime = 0;
     this.factionAffinities = new Map();
     this.rumorSpreadsThisFrame = 0;
     this.frontlineMetrics = {
@@ -429,36 +426,6 @@ export class NPCWorldService extends EventEmitter {
     return { activity: '换个地方走走', modifier: 'change_of_scenery' };
   }
 
-  private computeDecayRate(loyalty: number, greed: number): number {
-    let rate = 3;
-    if (loyalty >= 70) rate -= 2;
-    else if (loyalty < 30) rate += 1;
-    if (greed >= 70) rate += 2;
-    return Math.max(1, Math.min(10, rate));
-  }
-
-  private applyRelationshipDecay(now: number): void {
-    if (now - this.lastDecayTime < this.DECAY_INTERVAL_MS) return;
-    this.lastDecayTime = now;
-
-    for (const [npcId, state] of this.npcs) {
-      const personality = state.npc.personality;
-      const decayRate = this.computeDecayRate(personality.loyalty, personality.greed);
-
-      const relationships = this.memory.relationships.getTopRelationships(npcId, 50);
-      for (const rel of relationships) {
-        if (rel.affinity > 0) {
-          this.memory.relationships.modify(npcId, rel.otherId, -1, 'time_decay');
-        } else if (rel.affinity < 0) {
-          const floor = this.getFactionBiasFloor(npcId, rel.otherId);
-          if (rel.affinity < floor) {
-            this.memory.relationships.modify(npcId, rel.otherId, 1, 'time_reconcile');
-          }
-        }
-      }
-    }
-  }
-
   private collectFrontlineMetrics(now: number): FrontlineMetrics {
     if (now - this.frontlineMetrics.updatedAt < this.FRONTLINE_UPDATE_INTERVAL) {
       return this.frontlineMetrics;
@@ -536,10 +503,7 @@ export class NPCWorldService extends EventEmitter {
     // 1.5) NPC-to-NPC interaction check
     this.syncInteractionEvents(now);
 
-    // 2) Apply relationship decay
-    this.applyRelationshipDecay(now);
-
-    // 2.5) Collect frontline metrics for LLM planning feedback
+    // 2) Collect frontline metrics for LLM planning feedback
     this.collectFrontlineMetrics(now);
 
     // 3) Collect planning candidates
