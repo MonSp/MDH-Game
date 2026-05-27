@@ -426,4 +426,15 @@ void ecs_getCommodityPool(const char* clanId, int commodityType, int64_t* outSup
     }
 }
 
+void ecs_recordMarketTransaction(const char* clanId, int commodityType, int amount, int isBuy) {
+    if (!clanId || commodityType < 0 || commodityType >= 6 || amount <= 0) return;
+    auto& pool = MarketRegistry::getInstance().getOrCreatePool(std::string(clanId));
+    auto ct = static_cast<CommodityType>(commodityType);
+    if (isBuy) {
+        pool.addDemand(ct, amount);
+    } else {
+        pool.addSupply(ct, amount);
+    }
+}
+
 }

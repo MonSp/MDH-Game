@@ -55,7 +55,7 @@ static void exec_farm(ExecuteContext& ctx) {
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
     behavior->activityProgress += h * 0.1f;
     if (behavior->activityProgress >= 1.0f) {
-        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, exec_randRange(20, 60));
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, exec_randRange(30, 60));
         float roll = exec_random01();
         int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
         behavior->reflection.recordResult(NPCActivity::Farm, score);
@@ -127,7 +127,7 @@ static void exec_cook(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Food, 2);
-    MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, 1);
+    MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, exec_randRange(2, 3));
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_construct(ExecuteContext& ctx) {

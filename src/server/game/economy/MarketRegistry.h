@@ -7,6 +7,18 @@
 #include <unordered_map>
 #include <string>
 #include <cstdint>
+#include <cstring>
+
+struct CachedEconSignals {
+    float ironOreDemand = 1.0f;
+    float spiritStoneInflation = 1.0f;
+    float foodDemand = 1.0f;
+    float equipmentDemand = 1.0f;
+    float materialDemand = 1.0f;
+    float cultivationDemand = 1.0f;
+    uint64_t cachedFrame = 0;
+    bool dirty = true;
+};
 
 class MarketRegistry {
 public:
@@ -53,7 +65,8 @@ public:
         pool.addDemand(type, amount);
 
         if (type == CommodityType::SpiritStones) {
-            int64_t tax = static_cast<int64_t>(amount * 0.05f);
+            float price = PriceEngine::getPrice(pool, type);
+            int64_t tax = static_cast<int64_t>(amount * price * 0.05f);
             getInstance().collectTax(identity->clanId, tax);
             auto* resources = registry.getComponent<ResourcesComponent>(entityId);
             if (resources) resources->familyContribution += static_cast<int32_t>(tax * 2);
@@ -102,7 +115,38 @@ public:
             for (auto& pair : pools_) {
                 pair.second.decayDemand(DECAY_FACTOR);
             }
+            for (auto& pair : signalCache_) {
+                pair.second.dirty = true;
+            }
         }
+    }
+
+    CachedEconSignals getEconomicSignals(const std::string& clanId, uint64_t currentFrame) {
+        auto it = signalCache_.find(clanId);
+        if (it != signalCache_.end() && !it->second.dirty && (currentFrame - it->second.cachedFrame) < SIGNAL_CACHE_TTL) {
+            return it->second;
+        }
+        CachedEconSignals cached;
+        const CommodityPool* pool = getPool(clanId);
+        if (pool) {
+            auto ratio = [&](CommodityType t) -> float {
+                int64_t s = pool->supply[static_cast<uint8_t>(t)];
+                int64_t d = pool->demand[static_cast<uint8_t>(t)];
+                if (s < 1) s = 1;
+                float r = static_cast<float>(d) / static_cast<float>(s);
+                return r > 0.01f ? r : 1.0f;
+            };
+            cached.ironOreDemand = ratio(CommodityType::Ore);
+            cached.foodDemand = ratio(CommodityType::Food);
+            cached.equipmentDemand = ratio(CommodityType::Equipment);
+            cached.materialDemand = ratio(CommodityType::Materials);
+            cached.cultivationDemand = ratio(CommodityType::Pills);
+            cached.spiritStoneInflation = ratio(CommodityType::SpiritStones);
+        }
+        cached.cachedFrame = currentFrame;
+        cached.dirty = false;
+        signalCache_[clanId] = cached;
+        return cached;
     }
 
     const std::unordered_map<std::string, CommodityPool>& allPools() const {
@@ -114,7 +158,9 @@ private:
 
     std::unordered_map<std::string, CommodityPool> pools_;
     std::unordered_map<std::string, int64_t> familyTreasury_;
+    std::unordered_map<std::string, CachedEconSignals> signalCache_;
     uint32_t frameCounter_;
     static constexpr uint32_t DECAY_INTERVAL = 600;
+    static constexpr uint64_t SIGNAL_CACHE_TTL = 100;
     static constexpr float DECAY_FACTOR = 0.95f;
 };

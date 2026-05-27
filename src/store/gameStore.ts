@@ -1319,6 +1319,15 @@ export const useGameStore = create<GameState>((set, get) => ({
         };
       });
       state.addLog({ type: 'system', message: `花费 ${finalCost} 灵石购买了 ${amount} 个【${itemName}】${taxRate > 0 ? '(含15%跨国关税)' : ''}。` });
+      try {
+        const { wasmRecordMarketTransaction } = require('../ecs/ECSWasmLoader');
+        const clanId = state.player.clanId || state.player.country || 'default';
+        const itemToCommodity: Record<string, number> = {
+          '洗髓丹': 4, '低级法器': 2, '回血丹': 4, '聚气散': 4, '飞升令': 2,
+        };
+        const commodityType = itemToCommodity[itemName] ?? 5;
+        wasmRecordMarketTransaction(clanId, commodityType, amount, true);
+      } catch (_) {}
       if (amount >= 10) state.updateMarketPrices(); // 大规模交易引起价格波动
     } else {
       state.addLog({ type: 'system', message: `灵石不足，需要 ${finalCost} 灵石。` });
@@ -1358,6 +1367,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
     });
     state.addLog({ type: 'system', message: `出售 ${amount} 个【${itemName}】，获得 ${finalEarned} 灵石${taxRate > 0 ? '(已扣除15%跨国关税)' : ''}。` });
+    try {
+      const { wasmRecordMarketTransaction } = require('../ecs/ECSWasmLoader');
+      const clanId = state.player.clanId || state.player.country || 'default';
+      const itemToCommodity: Record<string, number> = {
+        '洗髓丹': 4, '低级法器': 2, '回血丹': 4, '聚气散': 4, '飞升令': 2,
+      };
+      const commodityType = itemToCommodity[itemName] ?? 5;
+      wasmRecordMarketTransaction(clanId, commodityType, amount, false);
+    } catch (_) {}
     if (amount >= 10) state.updateMarketPrices();
   },
 

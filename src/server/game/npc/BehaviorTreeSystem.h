@@ -871,7 +871,13 @@ private:
         }
 
         if (ctx.identity && ctx.personality) {
-            ctx.econSignals.computeFromMarket(ctx.identity->clanId);
+            CachedEconSignals cachedSignals = MarketRegistry::getInstance().getEconomicSignals(ctx.identity->clanId, ctx.currentTime);
+            ctx.econSignals.ironOreDemand = cachedSignals.ironOreDemand;
+            ctx.econSignals.spiritStoneInflation = cachedSignals.spiritStoneInflation;
+            ctx.econSignals.foodDemand = cachedSignals.foodDemand;
+            ctx.econSignals.equipmentDemand = cachedSignals.equipmentDemand;
+            ctx.econSignals.materialDemand = cachedSignals.materialDemand;
+            ctx.econSignals.cultivationDemand = cachedSignals.cultivationDemand;
             MarketRegistry::getInstance().tickDecay(ctx.currentTime);
             NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime, ctx.identity, ctx.econSignals);
             float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality, ctx.identity);

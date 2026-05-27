@@ -49,7 +49,8 @@ public:
                 if (myPrice < otherPrice) {
                     float margin = (otherPrice - myPrice) / myPrice;
                     if (margin > best.margin && margin > 0.2f) {
-                        auto it = cooldowns_.find(myClanId + "->" + otherClan + "_" + std::to_string(i));
+                        std::string routeKey = myClanId + "\x01" + otherClan + "\x01" + std::to_string(i);
+                        auto it = cooldowns_.find(routeKey);
                         if (it == cooldowns_.end() || currentFrame >= it->second) {
                             best.fromClan = myClanId;
                             best.toClan = otherClan;
@@ -82,9 +83,9 @@ public:
         auto& toPool = MarketRegistry::getInstance().getOrCreatePool(route.toClan);
         toPool.addSupply(route.commodity, quantity);
 
-        MarketRegistry::getInstance().collectTax(route.toClan, static_cast<int64_t>(profit));
+        MarketRegistry::getInstance().collectTax(route.fromClan, static_cast<int64_t>(profit));
 
-        std::string key = route.fromClan + "->" + route.toClan + "_" + std::to_string(static_cast<uint8_t>(route.commodity));
+        std::string key = route.fromClan + "\x01" + route.toClan + "\x01" + std::to_string(static_cast<uint8_t>(route.commodity));
         cooldowns_[key] = currentFrame + 500;
 
         return true;

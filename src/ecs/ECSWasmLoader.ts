@@ -175,6 +175,7 @@ type CDumpMemoryFn = (ptr: number, maxSize: number) => number;
 type CLoadMemoryFn = (ptr: number, size: number) => void;
 type CGetMarketPriceFn = (clanIdPtr: number, commodityType: number) => number;
 type CGetCommodityPoolFn = (clanIdPtr: number, commodityType: number, supplyPtr: number, demandPtr: number) => void;
+type CRecordMarketTransactionFn = (clanIdPtr: number, commodityType: number, amount: number, isBuy: number) => void;
 
 let ecsWasmReady = false;
 let HEAPU8: Uint8Array | null = null;
@@ -204,6 +205,7 @@ let _dumpMemory: CDumpMemoryFn | null = null;
 let _loadMemory: CLoadMemoryFn | null = null;
 let _getMarketPrice: CGetMarketPriceFn | null = null;
 let _getCommodityPool: CGetCommodityPoolFn | null = null;
+let _recordMarketTransaction: CRecordMarketTransactionFn | null = null;
 
 const _decoder = new TextDecoder();
 
@@ -475,6 +477,7 @@ export async function initECSWasm(maxNPC: number = 2000): Promise<boolean> {
     _loadMemory = Module['_ecs_loadMemory'] as CLoadMemoryFn;
     _getMarketPrice = Module['_ecs_getMarketPrice'] as CGetMarketPriceFn;
     _getCommodityPool = Module['_ecs_getCommodityPool'] as CGetCommodityPoolFn;
+    _recordMarketTransaction = Module['_ecs_recordMarketTransaction'] as CRecordMarketTransactionFn;
     const malloc = Module['_malloc'] as (size: number) => number;
     HEAPU8 = Module['HEAPU8'];
 
@@ -500,6 +503,7 @@ export function wasmGetMarketPrice(clanId: string, commodityType: number): numbe
   const tmpBuf = _memBufPtr + 12000;
   const bytes = new TextEncoder().encode(clanId);
   HEAPU8.set(bytes.slice(0, 64), tmpBuf);
+  HEAPU8[tmpBuf + bytes.length] = 0;
   return _getMarketPrice(tmpBuf, commodityType);
 }
 
@@ -508,6 +512,7 @@ export function wasmGetCommodityPool(clanId: string, commodityType: number): { s
   const tmpBuf = _memBufPtr + 12000;
   const bytes = new TextEncoder().encode(clanId);
   HEAPU8.set(bytes.slice(0, 64), tmpBuf);
+  HEAPU8[tmpBuf + bytes.length] = 0;
 
   const supplyPtr = _memBufPtr + 12100;
   const demandPtr = _memBufPtr + 12108;
@@ -522,4 +527,13 @@ export function wasmGetCommodityPool(clanId: string, commodityType: number): { s
     supply: supplyLo + supplyHi * 0x100000000,
     demand: demandLo + demandHi * 0x100000000,
   };
+}
+
+export function wasmRecordMarketTransaction(clanId: string, commodityType: number, amount: number, isBuy: boolean): void {
+  if (!_recordMarketTransaction || !HEAPU8) return;
+  const tmpBuf = _memBufPtr + 12000;
+  const bytes = new TextEncoder().encode(clanId);
+  HEAPU8.set(bytes.slice(0, 64), tmpBuf);
+  HEAPU8[tmpBuf + bytes.length] = 0;
+  _recordMarketTransaction(tmpBuf, commodityType, amount, isBuy ? 1 : 0);
 }
