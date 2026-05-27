@@ -1,11 +1,13 @@
 #pragma once
 #include "CommodityPool.h"
 #include "PriceEngine.h"
+#include "EconomicDigest.h"
 #include "../ecs/Registry.h"
 #include "../ecs/components/IdentityComponent.h"
 #include "../ecs/components/ResourcesComponent.h"
 #include <unordered_map>
 #include <string>
+#include <set>
 #include <cstdint>
 #include <cstring>
 
@@ -84,8 +86,10 @@ public:
     }
 
     int64_t collectTax(const std::string& clanId, int64_t amount) {
-        familyTreasury_[clanId] += amount;
-        return amount;
+        float rate = getClanTaxRate(clanId);
+        int64_t tax = static_cast<int64_t>(amount * rate);
+        familyTreasury_[clanId] += tax;
+        return tax;
     }
 
     int64_t getTreasury(const std::string& clanId) const {
@@ -118,6 +122,7 @@ public:
             for (auto& pair : signalCache_) {
                 pair.second.dirty = true;
             }
+            digestDirty_ = true;
         }
     }
 
@@ -149,6 +154,68 @@ public:
         return cached;
     }
 
+    const EconomicDigest& getEconomicDigest(const std::string& clanId, uint64_t currentFrame) {
+        if (!digestDirty_ && (currentFrame - digestCachedFrame_) < DIGEST_CACHE_TTL) {
+            return cachedDigest_;
+        }
+        cachedDigest_ = computeEconomicDigest(clanId, currentFrame,
+            getTreasury(clanId), pools_, familyTreasury_);
+        digestCachedFrame_ = currentFrame;
+        digestDirty_ = false;
+        return cachedDigest_;
+    }
+
+    float getClanTaxRate(const std::string& clanId) const {
+        auto it = clanTaxRates_.find(clanId);
+        return (it != clanTaxRates_.end()) ? it->second : 0.05f;
+    }
+
+    void applyTaxRate(const std::string& clanId, float newRate) {
+        if (newRate < 0.01f) newRate = 0.01f;
+        if (newRate > 0.15f) newRate = 0.15f;
+        clanTaxRates_[clanId] = newRate;
+    }
+
+    void applyEmbargo(const std::string& clanId, const std::string& targetClan, bool active) {
+        if (active) {
+            embargoTargets_[clanId].insert(targetClan);
+        } else {
+            auto it = embargoTargets_.find(clanId);
+            if (it != embargoTargets_.end()) {
+                it->second.erase(targetClan);
+                if (it->second.empty()) {
+                    embargoTargets_.erase(it);
+                }
+            }
+        }
+    }
+
+    bool isEmbargoed(const std::string& clanId, const std::string& targetClan) const {
+        auto it = embargoTargets_.find(clanId);
+        if (it == embargoTargets_.end()) return false;
+        return it->second.find(targetClan) != it->second.end();
+    }
+
+    void applyStockpile(const std::string& clanId, CommodityType type, float ratio) {
+        if (ratio < 0.0f) ratio = 0.0f;
+        if (ratio > 1.0f) ratio = 1.0f;
+        stockpileRatios_[clanId][static_cast<uint8_t>(type)] = ratio;
+    }
+
+    int64_t getEffectiveSupply(const std::string& clanId, CommodityType type) {
+        const CommodityPool* pool = getPool(clanId);
+        if (!pool) return 100;
+        uint8_t idx = static_cast<uint8_t>(type);
+        int64_t raw = pool->supply[idx];
+        float ratio = 0.0f;
+        auto it = stockpileRatios_.find(clanId);
+        if (it != stockpileRatios_.end()) {
+            ratio = it->second[idx];
+        }
+        int64_t effective = static_cast<int64_t>(raw * (1.0f - ratio));
+        return effective > 1 ? effective : 1;
+    }
+
     const std::unordered_map<std::string, CommodityPool>& allPools() const {
         return pools_;
     }
@@ -159,8 +226,15 @@ private:
     std::unordered_map<std::string, CommodityPool> pools_;
     std::unordered_map<std::string, int64_t> familyTreasury_;
     std::unordered_map<std::string, CachedEconSignals> signalCache_;
+    std::unordered_map<std::string, float> clanTaxRates_;
+    std::unordered_map<std::string, std::set<std::string>> embargoTargets_;
+    std::unordered_map<std::string, float[6]> stockpileRatios_;
+    EconomicDigest cachedDigest_;
+    uint64_t digestCachedFrame_ = 0;
+    bool digestDirty_ = true;
     uint32_t frameCounter_;
     static constexpr uint32_t DECAY_INTERVAL = 600;
     static constexpr uint64_t SIGNAL_CACHE_TTL = 100;
+    static constexpr uint64_t DIGEST_CACHE_TTL = 600;
     static constexpr float DECAY_FACTOR = 0.95f;
 };

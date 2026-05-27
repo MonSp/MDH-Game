@@ -26,6 +26,7 @@
 #include "BehaviorTree_Combat.h"
 #include "BehaviorTree_Exploration.h"
 #include "BehaviorTree_Command.h"
+#include "BehaviorTree_EconomyStrategy.h"
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
@@ -110,6 +111,12 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     // Command (2)
     {NPCActivity::RefuseCommand,   "RefuseCommand",    ActivityCategory::Command, REQ_POSITION, exec_refuseCommand, nullptr},
     {NPCActivity::CoordinateSquad, "CoordinateSquad",  ActivityCategory::Command, REQ_POSITION, exec_coordinateSquad, nullptr},
+    // Economy Strategy (5)
+    {NPCActivity::SetTaxRate,        "SetTaxRate",        ActivityCategory::EconomyStrategy, REQ_IDENTITY, exec_setTaxRate, canExecute_setTaxRate},
+    {NPCActivity::TradeEmbargo,      "TradeEmbargo",      ActivityCategory::EconomyStrategy, REQ_IDENTITY, exec_tradeEmbargo, canExecute_tradeEmbargo},
+    {NPCActivity::StockpileMaterial, "StockpileMaterial", ActivityCategory::EconomyStrategy, REQ_IDENTITY, exec_stockpileMaterial, canExecute_stockpileMaterial},
+    {NPCActivity::PriceStabilize,    "PriceStabilize",    ActivityCategory::EconomyStrategy, REQ_IDENTITY|REQ_RESOURCES, exec_priceStabilize, canExecute_priceStabilize},
+    {NPCActivity::EconomicMobilize,  "EconomicMobilize",  ActivityCategory::EconomyStrategy, REQ_IDENTITY, exec_economicMobilize, canExecute_economicMobilize},
 };
 static constexpr size_t kExecuteTableSize = sizeof(kExecuteTable) / sizeof(kExecuteTable[0]);
 
@@ -931,9 +938,106 @@ private:
     }
 
     // LLM planning (T1/T2 ACTIVE) is now handled via evaluateLLMPlan layer.
+    static bool evaluateEconomicCrisis(EvaluateContext& ctx) {
+        auto* identity = ctx.identity;
+        auto* behavior = ctx.behavior;
+        if (!identity || !behavior) return false;
+        if (identity->layer > 2) return false;
+
+        auto& mkt = MarketRegistry::getInstance();
+        const EconomicDigest& digest = mkt.getEconomicDigest(identity->clanId, ctx.currentTime);
+
+        if (digest.posture != EconomicPosture::Crisis) return false;
+
+        if (identity->layer <= 1) {
+            CommodityType targetType = CommodityType::Ore;
+            float maxRatio = 0.0f;
+            for (int i = 0; i < 3; i++) {
+                if (digest.alerts[i].priceRatio > maxRatio) {
+                    maxRatio = digest.alerts[i].priceRatio;
+                    targetType = digest.alerts[i].commodityType;
+                }
+            }
+
+            int64_t treasury = mkt.getTreasury(identity->clanId);
+            int64_t maxSpend = treasury / 3;
+            if (maxSpend > 300) maxSpend = 300;
+
+            if (maxSpend > 0) {
+                auto& pool = mkt.getOrCreatePool(identity->clanId);
+                float price = PriceEngine::getPrice(pool, targetType);
+                int64_t buyAmount = static_cast<int64_t>(maxSpend / (price * 1.2f));
+                if (buyAmount > 0) {
+                    mkt.spendTreasury(identity->clanId, static_cast<int64_t>(buyAmount * price * 1.2f));
+                    pool.addSupply(targetType, buyAmount);
+                }
+            }
+
+            NPCActivity mobilizeActivity = NPCActivity::Mine;
+            switch (targetType) {
+                case CommodityType::Ore:          mobilizeActivity = NPCActivity::Mine; break;
+                case CommodityType::Food:         mobilizeActivity = NPCActivity::Farm; break;
+                case CommodityType::Equipment:    mobilizeActivity = NPCActivity::Craft; break;
+                case CommodityType::Materials:    mobilizeActivity = NPCActivity::Lumber; break;
+                case CommodityType::Pills:        mobilizeActivity = NPCActivity::Alchemy; break;
+                case CommodityType::SpiritStones: mobilizeActivity = NPCActivity::Mine; break;
+                default: break;
+            }
+
+            auto& registry = ECS::Registry::getInstance();
+            auto entities = registry.getEntitiesWithComponent<IdentityComponent>();
+            uint64_t expireFrame = ctx.currentTime + 300;
+
+            for (auto id : entities) {
+                auto* otherIdentity = registry.getComponent<IdentityComponent>(id);
+                if (!otherIdentity || otherIdentity->clanId != identity->clanId) continue;
+                auto* otherBehavior = registry.getComponent<BehaviorComponent>(id);
+                if (otherBehavior) {
+                    otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
+                }
+            }
+        } else if (identity->layer == 2) {
+            CommodityType targetType = CommodityType::Ore;
+            float maxRatio = 0.0f;
+            for (int i = 0; i < 3; i++) {
+                if (digest.alerts[i].priceRatio > maxRatio) {
+                    maxRatio = digest.alerts[i].priceRatio;
+                    targetType = digest.alerts[i].commodityType;
+                }
+            }
+
+            NPCActivity mobilizeActivity = NPCActivity::Mine;
+            switch (targetType) {
+                case CommodityType::Ore:          mobilizeActivity = NPCActivity::Mine; break;
+                case CommodityType::Food:         mobilizeActivity = NPCActivity::Farm; break;
+                case CommodityType::Equipment:    mobilizeActivity = NPCActivity::Craft; break;
+                case CommodityType::Materials:    mobilizeActivity = NPCActivity::Lumber; break;
+                case CommodityType::Pills:        mobilizeActivity = NPCActivity::Alchemy; break;
+                case CommodityType::SpiritStones: mobilizeActivity = NPCActivity::Mine; break;
+                default: break;
+            }
+
+            auto& registry = ECS::Registry::getInstance();
+            auto entities = registry.getEntitiesWithComponent<IdentityComponent>();
+            uint64_t expireFrame = ctx.currentTime + 300;
+
+            for (auto id : entities) {
+                auto* otherIdentity = registry.getComponent<IdentityComponent>(id);
+                if (!otherIdentity || otherIdentity->clanId != identity->clanId) continue;
+                auto* otherBehavior = registry.getComponent<BehaviorComponent>(id);
+                if (otherBehavior) {
+                    otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
+                }
+            }
+        }
+
+        return false;
+    }
+
     static constexpr EvaluateFn kEvaluateLayers[] = {
         evaluateSurvival,
         evaluateEmotion,
+        evaluateEconomicCrisis,
         evaluateCommand,
         evaluateLLMPlan,
         evaluateSocial,
@@ -959,6 +1063,11 @@ private:
             case ActionType::REPORT_STATUS:      return NPCActivity::ReportTask;
             case ActionType::COORDINATE_SQUAD:   return NPCActivity::CoordinateSquad;
             case ActionType::RESIST_ORDER:       return NPCActivity::RefuseCommand;
+            case ActionType::ECONOMIC_MOBILIZE:  return NPCActivity::EconomicMobilize;
+            case ActionType::TRADE_EMBARGO:      return NPCActivity::TradeEmbargo;
+            case ActionType::STOCKPILE_MATERIAL: return NPCActivity::StockpileMaterial;
+            case ActionType::PRICE_STABILIZE:    return NPCActivity::PriceStabilize;
+            case ActionType::SET_TAX_RATE:       return NPCActivity::SetTaxRate;
             default: return NPCActivity::Rest;
         }
     }

@@ -82,6 +82,12 @@ enum class NPCActivity : uint8_t {
 
     SocialHelp = 83,
 
+    SetTaxRate = 103,
+    TradeEmbargo = 104,
+    StockpileMaterial = 105,
+    PriceStabilize = 106,
+    EconomicMobilize = 107,
+
     Incapacitated = 200
 };
 
@@ -121,6 +127,9 @@ enum class CareerTag : uint16_t {
     Merchant = 1 << 6,
     Soldier = 1 << 7,
     General = 1 << 8,
+    Ruler = 1 << 9,
+    Commander = 1 << 10,
+    Elder = 1 << 11,
 };
 
 enum class ResourceTag : uint16_t {
@@ -148,6 +157,10 @@ enum class PersonalityTag : uint16_t {
     LowStamina = 1 << 5,
     RepetitiveWork = 1 << 6,
     CreativeWork = 1 << 7,
+    Ambitious = 1 << 8,
+    Cautious = 1 << 9,
+    Diligent = 1 << 10,
+    Loyal = 1 << 11,
 };
 
 struct ActivityTagBundle {
@@ -427,6 +440,31 @@ static ActivityTagBundle getActivityTagBundle(NPCActivity act) {
                 static_cast<uint16_t>(CareerTag::General),
                 static_cast<uint16_t>(ResourceTag::None),
                 static_cast<uint16_t>(PersonalityTag::PreferCooperation));
+        case NPCActivity::SetTaxRate:
+            return ActivityTagBundle(
+                static_cast<uint16_t>(CareerTag::Ruler),
+                static_cast<uint16_t>(ResourceTag::ProducesSpiritStones),
+                static_cast<uint16_t>(PersonalityTag::Ambitious));
+        case NPCActivity::TradeEmbargo:
+            return ActivityTagBundle(
+                static_cast<uint16_t>(CareerTag::Ruler),
+                static_cast<uint16_t>(ResourceTag::None),
+                static_cast<uint16_t>(PersonalityTag::Cautious) | static_cast<uint16_t>(PersonalityTag::Ambitious));
+        case NPCActivity::StockpileMaterial:
+            return ActivityTagBundle(
+                static_cast<uint16_t>(CareerTag::Commander),
+                static_cast<uint16_t>(ResourceTag::ProducesMaterials),
+                static_cast<uint16_t>(PersonalityTag::Cautious));
+        case NPCActivity::PriceStabilize:
+            return ActivityTagBundle(
+                static_cast<uint16_t>(CareerTag::Commander),
+                static_cast<uint16_t>(ResourceTag::ProducesSpiritStones),
+                static_cast<uint16_t>(PersonalityTag::Diligent));
+        case NPCActivity::EconomicMobilize:
+            return ActivityTagBundle(
+                static_cast<uint16_t>(CareerTag::Elder),
+                static_cast<uint16_t>(ResourceTag::None),
+                static_cast<uint16_t>(PersonalityTag::Diligent) | static_cast<uint16_t>(PersonalityTag::Loyal));
         default:
             return ActivityTagBundle();
     }
@@ -678,6 +716,9 @@ static const char* getCareerChineseName(uint16_t careerTags) {
     if (careerTags & static_cast<uint16_t>(CareerTag::Merchant))    return "商贾";
     if (careerTags & static_cast<uint16_t>(CareerTag::Soldier))     return "兵士";
     if (careerTags & static_cast<uint16_t>(CareerTag::General))     return "通用";
+    if (careerTags & static_cast<uint16_t>(CareerTag::Ruler))       return "统治者";
+    if (careerTags & static_cast<uint16_t>(CareerTag::Commander))   return "统帅";
+    if (careerTags & static_cast<uint16_t>(CareerTag::Elder))       return "长老";
     return "平民";
 }
 

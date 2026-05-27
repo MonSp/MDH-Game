@@ -13,6 +13,7 @@ import {
 } from '../../../shared/types/LLMPlanning';
 import { LLMGatewayService } from './LLMGatewayService';
 import { determineTier } from '../../config/LLMConfig';
+import { EconomicDigestWasm, ECONOMIC_POSTURE_LABELS, wasmGetEconomicDigest } from '../../../ecs/ECSWasmLoader';
 
 export enum NarrativeDimension {
   BATTLE_STATUS = '战况',
@@ -248,6 +249,58 @@ export class LLMPlanningService {
     return lines.join('\n');
   }
 
+  static formatEconomicDigestForPrompt(
+    digest: EconomicDigestWasm,
+    tier: number
+  ): string {
+    const lines: string[] = [];
+
+    lines.push('[经济态势]');
+    lines.push(`库房：${digest.treasuryBalance} 灵石（周净${digest.weeklyIncomeRate - digest.weeklyExpenseRate >= 0 ? '+' : ''}${Math.round(digest.weeklyIncomeRate - digest.weeklyExpenseRate)}）`);
+    lines.push(`态势：${ECONOMIC_POSTURE_LABELS[digest.posture] ?? '未知'}`);
+
+    if (digest.alertCount > 0) {
+      lines.push('异常警报：');
+      for (let i = 0; i < digest.alertCount && i < digest.alerts.length; i++) {
+        const a = digest.alerts[i];
+        const commodityNames = ['矿石', '食物', '装备', '材料', '丹药', '灵石'];
+        const name = commodityNames[a.commodityType] ?? '未知';
+        const desc = a.priceRatio >= 2.5 ? '严重短缺' : a.priceRatio >= 1.8 ? '供不应求' : '供需偏紧';
+        lines.push(`  - ${name}：供给${a.supply} 需求${a.demand} 价格${a.priceRatio.toFixed(1)}×基准 — ${desc}`);
+      }
+    }
+
+    if (tier <= 0) {
+      if (digest.opportunityCount > 0) {
+        lines.push('战略情报：');
+        for (let i = 0; i < digest.opportunityCount && i < digest.opportunities.length; i++) {
+          const o = digest.opportunities[i];
+          const commodityNames = ['矿石', '食物', '装备', '材料', '丹药', '灵石'];
+          const name = commodityNames[o.commodityType] ?? '未知';
+          lines.push(`  - 套利机会：从[${o.fromClanId}]购${name}运往[${o.toClanId}]可获利${(o.profitRate * 100).toFixed(0)}%`);
+        }
+      }
+
+      if (digest.weaknessCount > 0) {
+        for (let i = 0; i < digest.weaknessCount && i < digest.enemyWeaknesses.length; i++) {
+          const w = digest.enemyWeaknesses[i];
+          const weaknessNames = ['', '食物依赖进口', '库房灵石见底', '材料严重短缺', '灵石通胀', '装备严重短缺'];
+          const wName = weaknessNames[w.weaknessType] ?? '未知弱点';
+          if (i === 0 && digest.opportunityCount === 0) {
+            lines.push('战略情报：');
+          }
+          lines.push(`  - 敌族弱点：[${w.clanId}]的${wName}`);
+        }
+      }
+    }
+
+    if (digest.alertCount === 0 && digest.posture === 1) {
+      return '[经济态势] 经济态势：正常，无需特别关注';
+    }
+
+    return lines.join('\n');
+  }
+
   static decomposeIntent(npcId: string, intent: LLMIntent, tier: number): DecomposedCommand[] {
     if (tier > 2) {
       return [];
@@ -298,7 +351,8 @@ export class LLMPlanningService {
     request: LLMPlanningRequest,
     frontlineSummary: string,
     revisionFlags: string[],
-    narrativeStates?: NarrativeState[]
+    narrativeStates?: NarrativeState[],
+    economicDigestText?: string
   ): string {
     const parts: string[] = [];
 
@@ -309,6 +363,11 @@ export class LLMPlanningService {
     if (frontlineSummary && frontlineSummary.length > 0) {
       parts.push('');
       parts.push(frontlineSummary);
+    }
+
+    if (economicDigestText && economicDigestText.length > 0) {
+      parts.push('');
+      parts.push(economicDigestText);
     }
 
     if (narrativeStates && narrativeStates.length > 0) {

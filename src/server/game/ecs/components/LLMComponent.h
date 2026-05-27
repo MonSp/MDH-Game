@@ -44,7 +44,12 @@ enum class ActionType : uint8_t {
     COMMAND_DELEGATE = 28,
     REPORT_STATUS = 29,
     COORDINATE_SQUAD = 30,
-    RESIST_ORDER = 31
+    RESIST_ORDER = 31,
+    ECONOMIC_MOBILIZE = 32,
+    TRADE_EMBARGO = 33,
+    STOCKPILE_MATERIAL = 34,
+    PRICE_STABILIZE = 35,
+    SET_TAX_RATE = 36
 };
 
 enum class PlanStatus : uint8_t {

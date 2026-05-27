@@ -11,7 +11,8 @@ enum class ActivityCategory : uint8_t {
     Production = 4,
     Combat = 5,
     Exploration = 6,
-    Command = 7
+    Command = 7,
+    EconomyStrategy = 8
 };
 
 constexpr uint8_t REQ_POSITION     = 1 << 0;

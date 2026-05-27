@@ -38,6 +38,8 @@ public:
             const std::string& otherClan = pair.first;
             if (otherClan == myClanId) continue;
 
+            if (mkt.isEmbargoed(myClanId, otherClan)) continue;
+
             const auto* otherPool = MarketRegistry::getCommodityPool(otherClan);
             if (!otherPool) continue;
 

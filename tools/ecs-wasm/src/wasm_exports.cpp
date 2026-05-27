@@ -458,4 +458,12 @@ void ecs_getNPCItems(uint64_t entityId, int32_t* outBuf, int maxSlots) {
     }
 }
 
+int ecs_getEconomicDigest(const char* clanId, EconomicDigestWasm* outDigest) {
+    if (!clanId || !outDigest) return 0;
+    auto& mkt = MarketRegistry::getInstance();
+    const EconomicDigest& digest = mkt.getEconomicDigest(std::string(clanId), 0);
+    digestToWasm(digest, *outDigest);
+    return 1;
+}
+
 }

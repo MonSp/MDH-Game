@@ -79,6 +79,12 @@ export const NPCActivity: Record<number, string> = {
   100: 'Explore',
   101: 'TreasureHunt',
   102: 'MapExplore',
+  83: 'SocialHelp',
+  103: 'SetTaxRate',
+  104: 'TradeEmbargo',
+  105: 'StockpileMaterial',
+  106: 'PriceStabilize',
+  107: 'EconomicMobilize',
   200: 'Incapacitated',
 };
 
@@ -179,6 +185,7 @@ type CGetMarketPriceFn = (clanIdPtr: number, commodityType: number) => number;
 type CGetCommodityPoolFn = (clanIdPtr: number, commodityType: number, supplyPtr: number, demandPtr: number) => void;
 type CRecordMarketTransactionFn = (clanIdPtr: number, commodityType: number, amount: number, isBuy: number) => void;
 type CGetNPCItemsFn = (entityId: number, ptr: number, maxSlots: number) => void;
+type CGetEconomicDigestFn = (clanIdPtr: number, digestPtr: number) => number;
 
 let ecsWasmReady = false;
 let HEAPU8: Uint8Array | null = null;
@@ -210,6 +217,7 @@ let _getMarketPrice: CGetMarketPriceFn | null = null;
 let _getCommodityPool: CGetCommodityPoolFn | null = null;
 let _recordMarketTransaction: CRecordMarketTransactionFn | null = null;
 let _getNPCItems: CGetNPCItemsFn | null = null;
+let _getEconomicDigest: CGetEconomicDigestFn | null = null;
 
 const _decoder = new TextDecoder();
 
@@ -485,6 +493,7 @@ export async function initECSWasm(maxNPC: number = 2000): Promise<boolean> {
     _getCommodityPool = Module['_ecs_getCommodityPool'] as CGetCommodityPoolFn;
     _recordMarketTransaction = Module['_ecs_recordMarketTransaction'] as CRecordMarketTransactionFn;
     _getNPCItems = Module['_ecs_getNPCItems'] as CGetNPCItemsFn;
+    _getEconomicDigest = Module['_ecs_getEconomicDigest'] as CGetEconomicDigestFn;
     const malloc = Module['_malloc'] as (size: number) => number;
     HEAPU8 = Module['HEAPU8'];
 
@@ -556,6 +565,45 @@ export interface NPCItemDetail {
   items: NPCItemSlot[];
 }
 
+export interface EconomicAlertWasm {
+  commodityType: number;
+  supply: number;
+  demand: number;
+  priceRatio: number;
+}
+
+export interface EconomicOpportunityWasm {
+  fromClanId: number;
+  toClanId: number;
+  commodityType: number;
+  profitRate: number;
+}
+
+export interface EconomicWeaknessWasm {
+  clanId: number;
+  weaknessType: number;
+}
+
+export interface EconomicDigestWasm {
+  posture: number;
+  treasuryBalance: number;
+  weeklyIncomeRate: number;
+  weeklyExpenseRate: number;
+  alertCount: number;
+  alerts: EconomicAlertWasm[];
+  opportunityCount: number;
+  opportunities: EconomicOpportunityWasm[];
+  weaknessCount: number;
+  enemyWeaknesses: EconomicWeaknessWasm[];
+}
+
+export const ECONOMIC_POSTURE_LABELS: Record<number, string> = {
+  0: '盈馀',
+  1: '平衡',
+  2: '紧张',
+  3: '危机',
+};
+
 export function wasmGetNPCItems(entityId: number, maxSlots: number): NPCItemDetail | null {
   if (!_getNPCItems || !HEAPU8) return null;
   const tmpBuf = _memBufPtr + 12200;
@@ -577,4 +625,67 @@ export function wasmGetNPCItems(entityId: number, maxSlots: number): NPCItemDeta
   }
 
   return { spiritStones, familyContribution, items };
+}
+
+export function wasmGetEconomicDigest(clanId: string): EconomicDigestWasm | null {
+  if (!_getEconomicDigest || !HEAPU8) return null;
+  const tmpBuf = _memBufPtr + 12300;
+  const bytes = new TextEncoder().encode(clanId);
+  HEAPU8.set(bytes.slice(0, 64), tmpBuf);
+  HEAPU8[tmpBuf + bytes.length] = 0;
+
+  const digestPtr = _memBufPtr + 12400;
+  const result = _getEconomicDigest(tmpBuf, digestPtr);
+  if (result === 0) return null;
+
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const posture = HEAPU8[digestPtr];
+  const treasuryLo = view.getInt32(digestPtr + 1, true);
+  const treasuryHi = view.getInt32(digestPtr + 5, true);
+  const treasuryBalance = treasuryLo + treasuryHi * 0x100000000;
+  const weeklyIncomeRate = view.getFloat32(digestPtr + 9, true);
+  const weeklyExpenseRate = view.getFloat32(digestPtr + 13, true);
+  const alertCount = HEAPU8[digestPtr + 17];
+  const opportunityCount = HEAPU8[digestPtr + 18];
+  const weaknessCount = HEAPU8[digestPtr + 19];
+
+  const alerts: EconomicAlertWasm[] = [];
+  let offset = digestPtr + 21;
+  for (let i = 0; i < 3; i++) {
+    const commodityType = HEAPU8[offset];
+    const supply = view.getInt32(offset + 1, true);
+    const demand = view.getInt32(offset + 5, true);
+    const priceRatio = view.getFloat32(offset + 9, true);
+    offset += 13;
+    if (i < alertCount) {
+      alerts.push({ commodityType, supply, demand, priceRatio });
+    }
+  }
+
+  const opportunities: EconomicOpportunityWasm[] = [];
+  for (let i = 0; i < 2; i++) {
+    const fromClanId = view.getUint32(offset, true);
+    const toClanId = view.getUint32(offset + 4, true);
+    const commodityType = HEAPU8[offset + 8];
+    const profitRate = view.getFloat32(offset + 9, true);
+    offset += 13;
+    if (i < opportunityCount) {
+      opportunities.push({ fromClanId, toClanId, commodityType, profitRate });
+    }
+  }
+
+  const enemyWeaknesses: EconomicWeaknessWasm[] = [];
+  for (let i = 0; i < 2; i++) {
+    const clanId = view.getUint32(offset, true);
+    const weaknessType = HEAPU8[offset + 4];
+    offset += 5;
+    if (i < weaknessCount) {
+      enemyWeaknesses.push({ clanId, weaknessType });
+    }
+  }
+
+  return {
+    posture, treasuryBalance, weeklyIncomeRate, weeklyExpenseRate,
+    alertCount, alerts, opportunityCount, opportunities, weaknessCount, enemyWeaknesses,
+  };
 }
