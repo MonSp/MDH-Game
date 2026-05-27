@@ -22,7 +22,7 @@ export class MarketService {
   private constructor() {
     for (const key of Object.keys(COMMODITY_BASE_PRICE)) {
       this.supplies[key] = 100;
-      this.demands[key] = 50;
+      this.demands[key] = 0;
     }
   }
 

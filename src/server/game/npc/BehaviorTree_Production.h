@@ -203,7 +203,7 @@ static void exec_sell(ExecuteContext& ctx) {
     }
     resources->removeItem(ItemId::EQUIPMENT, 1);
     MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Equipment, 1);
-    MarketRegistry::recordProduction(ctx.entityId, CommodityType::SpiritStones, exec_randRange(10, 50));
+    resources->addSpiritStones(exec_randRange(10, 50));
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_buy(ExecuteContext& ctx) {
@@ -211,6 +211,10 @@ static void exec_buy(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     int64_t cost = exec_randRange(10, 100);
+    if (!resources->removeSpiritStones(cost)) {
+        behavior->changeActivity(NPCActivity::Rest);
+        return;
+    }
     MarketRegistry::recordConsumption(ctx.entityId, CommodityType::SpiritStones, cost);
     MarketRegistry::recordProduction(ctx.entityId, CommodityType::Equipment, 1);
     resources->addItem(ItemId::EQUIPMENT, 1);
@@ -240,7 +244,11 @@ static void exec_bargain(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     int64_t basePrice = exec_randRange(10, 50);
-    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::SpiritStones, static_cast<int64_t>(basePrice * 0.7f));
+    int64_t cost = static_cast<int64_t>(basePrice * 0.7f);
+    if (!resources->removeSpiritStones(cost)) {
+        behavior->changeActivity(NPCActivity::Rest);
+        return;
+    }
     float haggleRoll = exec_random01();
     int64_t finalPrice;
     if (haggleRoll < 0.3f) {
@@ -250,27 +258,9 @@ static void exec_bargain(ExecuteContext& ctx) {
     } else {
         finalPrice = static_cast<int64_t>(basePrice * 0.6f);
     }
-    MarketRegistry::recordProduction(ctx.entityId, CommodityType::SpiritStones, finalPrice);
+    resources->addSpiritStones(finalPrice);
     float roll = exec_random01();
     int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
     behavior->reflection.recordResult(NPCActivity::Bargain, score);
     behavior->changeActivity(NPCActivity::Rest);
 }
-
-constexpr ExecuteDescriptor kProductionTable[] = {
-    {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES, exec_build, nullptr},
-    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION, exec_mine, canExecute_mine},
-    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES, exec_farm, canExecute_farm},
-    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES, exec_fish, canExecute_fish},
-    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION, exec_lumber, canExecute_lumber},
-    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES, exec_gather, canExecute_gather},
-    {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES, exec_craft, nullptr},
-    {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES, exec_refine, nullptr},
-    {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES, exec_cook, nullptr},
-    {NPCActivity::Construct, "Construct",  ActivityCategory::Production, REQ_RESOURCES, exec_construct, nullptr},
-    {NPCActivity::Repair,    "Repair",     ActivityCategory::Production, REQ_RESOURCES, exec_repair, nullptr},
-    {NPCActivity::Sell,      "Sell",       ActivityCategory::Production, REQ_RESOURCES, exec_sell, nullptr},
-    {NPCActivity::Buy,       "Buy",        ActivityCategory::Production, REQ_RESOURCES, exec_buy, nullptr},
-    {NPCActivity::Tailor,    "Tailor",     ActivityCategory::Production, REQ_RESOURCES, exec_tailor, nullptr},
-    {NPCActivity::Bargain,   "Bargain",    ActivityCategory::Production, REQ_RESOURCES, exec_bargain, nullptr},
-};

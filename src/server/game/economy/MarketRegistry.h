@@ -43,6 +43,11 @@ public:
         auto* identity = registry.getComponent<IdentityComponent>(entityId);
         if (!identity || identity->clanId.empty()) return;
 
+        auto& members = getInstance().clanMembers_[identity->clanId];
+        bool found = false;
+        for (auto id : members) { if (id == entityId) { found = true; break; } }
+        if (!found) members.push_back(entityId);
+
         auto& pool = getInstance().getOrCreatePool(identity->clanId);
         pool.addSupply(type, amount);
 
@@ -52,9 +57,8 @@ public:
         if (resources) resources->addSpiritStones(income);
 
         if (type == CommodityType::SpiritStones) {
-            int64_t tax = static_cast<int64_t>(income * 0.05f);
-            getInstance().collectTax(identity->clanId, tax);
-            if (resources) resources->familyContribution += static_cast<int32_t>(tax * 2);
+            int64_t collected = getInstance().collectTax(identity->clanId, income);
+            if (resources) resources->familyContribution += static_cast<int32_t>(collected * 2);
         }
     }
 
@@ -63,15 +67,20 @@ public:
         auto* identity = registry.getComponent<IdentityComponent>(entityId);
         if (!identity || identity->clanId.empty()) return;
 
+        auto& members = getInstance().clanMembers_[identity->clanId];
+        bool found = false;
+        for (auto id : members) { if (id == entityId) { found = true; break; } }
+        if (!found) members.push_back(entityId);
+
         auto& pool = getInstance().getOrCreatePool(identity->clanId);
         pool.addDemand(type, amount);
 
         if (type == CommodityType::SpiritStones) {
             float price = PriceEngine::getPrice(pool, type);
-            int64_t tax = static_cast<int64_t>(amount * price * 0.05f);
-            getInstance().collectTax(identity->clanId, tax);
+            int64_t tradeValue = static_cast<int64_t>(amount * price);
+            int64_t collected = getInstance().collectTax(identity->clanId, tradeValue);
             auto* resources = registry.getComponent<ResourcesComponent>(entityId);
-            if (resources) resources->familyContribution += static_cast<int32_t>(tax * 2);
+            if (resources) resources->familyContribution += static_cast<int32_t>(collected * 2);
         }
     }
 
@@ -89,6 +98,7 @@ public:
         float rate = getClanTaxRate(clanId);
         int64_t tax = static_cast<int64_t>(amount * rate);
         familyTreasury_[clanId] += tax;
+        treasuryIncomeAccumulator_ += tax;
         return tax;
     }
 
@@ -101,6 +111,7 @@ public:
         auto it = familyTreasury_.find(clanId);
         if (it != familyTreasury_.end() && it->second >= amount) {
             it->second -= amount;
+            treasuryExpenseAccumulator_ += amount;
             return true;
         }
         return false;
@@ -220,6 +231,16 @@ public:
         return pools_;
     }
 
+    float getWeeklyIncomeRate() const { return static_cast<float>(treasuryIncomeAccumulator_); }
+    float getWeeklyExpenseRate() const { return static_cast<float>(treasuryExpenseAccumulator_); }
+    void resetWeeklyAccumulators() { treasuryIncomeAccumulator_ = 0; treasuryExpenseAccumulator_ = 0; }
+
+    const std::vector<ECS::EntityId>& getClanMembers(const std::string& clanId) const {
+        static const std::vector<ECS::EntityId> empty;
+        auto it = clanMembers_.find(clanId);
+        return (it != clanMembers_.end()) ? it->second : empty;
+    }
+
 private:
     MarketRegistry() : frameCounter_(0) {}
 
@@ -233,6 +254,9 @@ private:
     uint64_t digestCachedFrame_ = 0;
     bool digestDirty_ = true;
     uint32_t frameCounter_;
+    int64_t treasuryIncomeAccumulator_ = 0;
+    int64_t treasuryExpenseAccumulator_ = 0;
+    std::unordered_map<std::string, std::vector<ECS::EntityId>> clanMembers_;
     static constexpr uint32_t DECAY_INTERVAL = 600;
     static constexpr uint64_t SIGNAL_CACHE_TTL = 100;
     static constexpr uint64_t DIGEST_CACHE_TTL = 600;

@@ -84,6 +84,7 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
     void tickEmotions(float deltaTime) {
         float decayPerFrame = 0.995f;
         float effectiveFrames = deltaTime * 60.0f;
+        if (effectiveFrames > 10.0f) effectiveFrames = 10.0f;
         float decayFactor = std::pow(decayPerFrame, effectiveFrames);
         anger *= decayFactor;
         fear *= decayFactor;

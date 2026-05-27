@@ -128,27 +128,9 @@ struct EconomicSignals {
     float materialDemand = 1.0f;
     float cultivationDemand = 1.0f;
 
-    void computeFromHeritage(uint16_t factionCareerHeritage) {
-        if (factionCareerHeritage == 0) return;
-
-        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Miner))
-            ironOreDemand = 1.5f;
-        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Farmer))
-            foodDemand = 1.3f;
-        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Smith))
-            equipmentDemand = 1.4f;
-        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Cultivator))
-            cultivationDemand = 1.3f;
-        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Merchant))
-            spiritStoneInflation = 0.7f;
-        if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Soldier))
-            equipmentDemand = 1.5f;
-    }
-
     void computeFromMarket(const std::string& clanId) {
         const CommodityPool* pool = MarketRegistry::getCommodityPool(clanId);
         if (!pool) {
-            computeFromHeritage(0);
             return;
         }
 
@@ -236,6 +218,10 @@ public:
                 return;
             }
         }
+    }
+
+    static void globalTick(uint64_t currentFrame) {
+        MarketRegistry::getInstance().tickDecay(currentFrame);
     }
 
 private:
@@ -885,7 +871,6 @@ private:
             ctx.econSignals.equipmentDemand = cachedSignals.equipmentDemand;
             ctx.econSignals.materialDemand = cachedSignals.materialDemand;
             ctx.econSignals.cultivationDemand = cachedSignals.cultivationDemand;
-            MarketRegistry::getInstance().tickDecay(ctx.currentTime);
             NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime, ctx.identity, ctx.econSignals);
             float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality, ctx.identity);
             DecisionReason reason = DecisionReason::DailyRoleDefault;
@@ -996,6 +981,7 @@ private:
                     otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
                 }
             }
+            if (identity->layer == 1) return true;
         } else if (identity->layer == 2) {
             CommodityType targetType = CommodityType::Ore;
             float maxRatio = 0.0f;
@@ -1029,6 +1015,7 @@ private:
                     otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
                 }
             }
+            return true;
         }
 
         return false;

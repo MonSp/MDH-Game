@@ -4,6 +4,7 @@
 #include "../ecs/components/IdentityComponent.h"
 #include "../ecs/components/ResourcesComponent.h"
 #include "../ecs/components/BehaviorComponent.h"
+#include "../ecs/components/PersonalityComponent.h"
 #include "../ecs/Registry.h"
 #include <cmath>
 
@@ -36,11 +37,31 @@ static void exec_setTaxRate(ExecuteContext& ctx) {
     auto* identity = ctx.getIdentity();
     if (!identity || identity->clanId.empty()) return;
 
-    auto* resources = ctx.getResources();
-    float rate = resources ? (static_cast<float>(resources->spiritStones % 15) / 100.0f + 0.01f) : 0.10f;
-    if (rate < 0.01f) rate = 0.01f;
+    auto& mkt = MarketRegistry::getInstance();
+    const EconomicDigest& digest = mkt.getEconomicDigest(identity->clanId, ctx.currentTime);
 
-    MarketRegistry::getInstance().applyTaxRate(identity->clanId, rate);
+    float baseRate = 0.05f;
+    switch (digest.posture) {
+        case EconomicPosture::Crisis:   baseRate = 0.12f; break;
+        case EconomicPosture::Tight:    baseRate = 0.08f; break;
+        case EconomicPosture::Balanced: baseRate = 0.05f; break;
+        case EconomicPosture::Surplus:  baseRate = 0.03f; break;
+    }
+
+    auto* personality = ctx.getBehavior();
+    (void)personality;
+
+    auto* reg = &ctx.reg();
+    auto* persComp = reg->getComponent<PersonalityComponent>(ctx.entityId);
+    if (persComp) {
+        if (persComp->greed > 70.0f) baseRate += 0.03f;
+        if (persComp->ambition > 70.0f) baseRate += 0.02f;
+    }
+
+    if (baseRate < 0.01f) baseRate = 0.01f;
+    if (baseRate > 0.15f) baseRate = 0.15f;
+
+    mkt.applyTaxRate(identity->clanId, baseRate);
 }
 
 static void exec_tradeEmbargo(ExecuteContext& ctx) {

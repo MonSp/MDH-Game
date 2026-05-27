@@ -34,9 +34,7 @@ struct RelationshipComponent : public ECS::ComponentBase<RelationshipComponent> 
 
         for (uint8_t i = 0; i < factionPairCount; i++) {
             if (factionPairHashes[i] == combinedHash) {
-                int32_t current = factionAffinities[i];
-                if (current < affinity) factionAffinities[i] = current + 1;
-                else if (current > affinity) factionAffinities[i] = current - 1;
+                factionAffinities[i] = affinity;
                 return;
             }
         }
