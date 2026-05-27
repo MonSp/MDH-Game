@@ -3,6 +3,7 @@ import { useGameStore } from '../store/gameStore';
 import { X, ShoppingCart } from 'lucide-react';
 import { PixelItemIcon } from './PixelItemIcon';
 import { PixelPanel } from './PixelPanel';
+import { MarketService } from '../server/services/MarketService';
 
 export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
   const { player, market, buyItem, sellItem } = useGameStore();
@@ -13,6 +14,7 @@ export const MarketPanel = ({ onClose }: { onClose: () => void }) => {
 
   const marketItems = Object.values(market);
   const taxRate = player.country !== '魏' ? 0.15 : 0;
+  const ecoSummary = MarketService.getInstance().getAllMarketInfo();
 
   const handleBuy = (itemName: string) => {
     buyItem(itemName, amount);

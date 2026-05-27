@@ -29,6 +29,7 @@ import {
 export * from './gameConstants';
 import { getRecipe, FORGE_RECIPE_META, attemptCraft } from './craftingRecipes';
 import type { CaptiveNPC } from './gameConstants';
+import { MarketService } from '../server/services/MarketService';
 let lastMoraleWarningAt: number | undefined;
 /** Tracks consecutive server-sync misses per NPC ID for stale-NPC cleanup */
 const _serverSyncMissCount = new Map<string, number>();
@@ -1361,18 +1362,43 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   updateMarketPrices: () => {
+    const state = get();
+    if (!state.player) return;
+
+    const clanId = state.player.clanId || state.player.country || 'default';
+    const wasmAvailable = typeof (window as any).__ecsWasmReady === 'function' ? (window as any).__ecsWasmReady() : false;
+
     set(s => {
       const newMarket = { ...s.market };
-      for (const key in newMarket) {
-        const item = newMarket[key];
-        const fluctuation = (Math.random() * 0.1) - 0.05;
-        let priceMultiplier = 1 + fluctuation;
-        
-        if (item.stock < 20) priceMultiplier += 0.05;
-        else if (item.stock > 100) priceMultiplier -= 0.05;
+      const itemToCommodity: Record<string, number> = {
+        '洗髓丹': 4,
+        '低级法器': 2,
+        '回血丹': 4,
+        '聚气散': 4,
+        '飞升令': 2,
+      };
 
-        let newPrice = Math.floor(item.currentPrice * priceMultiplier);
-        newPrice = Math.max(Math.floor(item.basePrice * 0.5), Math.min(newPrice, item.basePrice * 2));
+      for (const key in newMarket) {
+        const commodityType = itemToCommodity[key] ?? 5;
+        let newPrice: number;
+
+        if (wasmAvailable) {
+          try {
+            const { wasmGetMarketPrice } = require('../ecs/ECSWasmLoader');
+            const wasmPrice = wasmGetMarketPrice(clanId, commodityType);
+            newPrice = wasmPrice > 0 ? Math.floor(wasmPrice) : newMarket[key].currentPrice;
+          } catch {
+            newPrice = newMarket[key].currentPrice;
+          }
+        } else {
+          const { MarketService } = require('../server/services/MarketService');
+          const svc = MarketService.getInstance();
+          const commodityNames = ['Ore', 'Food', 'Equipment', 'Materials', 'Pills', 'SpiritStones'];
+          const commodity = commodityNames[commodityType] ?? 'SpiritStones';
+          newPrice = svc.getPrice(commodity);
+        }
+
+        const item = newMarket[key];
         newMarket[key] = { ...item, currentPrice: newPrice };
       }
       return { market: newMarket };

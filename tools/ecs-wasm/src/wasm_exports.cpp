@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
+#include "game/economy/MarketRegistry.h"
 
 #pragma pack(push, 1)
 struct NPCStateWasm {
@@ -402,6 +403,27 @@ void ecs_loadMemory(const int* inBuf, int size) {
         }
     }
     (void)size;
+}
+
+float ecs_getMarketPrice(const char* clanId, int commodityType) {
+    if (!clanId || commodityType < 0 || commodityType >= 6) return -1.0f;
+    return MarketRegistry::getMarketPrice(std::string(clanId), static_cast<CommodityType>(commodityType));
+}
+
+void ecs_getCommodityPool(const char* clanId, int commodityType, int64_t* outSupply, int64_t* outDemand) {
+    if (!clanId || !outSupply || !outDemand || commodityType < 0 || commodityType >= 6) {
+        if (outSupply) *outSupply = 0;
+        if (outDemand) *outDemand = 0;
+        return;
+    }
+    const CommodityPool* pool = MarketRegistry::getCommodityPool(std::string(clanId));
+    if (pool) {
+        *outSupply = pool->supply[commodityType];
+        *outDemand = pool->demand[commodityType];
+    } else {
+        *outSupply = 0;
+        *outDemand = 0;
+    }
 }
 
 }

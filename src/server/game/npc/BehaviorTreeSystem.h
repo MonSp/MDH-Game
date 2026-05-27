@@ -15,6 +15,8 @@
 #include "../ecs/components/CultivationComponent.h"
 #include "../bt/BTEvaluator.h"
 #include "../ecs/Registry.h"
+#include "../economy/MarketRegistry.h"
+#include "../economy/CaravanSystem.h"
 #include "ExecuteDescriptor.h"
 #include "BehaviorTree_Survival.h"
 #include "BehaviorTree_Daily.h"
@@ -134,6 +136,29 @@ struct EconomicSignals {
             spiritStoneInflation = 0.7f;
         if (factionCareerHeritage & static_cast<uint16_t>(CareerTag::Soldier))
             equipmentDemand = 1.5f;
+    }
+
+    void computeFromMarket(const std::string& clanId) {
+        const CommodityPool* pool = MarketRegistry::getCommodityPool(clanId);
+        if (!pool) {
+            computeFromHeritage(0);
+            return;
+        }
+
+        auto ratio = [&](CommodityType t) -> float {
+            int64_t s = pool->supply[static_cast<uint8_t>(t)];
+            int64_t d = pool->demand[static_cast<uint8_t>(t)];
+            if (s < 1) s = 1;
+            float r = static_cast<float>(d) / static_cast<float>(s);
+            return r > 0.01f ? r : 1.0f;
+        };
+
+        ironOreDemand = ratio(CommodityType::Ore);
+        foodDemand = ratio(CommodityType::Food);
+        equipmentDemand = ratio(CommodityType::Equipment);
+        materialDemand = ratio(CommodityType::Materials);
+        cultivationDemand = ratio(CommodityType::Pills);
+        spiritStoneInflation = ratio(CommodityType::SpiritStones);
     }
 };
 
@@ -833,8 +858,21 @@ private:
             }
         }
 
+        if (ctx.identity && ctx.personality && ctx.identity->clanId.size() > 0) {
+            uint16_t heritage = ctx.identity->factionCareerHeritage;
+            if ((ctx.identity->role == NPCRole::FamilyHead || ctx.identity->role == NPCRole::Elder) &&
+                (heritage & static_cast<uint16_t>(CareerTag::Merchant)) &&
+                random01() < 0.1f) {
+                CaravanRoute route = CaravanSystem::getInstance().findBestRoute(ctx.identity->clanId, ctx.currentTime);
+                if (route.margin >= 0.2f) {
+                    CaravanSystem::getInstance().executeRoute(route, ctx.currentTime);
+                }
+            }
+        }
+
         if (ctx.identity && ctx.personality) {
-            ctx.econSignals.computeFromHeritage(ctx.identity->factionCareerHeritage);
+            ctx.econSignals.computeFromMarket(ctx.identity->clanId);
+            MarketRegistry::getInstance().tickDecay(ctx.currentTime);
             NPCActivity chosen = chooseByRole(ctx.identity->role, ctx.personality, ctx.behavior, ctx.currentTime, ctx.identity, ctx.econSignals);
             float weight = applyReflection(ctx.behavior, chosen, ctx.currentTime, ctx.personality, ctx.identity);
             DecisionReason reason = DecisionReason::DailyRoleDefault;

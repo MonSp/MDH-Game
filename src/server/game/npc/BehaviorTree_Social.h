@@ -13,6 +13,7 @@
 #include <cmath>
 #include <algorithm>
 #include <climits>
+#include "../economy/MarketRegistry.h"
 
 static uint32_t findSelfSlot(ECS::Registry& reg, ECS::EntityId entityId) {
     for (size_t i = 0; i < reg.entityIds_.size(); ++i) {
@@ -203,9 +204,12 @@ static void exec_trade(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    int64_t tradeResult = exec_randRange(-20, 50);
-    resources->addSpiritStones(tradeResult);
-    int8_t score = (tradeResult > 0) ? 5 : (tradeResult == 0) ? 0 : -5;
+    
+    int64_t tradeAmount = exec_randRange(10, 50);
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Equipment, 1);
+    MarketRegistry::recordProduction(ctx.entityId, CommodityType::SpiritStones, tradeAmount);
+    
+    int8_t score = (tradeAmount > 30) ? 5 : (tradeAmount > 15) ? 0 : -5;
     behavior->reflection.recordResult(NPCActivity::Trade, score);
     behavior->changeActivity(NPCActivity::Rest);
 }

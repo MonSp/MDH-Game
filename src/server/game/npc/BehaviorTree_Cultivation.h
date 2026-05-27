@@ -1,6 +1,7 @@
 #pragma once
 #include "ExecuteDescriptor.h"
 #include "../ecs/components/StatsComponent.h"
+#include "../economy/MarketRegistry.h"
 #include <algorithm>
 
 static void exec_cultivate(ExecuteContext& ctx) {
@@ -15,6 +16,38 @@ static void exec_breakthrough(ExecuteContext& ctx) {
     auto* stats = ctx.getStats();
     auto* behavior = ctx.getBehavior();
     if (!cult || !stats || !behavior) return;
+
+    static constexpr int64_t BREAKTHROUGH_COST[] = {0, 300, 1000, 3000, 10000, 0};
+    auto* resources = ctx.getResources();
+    uint8_t curRealm = static_cast<uint8_t>(stats->realm);
+    int64_t cost = (curRealm < 6) ? BREAKTHROUGH_COST[curRealm] : 0;
+
+    if (cost > 0) {
+        bool canAfford = false;
+        if (resources && resources->spiritStones >= cost) {
+            resources->spiritStones -= cost;
+            canAfford = true;
+        } else {
+            auto* identity = ctx.getIdentity();
+            if (identity && !identity->clanId.empty()) {
+                auto& mkt = MarketRegistry::getInstance();
+                if (mkt.getTreasury(identity->clanId) >= cost) {
+                    mkt.spendTreasury(identity->clanId, cost);
+                    if (resources) resources->familyContribution -= static_cast<int32_t>(cost);
+                    canAfford = true;
+                }
+            }
+        }
+
+        if (!canAfford) {
+            cult->isBreakingThrough = false;
+            behavior->changeActivity(NPCActivity::Rest);
+            return;
+        }
+
+        MarketRegistry::recordConsumption(ctx.entityId, CommodityType::SpiritStones, cost);
+    }
+
     float chance = cult->getBreakthroughChance(stats->realm);
     if (exec_random01() < chance) {
         uint8_t cur = static_cast<uint8_t>(stats->realm);
@@ -67,7 +100,7 @@ static void exec_alchemy(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    if (exec_random01() < 0.6f) resources->spiritStones += exec_randRange(50, 200);
+    if (exec_random01() < 0.6f) MarketRegistry::recordProduction(ctx.entityId, CommodityType::Pills, 1);
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_seekFortune(ExecuteContext& ctx) {

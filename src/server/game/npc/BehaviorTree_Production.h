@@ -2,6 +2,7 @@
 #include "ExecuteDescriptor.h"
 #include "../ecs/components/PositionComponent.h"
 #include "../ecs/components/ResourcesComponent.h"
+#include "../economy/MarketRegistry.h"
 #include <algorithm>
 #include <cmath>
 
@@ -28,7 +29,7 @@ static void exec_build(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     behavior->activityProgress += 0.05f;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 5);
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Materials, 5);
     if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_mine(ExecuteContext& ctx) {
@@ -38,9 +39,9 @@ static void exec_mine(ExecuteContext& ctx) {
     if (!resources || !behavior) return;
     if (pos) pos->moveTo(pos->x + exec_randRange(-10,10), pos->y + exec_randRange(-10,10));
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
-    resources->addSpiritStones(static_cast<int64_t>(15.0f * h));
     behavior->activityProgress += h * 0.02f;
     if (behavior->activityProgress >= 1.0f) {
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Ore, 15);
         float roll = exec_random01();
         int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
         behavior->reflection.recordResult(NPCActivity::Mine, score);
@@ -54,7 +55,7 @@ static void exec_farm(ExecuteContext& ctx) {
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
     behavior->activityProgress += h * 0.1f;
     if (behavior->activityProgress >= 1.0f) {
-        resources->addSpiritStones(exec_randRange(20, 60));
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, exec_randRange(20, 60));
         float roll = exec_random01();
         int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
         behavior->reflection.recordResult(NPCActivity::Farm, score);
@@ -66,9 +67,9 @@ static void exec_fish(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
-    resources->addSpiritStones(static_cast<int64_t>(10.0f * h));
     behavior->activityProgress += h * 0.03f;
     if (behavior->activityProgress >= 1.0f) {
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, 10);
         float roll = exec_random01();
         int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
         behavior->reflection.recordResult(NPCActivity::Fish, score);
@@ -82,9 +83,9 @@ static void exec_lumber(ExecuteContext& ctx) {
     if (!resources || !behavior) return;
     if (pos) pos->moveTo(pos->x + exec_randRange(-10,10), pos->y + exec_randRange(-10,10));
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
-    resources->addSpiritStones(static_cast<int64_t>(8.0f * h));
     behavior->activityProgress += h * 0.02f;
     if (behavior->activityProgress >= 1.0f) {
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Materials, 8);
         float roll = exec_random01();
         int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
         behavior->reflection.recordResult(NPCActivity::Lumber, score);
@@ -96,9 +97,9 @@ static void exec_gather(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     float h = ctx.deltaTime / (1000.0f * 60.0f * 60.0f);
-    resources->addSpiritStones(static_cast<int64_t>(5.0f * h));
     behavior->activityProgress += h * 0.02f;
     if (behavior->activityProgress >= 1.0f) {
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Materials, 5);
         float roll = exec_random01();
         int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
         behavior->reflection.recordResult(NPCActivity::Gather, score);
@@ -109,24 +110,24 @@ static void exec_craft(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 8);
-    if (exec_random01() < 0.7f) resources->addSpiritStones(exec_randRange(30, 80));
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Ore, 5);
+    if (exec_random01() < 0.7f) MarketRegistry::recordProduction(ctx.entityId, CommodityType::Equipment, 1);
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_refine(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 10);
-    if (exec_random01() < 0.5f) resources->addSpiritStones(exec_randRange(50, 120));
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Ore, 8);
+    if (exec_random01() < 0.5f) MarketRegistry::recordProduction(ctx.entityId, CommodityType::Materials, 2);
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_cook(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 3);
-    resources->addSpiritStones(exec_randRange(8, 25));
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Food, 2);
+    MarketRegistry::recordProduction(ctx.entityId, CommodityType::Food, 1);
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_construct(ExecuteContext& ctx) {
@@ -134,14 +135,15 @@ static void exec_construct(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     behavior->activityProgress += 0.05f;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 12);
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Materials, 6);
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Ore, 6);
     if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_repair(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 2);
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Materials, 2);
     behavior->activityProgress += 0.1f;
     if (behavior->activityProgress >= 1.0f) behavior->changeActivity(NPCActivity::Rest);
 }
@@ -149,7 +151,8 @@ static void exec_sell(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    resources->addSpiritStones(exec_randRange(10, 50));
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Equipment, 1);
+    MarketRegistry::recordProduction(ctx.entityId, CommodityType::SpiritStones, exec_randRange(10, 50));
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_buy(ExecuteContext& ctx) {
@@ -157,15 +160,16 @@ static void exec_buy(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     int64_t cost = exec_randRange(10, 100);
-    if (resources->removeSpiritStones(cost)) resources->addSpiritStones(exec_randRange(0, 20));
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::SpiritStones, cost);
+    MarketRegistry::recordProduction(ctx.entityId, CommodityType::Equipment, 1);
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_tailor(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    resources->spiritStones = std::max<int64_t>(0, resources->spiritStones - 6);
-    if (exec_random01() < 0.65f) resources->addSpiritStones(exec_randRange(25, 70));
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::Materials, 3);
+    if (exec_random01() < 0.65f) MarketRegistry::recordProduction(ctx.entityId, CommodityType::Equipment, 1);
     float roll = exec_random01();
     int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
     behavior->reflection.recordResult(NPCActivity::Tailor, score);
@@ -176,14 +180,17 @@ static void exec_bargain(ExecuteContext& ctx) {
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
     int64_t basePrice = exec_randRange(10, 50);
+    MarketRegistry::recordConsumption(ctx.entityId, CommodityType::SpiritStones, static_cast<int64_t>(basePrice * 0.7f));
     float haggleRoll = exec_random01();
+    int64_t finalPrice;
     if (haggleRoll < 0.3f) {
-        resources->addSpiritStones(static_cast<int64_t>(basePrice * 1.5f));
+        finalPrice = static_cast<int64_t>(basePrice * 1.5f);
     } else if (haggleRoll < 0.7f) {
-        resources->addSpiritStones(basePrice);
+        finalPrice = basePrice;
     } else {
-        resources->addSpiritStones(static_cast<int64_t>(basePrice * 0.6f));
+        finalPrice = static_cast<int64_t>(basePrice * 0.6f);
     }
+    MarketRegistry::recordProduction(ctx.entityId, CommodityType::SpiritStones, finalPrice);
     float roll = exec_random01();
     int8_t score = (roll > 0.7f) ? 5 : (roll < 0.3f) ? -5 : 0;
     behavior->reflection.recordResult(NPCActivity::Bargain, score);
