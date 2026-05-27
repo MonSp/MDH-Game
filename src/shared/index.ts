@@ -14,6 +14,7 @@ export {
   NPCActivity,
   NPCPersonality,
   NPCBaseAttributes,
+  NPCItemEntry,
   NPCResources,
   NPCEntity,
   NPCLifeState,

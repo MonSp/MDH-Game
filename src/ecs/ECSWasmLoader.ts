@@ -103,6 +103,8 @@ export interface NPCState {
   fatigue: number;
   socialDesire: number;
   spiritStones: number;
+  itemCount: number;
+  equipmentItemId: number;
   name: string;
   activeCommandId: number;
   commandStatus: number;
@@ -176,6 +178,7 @@ type CLoadMemoryFn = (ptr: number, size: number) => void;
 type CGetMarketPriceFn = (clanIdPtr: number, commodityType: number) => number;
 type CGetCommodityPoolFn = (clanIdPtr: number, commodityType: number, supplyPtr: number, demandPtr: number) => void;
 type CRecordMarketTransactionFn = (clanIdPtr: number, commodityType: number, amount: number, isBuy: number) => void;
+type CGetNPCItemsFn = (entityId: number, ptr: number, maxSlots: number) => void;
 
 let ecsWasmReady = false;
 let HEAPU8: Uint8Array | null = null;
@@ -206,6 +209,7 @@ let _loadMemory: CLoadMemoryFn | null = null;
 let _getMarketPrice: CGetMarketPriceFn | null = null;
 let _getCommodityPool: CGetCommodityPoolFn | null = null;
 let _recordMarketTransaction: CRecordMarketTransactionFn | null = null;
+let _getNPCItems: CGetNPCItemsFn | null = null;
 
 const _decoder = new TextDecoder();
 
@@ -431,6 +435,8 @@ export function readNPCStates(): NPCState[] {
 
     const activeCommandId = view.getUint32(offset + 128, true);
     const commandStatus = HEAPU8[offset + 132];
+    const itemCount = view.getUint8(offset + 133);
+    const equipmentItemId = view.getUint8(offset + 134);
     const squadId = view.getUint32(offset + 136, true);
 
     result.push({
@@ -441,7 +447,7 @@ export function readNPCStates(): NPCState[] {
       roleName: NPCRole[role] ?? '内门子弟',
       activity,
       activityName: NPCActivity[activity] ?? 'Rest',
-      layer, cultivationProgress, hunger, fatigue, socialDesire, spiritStones, name,
+      layer, cultivationProgress, hunger, fatigue, socialDesire, spiritStones, itemCount, equipmentItemId, name,
       activeCommandId, commandStatus, squadId,
     });
   }
@@ -478,6 +484,7 @@ export async function initECSWasm(maxNPC: number = 2000): Promise<boolean> {
     _getMarketPrice = Module['_ecs_getMarketPrice'] as CGetMarketPriceFn;
     _getCommodityPool = Module['_ecs_getCommodityPool'] as CGetCommodityPoolFn;
     _recordMarketTransaction = Module['_ecs_recordMarketTransaction'] as CRecordMarketTransactionFn;
+    _getNPCItems = Module['_ecs_getNPCItems'] as CGetNPCItemsFn;
     const malloc = Module['_malloc'] as (size: number) => number;
     HEAPU8 = Module['HEAPU8'];
 
@@ -536,4 +543,38 @@ export function wasmRecordMarketTransaction(clanId: string, commodityType: numbe
   HEAPU8.set(bytes.slice(0, 64), tmpBuf);
   HEAPU8[tmpBuf + bytes.length] = 0;
   _recordMarketTransaction(tmpBuf, commodityType, amount, isBuy ? 1 : 0);
+}
+
+export interface NPCItemSlot {
+  itemId: number;
+  count: number;
+}
+
+export interface NPCItemDetail {
+  spiritStones: number;
+  familyContribution: number;
+  items: NPCItemSlot[];
+}
+
+export function wasmGetNPCItems(entityId: number, maxSlots: number): NPCItemDetail | null {
+  if (!_getNPCItems || !HEAPU8) return null;
+  const tmpBuf = _memBufPtr + 12200;
+  _getNPCItems(entityId, tmpBuf, maxSlots);
+
+  const view = new DataView(HEAPU8.buffer, HEAPU8.byteOffset);
+  const spiritStonesLo = view.getInt32(tmpBuf, true);
+  const spiritStonesHi = view.getInt32(tmpBuf + 4, true);
+  const spiritStones = spiritStonesLo + spiritStonesHi * 0x100000000;
+  const familyContribution = view.getInt32(tmpBuf + 8, true);
+
+  const items: NPCItemSlot[] = [];
+  const slotCount = Math.min(maxSlots, 32);
+  for (let i = 0; i < slotCount; i++) {
+    const itemId = view.getInt32(tmpBuf + 12 + i * 8, true);
+    const count = view.getInt32(tmpBuf + 16 + i * 8, true);
+    if (itemId === 0) break;
+    items.push({ itemId, count });
+  }
+
+  return { spiritStones, familyContribution, items };
 }

@@ -41,12 +41,14 @@ struct NPCStateWasm {
     char name[52];
     uint32_t activeCommandId;
     uint8_t commandStatus;
-    uint8_t _pad[3];
+    uint8_t itemCount;
+    uint8_t equipmentItemId;
+    uint8_t _pad;
     uint32_t squadId;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(NPCStateWasm) == 140, "NPCStateWasm must be 140 bytes");
+static_assert(sizeof(NPCStateWasm) == 140, "NPCStateWasm size mismatch");
 
 extern "C" {
 
@@ -124,9 +126,9 @@ void ecs_getNPCStates(NPCStateWasm* outBuffer, int maxCount) {
         out.activeCommandId = 0;
         out.commandStatus = 0;
         out.squadId = 0;
-        out._pad[0] = 0;
-        out._pad[1] = 0;
-        out._pad[2] = 0;
+        out.itemCount = resources ? static_cast<uint8_t>(resources->getTotalItemKinds()) : 0;
+        out.equipmentItemId = resources ? static_cast<uint8_t>(resources->equipmentItemId) : 0;
+        out._pad = 0;
         if (cmd && cmd->hasActiveCommand()) {
             const CommandSlot* slot = cmd->peekCommand();
             if (slot) {
@@ -434,6 +436,25 @@ void ecs_recordMarketTransaction(const char* clanId, int commodityType, int amou
         pool.addDemand(ct, amount);
     } else {
         pool.addSupply(ct, amount);
+    }
+}
+
+void ecs_getNPCItems(uint64_t entityId, int32_t* outBuf, int maxSlots) {
+    if (!outBuf || maxSlots <= 0) return;
+    auto& registry = ECS::Registry::getInstance();
+    auto* resources = registry.getComponent<ResourcesComponent>(entityId);
+    if (!resources) {
+        outBuf[0] = 0;
+        return;
+    }
+    outBuf[0] = static_cast<int32_t>(resources->spiritStones & 0xFFFFFFFF);
+    outBuf[1] = static_cast<int32_t>(resources->spiritStones >> 32);
+    outBuf[2] = resources->familyContribution;
+    int slotCount = static_cast<int>(resources->items.size());
+    int writeSlots = slotCount < maxSlots ? slotCount : maxSlots;
+    for (int i = 0; i < writeSlots; i++) {
+        outBuf[3 + i * 2] = static_cast<int32_t>(resources->items[i].itemId);
+        outBuf[3 + i * 2 + 1] = resources->items[i].count;
     }
 }
 

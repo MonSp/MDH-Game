@@ -2,6 +2,7 @@
 #include "ExecuteDescriptor.h"
 #include "../ecs/components/StatsComponent.h"
 #include "../economy/MarketRegistry.h"
+#include "../economy/ItemRegistry.h"
 #include <algorithm>
 
 static void exec_cultivate(ExecuteContext& ctx) {
@@ -100,7 +101,10 @@ static void exec_alchemy(ExecuteContext& ctx) {
     auto* resources = ctx.getResources();
     auto* behavior = ctx.getBehavior();
     if (!resources || !behavior) return;
-    if (exec_random01() < 0.6f) MarketRegistry::recordProduction(ctx.entityId, CommodityType::Pills, 1);
+    if (exec_random01() < 0.6f) {
+        MarketRegistry::recordProduction(ctx.entityId, CommodityType::Pills, 1);
+        resources->addItem(ItemId::PILLS, 1);
+    }
     behavior->changeActivity(NPCActivity::Rest);
 }
 static void exec_seekFortune(ExecuteContext& ctx) {

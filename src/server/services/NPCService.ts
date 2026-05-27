@@ -1,12 +1,19 @@
 import {
   NPCEntity, NPCRole, RealmLevel, NPCActivity, NPCPersonality, BirthType, NPCLifeState,
   LayerConfig, LAYER_CONFIGS, NATIONALITY_PERSONALITY_BONUS, BASE_WEIGHTS, BehaviorWeight,
-  NPCEvent, EventBus, Position, ResourceNode, GAME_CONFIG
+  NPCEvent, EventBus, Position, ResourceNode, GAME_CONFIG, NPCItemEntry
 } from '../../shared';
 import { ResourceManager, NPCResourceCompetition } from './ResourceService';
 import { v4 as uuidv4 } from 'uuid';
 
 const NATIONS = ['秦国', '楚国', '齐国', '燕国', '赵国', '魏国', '韩国'];
+
+const ITEM_NAME_MAP: Record<number, string> = {
+  1: '矿石', 2: '食物', 3: '材料', 4: '丹药', 5: '装备',
+  6: '练气丹', 7: '筑基丹', 8: '洗髓丹', 9: '低级法器',
+  10: '中级法器', 11: '聚气散', 12: '飞升令', 13: '灵草',
+  14: '灵石碎片', 15: '妖兽材料',
+};
 
 class NameGenerator {
   static generate(nation: string): string {
@@ -124,15 +131,17 @@ export class NPCBirthService {
     return Math.floor(this.calculatePower(realm, layerConfig) * 5);
   }
 
-  private calculateInitialResources(birthType: BirthType, layerConfig: LayerConfig): { spiritStones: number; items: string[]; equipment: string | null; familyContribution: number } {
+  private calculateInitialResources(birthType: BirthType, layerConfig: LayerConfig): { spiritStones: number; items: NPCItemEntry[]; equipment: string | null; familyContribution: number } {
     const multiplier = layerConfig.resourceMultiplier;
     switch (birthType) {
       case BirthType.Natural:
         return { spiritStones: 50 * multiplier, items: [], equipment: null, familyContribution: 0 };
       case BirthType.Wanderer:
-        return { spiritStones: 30 * multiplier, items: ['QiRefiningPill'], equipment: null, familyContribution: 0 };
+        // Items now managed by C++ WASM
+        return { spiritStones: 30 * multiplier, items: [], equipment: null, familyContribution: 0 };
       case BirthType.DemonBeast:
-        return { spiritStones: 0, items: ['MonsterMaterial'], equipment: null, familyContribution: 0 };
+        // Items now managed by C++ WASM
+        return { spiritStones: 0, items: [], equipment: null, familyContribution: 0 };
       default:
         return { spiritStones: 20 * multiplier, items: [], equipment: null, familyContribution: 0 };
     }
@@ -432,7 +441,7 @@ export class BehaviorExecutor {
           this.npc.id, resource.id,
           () => {},
           (amount) => { this.npc.resources.spiritStones += Math.floor(amount); },
-          (item) => { if (!this.npc.resources.items.includes(item)) this.npc.resources.items.push(item); }
+          () => {} // Items now managed by C++ WASM
         );
       }
       this.activityData.delete('logisticsTarget');
@@ -465,7 +474,7 @@ export class BehaviorExecutor {
           this.npc.id, resource.id,
           () => {},
           (amount) => { this.npc.resources.spiritStones += Math.floor(amount); },
-          (item) => { if (!this.npc.resources.items.includes(item)) this.npc.resources.items.push(item); }
+          () => {} // Items now managed by C++ WASM
         );
         competition.npcReleases(this.npc.id, resource.id);
         this.activityData.delete('competeTarget');
@@ -569,6 +578,7 @@ export class BehaviorExecutor {
       const { NPCWorldService } = require('./NPCWorldService');
       const partner = NPCWorldService.getInstance().getNPC(partnerId);
       if (partner && this.npc.resources.spiritStones >= 30) {
+        // Future: item exchange via C++ WASM
         const tradeAmount = Math.floor(Math.min(30, this.npc.resources.spiritStones));
         this.npc.resources.spiritStones -= tradeAmount;
         partner.npc.resources.spiritStones += tradeAmount;

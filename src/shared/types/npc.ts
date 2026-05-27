@@ -53,9 +53,15 @@ export interface NPCBaseAttributes {
   position: Position;
 }
 
+export interface NPCItemEntry {
+  itemId: number;
+  name: string;
+  count: number;
+}
+
 export interface NPCResources {
   spiritStones: number;
-  items: string[];
+  items: NPCItemEntry[];
   equipment: string | null;
   familyContribution: number;
 }
