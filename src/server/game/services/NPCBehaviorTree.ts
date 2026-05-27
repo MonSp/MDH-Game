@@ -158,7 +158,22 @@ export function translateActionToActivity(actionType: ActionType): string {
     [ActionType.CAPTURE_RESOURCE_POINT]: 'compete',
     [ActionType.DOMAIN_WAR]: 'patrol',
     [ActionType.ALLIANCE_FORMATION]: 'work',
-    [ActionType.CULTIVATE_BREAKTHROUGH]: 'retreat'
+    [ActionType.CULTIVATE_BREAKTHROUGH]: 'retreat',
+    [ActionType.ISSUE_ORDER]: 'patrol',
+    [ActionType.MOBILIZE]: 'patrol',
+    [ActionType.ASSASSINATE]: 'compete',
+    [ActionType.TEACH]: 'work',
+    [ActionType.COMBAT_RAID]: 'compete',
+    [ActionType.COMMAND_DELEGATE]: 'patrol',
+    [ActionType.REPORT_STATUS]: 'work',
+    [ActionType.COORDINATE_SQUAD]: 'patrol',
+    [ActionType.RESIST_ORDER]: 'idle',
+    [ActionType.SCOUT]: 'explore',
+    [ActionType.ECONOMIC_MOBILIZE]: 'logistics',
+    [ActionType.TRADE_EMBARGO]: 'trade',
+    [ActionType.STOCKPILE_MATERIAL]: 'logistics',
+    [ActionType.PRICE_STABILIZE]: 'trade',
+    [ActionType.SET_TAX_RATE]: 'work'
   };
   return mapping[actionType] || 'rest';
 }

@@ -428,6 +428,6 @@ export class DataService {
     if (!isECSWasmReady()) return false;
     const row = this.db.prepare('SELECT data FROM npc_memory_blob WHERE id = 1').get() as { data: Buffer } | undefined;
     if (!row || !row.data) return false;
-    return ecsLoadMemory(row.data.buffer.slice(row.data.byteOffset, row.data.byteOffset + row.data.byteLength));
+    return ecsLoadMemory(row.data.buffer.slice(row.data.byteOffset, row.data.byteOffset + row.data.byteLength) as ArrayBuffer);
   }
 }

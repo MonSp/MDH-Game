@@ -161,6 +161,7 @@ export class NPCWorldService extends EventEmitter {
   private constructor() {
     super();
     this.nextNPCId = 1;
+    this.memory = new NPCMemoryStore();
   }
 
   /**
