@@ -13,7 +13,7 @@ all: $(GTEST_BINS)
 	$(CXX) $(CXXFLAGS) $< -o $@ $(GTEST_LIBS)
 
 sim: simulation/wasm_simulation.cpp
-	$(CXX) $(CXXFLAGS) -O2 $< -o simulation/wasm_simulation -lpthread
+	$(CXX) -std=c++17 -Wall -O2 -ULLAMA_CPP_BACKEND -I../src/server -I../third_party/llama.cpp/include -I../third_party/llama.cpp/ggml/include $< -o simulation/wasm_simulation -lpthread
 	@echo "=== 编译完成: simulation/wasm_simulation ==="
 	@echo "运行: ./simulation/wasm_simulation [npcCount] [frames] [snapshotInterval] [threads]"
 	@echo "示例: ./simulation/wasm_simulation 200 500 100 4"

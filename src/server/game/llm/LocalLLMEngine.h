@@ -7,11 +7,6 @@
 #include <atomic>
 #include <cstdint>
 
-// 启用 llama.cpp 后端：编译时需链接 libllama，并在 CMakeLists.txt 中定义 LLAMA_CPP_BACKEND
-#ifndef LLAMA_CPP_BACKEND
-#define LLAMA_CPP_BACKEND
-#endif
-
 #ifdef LLAMA_CPP_BACKEND
 #include "llama.h"
 #include "common.h"

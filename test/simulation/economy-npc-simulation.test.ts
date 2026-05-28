@@ -63,32 +63,76 @@ const SIM_NAMES = [
   '楚狂人', '燕飞雪', '魏长风', '齐天翔', '郑逍遥',
 ];
 
+function generatePersonalityForNation(nation: string, role: NPCRole) {
+  const nationMeans: Record<string, { amb: number; cau: number; loy: number; gre: number; soc: number; dil: number }> = {
+    '秦': { amb: 65, cau: 45, loy: 65, gre: 45, soc: 55, dil: 65 },
+    '楚': { amb: 55, cau: 55, loy: 50, gre: 50, soc: 65, dil: 50 },
+    '齐': { amb: 50, cau: 60, loy: 55, gre: 55, soc: 60, dil: 55 },
+    '燕': { amb: 45, cau: 65, loy: 60, gre: 40, soc: 45, dil: 60 },
+    '赵': { amb: 60, cau: 40, loy: 55, gre: 55, soc: 50, dil: 55 },
+    '魏': { amb: 55, cau: 55, loy: 50, gre: 60, soc: 55, dil: 50 },
+    '韩': { amb: 50, cau: 60, loy: 55, gre: 45, soc: 55, dil: 60 },
+  };
+  const roleModifiers: Record<string, { amb: number; cau: number; loy: number; gre: number; soc: number; dil: number }> = {
+    [NPCRole.FamilyHead]: { amb: 10, cau: 0, loy: 10, gre: 0, soc: 5, dil: 0 },
+    [NPCRole.Elder]: { amb: 0, cau: 10, loy: 10, gre: 0, soc: 5, dil: 5 },
+    [NPCRole.CoreDisciple]: { amb: 5, cau: 0, loy: 5, gre: 5, soc: 0, dil: 5 },
+    [NPCRole.InnerDisciple]: { amb: 0, cau: 5, loy: 0, gre: 0, soc: 0, dil: 0 },
+    [NPCRole.BranchDisciple]: { amb: -5, cau: 0, loy: -5, gre: 5, soc: 0, dil: -5 },
+  };
+  const means = nationMeans[nation] || nationMeans['秦'];
+  const mod = roleModifiers[role] || { amb: 0, cau: 0, loy: 0, gre: 0, soc: 0, dil: 0 };
+  const clamp = (v: number) => Math.max(5, Math.min(95, v));
+  const noise = () => (Math.random() - 0.5) * 30;
+  return {
+    ambition: clamp(means.amb + mod.amb + noise()),
+    caution: clamp(means.cau + mod.cau + noise()),
+    loyalty: clamp(means.loy + mod.loy + noise()),
+    greed: clamp(means.gre + mod.gre + noise()),
+    sociability: clamp(means.soc + mod.soc + noise()),
+    diligence: clamp(means.dil + mod.dil + noise()),
+  };
+}
+
 function createSimNPC(index: number): NPCEntity {
   const roles = [NPCRole.BranchDisciple, NPCRole.InnerDisciple, NPCRole.CoreDisciple, NPCRole.Elder];
   const realms = [RealmLevel.Mortal, RealmLevel.QiRefining, RealmLevel.FoundationBuilding, RealmLevel.GoldenCore];
   const nations = ['秦', '楚', '齐', '燕', '赵', '魏', '韩'];
   const roleIdx = index % roles.length;
   const realmIdx = index % realms.length;
-  const power = 50 + (index * 37) % 500;
+  const nation = nations[index % nations.length];
+  const role = roles[roleIdx];
+  const realm = realms[realmIdx];
+
+  const powerByRealm: Record<string, number> = {
+    [RealmLevel.Mortal]: 100,
+    [RealmLevel.QiRefining]: 300,
+    [RealmLevel.FoundationBuilding]: 800,
+    [RealmLevel.GoldenCore]: 2000,
+  };
+  const power = powerByRealm[realm] || 100;
+
+  const spiritStonesByRole: Record<string, number> = {
+    [NPCRole.Elder]: 200 + Math.floor(Math.random() * 101),
+    [NPCRole.CoreDisciple]: 200 + Math.floor(Math.random() * 101),
+    [NPCRole.InnerDisciple]: 150,
+    [NPCRole.BranchDisciple]: 100,
+  };
+  const spiritStones = spiritStonesByRole[role] || 100;
 
   return {
     id: `sim_npc_${String(index).padStart(3, '0')}`,
     name: SIM_NAMES[index % SIM_NAMES.length],
-    clanId: `clan_${index % 4}`,
-    nation: nations[index % nations.length],
-    role: roles[roleIdx],
-    realm: realms[realmIdx],
+    clanId: `${nation}_Royal`,
+    nation,
+    role,
+    realm,
     power,
-    hp: power * 5,
-    maxHp: power * 5,
-    mp: power * 2,
-    maxMp: power * 2,
-    personality: {
-      ambition: (index * 13 + 20) % 100,
-      caution: (index * 7 + 30) % 100,
-      loyalty: (index * 11 + 40) % 100,
-      greed: (index * 17 + 10) % 100,
-    },
+    hp: power * 10,
+    maxHp: power * 10,
+    mp: power * 5,
+    maxMp: power * 5,
+    personality: generatePersonalityForNation(nation, role),
     activity: NPCActivity.Rest,
     position: { x: (index * 17) % 100, y: (index * 23) % 100 },
     birthTime: Date.now(),
@@ -96,7 +140,7 @@ function createSimNPC(index: number): NPCEntity {
     birthType: BirthType.Natural,
     layer: 9,
     resources: {
-      spiritStones: 50 + (index * 31) % 200,
+      spiritStones,
       items: [],
       equipment: null,
       familyContribution: 0,
