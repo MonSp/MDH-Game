@@ -21,7 +21,7 @@ enum class WeaknessType : uint8_t {
     EquipmentShortage = 5
 };
 
-static const char* economicPostureToString(EconomicPosture p) {
+[[maybe_unused]] static const char* economicPostureToString(EconomicPosture p) {
     switch (p) {
         case EconomicPosture::Surplus:  return "盈馀";
         case EconomicPosture::Balanced: return "平衡";
@@ -31,7 +31,7 @@ static const char* economicPostureToString(EconomicPosture p) {
     }
 }
 
-static const char* weaknessTypeToString(WeaknessType w) {
+[[maybe_unused]] static const char* weaknessTypeToString(WeaknessType w) {
     switch (w) {
         case WeaknessType::FoodDependency:       return "食物依赖进口";
         case WeaknessType::LowTreasury:           return "库房灵石见底";
@@ -144,7 +144,9 @@ static EconomicDigest computeEconomicDigest(
     uint64_t currentFrame,
     int64_t treasury,
     const std::unordered_map<std::string, CommodityPool>& allPools,
-    const std::unordered_map<std::string, int64_t>& allTreasuries)
+    const std::unordered_map<std::string, int64_t>& allTreasuries,
+    int64_t weeklyIncome = 0,
+    int64_t weeklyExpense = 0)
 {
     EconomicDigest digest;
     digest.treasuryBalance = treasury;
@@ -213,7 +215,6 @@ static EconomicDigest computeEconomicDigest(
         CommodityType type = static_cast<CommodityType>(i);
         int64_t myS = pool.supply[i];
         if (myS < 1) myS = 1;
-        int64_t myD = pool.demand[i];
         float myPrice = PriceEngine::getPrice(pool, type);
 
         for (const auto& otherPair : allPools) {
@@ -266,14 +267,13 @@ static EconomicDigest computeEconomicDigest(
         }
     }
 
-    int64_t weeklyExpense = 400;
-    int64_t weeklyIncome = 350;
     auto treasuryIt = allTreasuries.find(clanId);
     if (treasuryIt != allTreasuries.end()) {
         digest.treasuryBalance = treasuryIt->second;
     }
     digest.weeklyIncomeRate = static_cast<float>(weeklyIncome);
     digest.weeklyExpenseRate = static_cast<float>(weeklyExpense);
+    if (weeklyExpense <= 0) weeklyExpense = 400;
 
     float reserveRatio = (weeklyExpense > 0)
         ? static_cast<float>(treasury) / static_cast<float>(weeklyExpense * 4)
@@ -292,7 +292,7 @@ static EconomicDigest computeEconomicDigest(
     return digest;
 }
 
-static void digestToWasm(const EconomicDigest& digest, EconomicDigestWasm& wasm) {
+[[maybe_unused]] static void digestToWasm(const EconomicDigest& digest, EconomicDigestWasm& wasm) {
     wasm.posture = static_cast<uint8_t>(digest.posture);
     wasm.treasuryBalance = digest.treasuryBalance;
     wasm.weeklyIncomeRate = digest.weeklyIncomeRate;

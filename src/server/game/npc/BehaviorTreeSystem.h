@@ -37,14 +37,10 @@
         if (behavior) behavior->appendDecisionLog(frame, oldAct, newAct, reason, layer, weightDelta, tagScore, generateNarrativeSnippet(reason, oldAct, newAct)); \
     } while(0)
 #else
-#define LOG_DECISION(behavior, frame, oldAct, newAct, reason, layer, weightDelta, tagScore) ((void)0)
+#define LOG_DECISION(behavior, frame, oldAct, newAct, reason, layer, weightDelta, tagScore) \
+    do { (void)(behavior); (void)(frame); (void)(oldAct); (void)(newAct); (void)(reason); (void)(layer); (void)(weightDelta); (void)(tagScore); } while(0)
 #endif
 
-extern bool canExecute_mine(ExecuteContext& ctx);
-extern bool canExecute_farm(ExecuteContext& ctx);
-extern bool canExecute_fish(ExecuteContext& ctx);
-extern bool canExecute_lumber(ExecuteContext& ctx);
-extern bool canExecute_gather(ExecuteContext& ctx);
 extern bool canExecute_explore(ExecuteContext& ctx);
 extern bool canExecute_treasureHunt(ExecuteContext& ctx);
 extern bool canExecute_mapExplore(ExecuteContext& ctx);
@@ -59,7 +55,7 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     {NPCActivity::Rest,        "Rest",        ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_rest, nullptr},
     {NPCActivity::Sleep,       "Sleep",       ActivityCategory::Daily, REQ_SOCIAL|REQ_STATS, exec_sleep, nullptr},
     {NPCActivity::Walk,        "Walk",        ActivityCategory::Daily, REQ_POSITION,         exec_walk, nullptr},
-    {NPCActivity::Chat,        "Chat",        ActivityCategory::Daily, REQ_SOCIAL,           exec_gossip, nullptr},
+    {NPCActivity::Chat,        "Chat",        ActivityCategory::Daily, REQ_SOCIAL,           exec_chat, nullptr},
     {NPCActivity::AwaitOrders,"AwaitOrders",  ActivityCategory::Daily, REQ_STATS,            exec_awaitOrders, nullptr},
     // Cultivation (6)
     {NPCActivity::Cultivate,    "Cultivate",    ActivityCategory::Cultivation, REQ_CULT,                              exec_cultivate, nullptr},
@@ -80,11 +76,11 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     {NPCActivity::SocialHelp,      "SocialHelp",     ActivityCategory::Social, REQ_POSITION|REQ_RELATIONSHIP,  exec_socialHelp, nullptr},
     // Production (13)
     {NPCActivity::Build,     "Build",      ActivityCategory::Production, REQ_RESOURCES,                exec_build, nullptr},
-    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_mine, canExecute_mine},
-    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES,                exec_farm, canExecute_farm},
-    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES,                exec_fish, canExecute_fish},
-    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_lumber, canExecute_lumber},
-    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES,                exec_gather, canExecute_gather},
+    {NPCActivity::Mine,      "Mine",       ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_mine, nullptr},
+    {NPCActivity::Farm,      "Farm",       ActivityCategory::Production, REQ_RESOURCES,                exec_farm, nullptr},
+    {NPCActivity::Fish,      "Fish",       ActivityCategory::Production, REQ_RESOURCES,                exec_fish, nullptr},
+    {NPCActivity::Lumber,    "Lumber",     ActivityCategory::Production, REQ_RESOURCES|REQ_POSITION,    exec_lumber, nullptr},
+    {NPCActivity::Gather,    "Gather",     ActivityCategory::Production, REQ_RESOURCES,                exec_gather, nullptr},
     {NPCActivity::Craft,     "Craft",      ActivityCategory::Production, REQ_RESOURCES,                exec_craft, nullptr},
     {NPCActivity::Refine,    "Refine",     ActivityCategory::Production, REQ_RESOURCES,                exec_refine, nullptr},
     {NPCActivity::Cook,      "Cook",       ActivityCategory::Production, REQ_RESOURCES,                exec_cook, nullptr},
@@ -119,6 +115,13 @@ static constexpr ExecuteDescriptor kExecuteTable[] = {
     {NPCActivity::EconomicMobilize,  "EconomicMobilize",  ActivityCategory::EconomyStrategy, REQ_IDENTITY, exec_economicMobilize, canExecute_economicMobilize},
 };
 static constexpr size_t kExecuteTableSize = sizeof(kExecuteTable) / sizeof(kExecuteTable[0]);
+
+static const ExecuteDescriptor* findExecuteDescriptor(NPCActivity activity) {
+    for (size_t i = 0; i < kExecuteTableSize; ++i) {
+        if (kExecuteTable[i].activity == activity) return &kExecuteTable[i];
+    }
+    return nullptr;
+}
 
 struct EconomicSignals {
     float ironOreDemand = 1.0f;
@@ -208,15 +211,13 @@ public:
 
         ExecuteContext ctx(entityId, currentTime, deltaTime);
 
-        for (size_t i = 0; i < kExecuteTableSize; ++i) {
-            if (kExecuteTable[i].activity == behavior->currentActivity) {
-                if (kExecuteTable[i].isExecutable && !kExecuteTable[i].isExecutable(ctx)) {
-                    behavior->changeActivity(NPCActivity::Rest);
-                    return;
-                }
-                kExecuteTable[i].execute(ctx);
+        const ExecuteDescriptor* desc = findExecuteDescriptor(behavior->currentActivity);
+        if (desc) {
+            if (desc->isExecutable && !desc->isExecutable(ctx)) {
+                behavior->changeActivity(NPCActivity::Rest);
                 return;
             }
+            desc->execute(ctx);
         }
     }
 
@@ -331,8 +332,6 @@ private:
 
         NPCActivity creative = NPCActivity::Rest;
         float bestScore = -1.0f;
-        NPCActivity tieCandidate = NPCActivity::Rest;
-        float tieScore = -1.0f;
 
         for (size_t i = 0; i < kExecuteTableSize; ++i) {
             NPCActivity candidate = kExecuteTable[i].activity;
@@ -350,15 +349,11 @@ private:
             if (score > bestScore) {
                 bestScore = score;
                 creative = candidate;
-                tieCandidate = candidate;
-                tieScore = score;
             } else if (score == bestScore && bestScore > 0.0f) {
                 float jacA = jaccardSimilarity(best, creative);
                 float jacB = jaccardSimilarity(best, candidate);
                 if (jacB > jacA) {
                     creative = candidate;
-                    tieCandidate = candidate;
-                    tieScore = score;
                 }
             }
         }
@@ -934,16 +929,16 @@ private:
 
         if (digest.posture != EconomicPosture::Crisis) return false;
 
-        if (identity->layer <= 1) {
-            CommodityType targetType = CommodityType::Ore;
-            float maxRatio = 0.0f;
-            for (int i = 0; i < 3; i++) {
-                if (digest.alerts[i].priceRatio > maxRatio) {
-                    maxRatio = digest.alerts[i].priceRatio;
-                    targetType = digest.alerts[i].commodityType;
-                }
+        CommodityType targetType = CommodityType::Ore;
+        float maxRatio = 0.0f;
+        for (int i = 0; i < 3; i++) {
+            if (digest.alerts[i].priceRatio > maxRatio) {
+                maxRatio = digest.alerts[i].priceRatio;
+                targetType = digest.alerts[i].commodityType;
             }
+        }
 
+        if (identity->layer <= 1) {
             int64_t treasury = mkt.getTreasury(identity->clanId);
             int64_t maxSpend = treasury / 3;
             if (maxSpend > 300) maxSpend = 300;
@@ -957,68 +952,30 @@ private:
                     pool.addSupply(targetType, buyAmount);
                 }
             }
-
-            NPCActivity mobilizeActivity = NPCActivity::Mine;
-            switch (targetType) {
-                case CommodityType::Ore:          mobilizeActivity = NPCActivity::Mine; break;
-                case CommodityType::Food:         mobilizeActivity = NPCActivity::Farm; break;
-                case CommodityType::Equipment:    mobilizeActivity = NPCActivity::Craft; break;
-                case CommodityType::Materials:    mobilizeActivity = NPCActivity::Lumber; break;
-                case CommodityType::Pills:        mobilizeActivity = NPCActivity::Alchemy; break;
-                case CommodityType::SpiritStones: mobilizeActivity = NPCActivity::Mine; break;
-                default: break;
-            }
-
-            auto& registry = ECS::Registry::getInstance();
-            auto entities = registry.getEntitiesWithComponent<IdentityComponent>();
-            uint64_t expireFrame = ctx.currentTime + 300;
-
-            for (auto id : entities) {
-                auto* otherIdentity = registry.getComponent<IdentityComponent>(id);
-                if (!otherIdentity || otherIdentity->clanId != identity->clanId) continue;
-                auto* otherBehavior = registry.getComponent<BehaviorComponent>(id);
-                if (otherBehavior) {
-                    otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
-                }
-            }
-            if (identity->layer == 1) return true;
-        } else if (identity->layer == 2) {
-            CommodityType targetType = CommodityType::Ore;
-            float maxRatio = 0.0f;
-            for (int i = 0; i < 3; i++) {
-                if (digest.alerts[i].priceRatio > maxRatio) {
-                    maxRatio = digest.alerts[i].priceRatio;
-                    targetType = digest.alerts[i].commodityType;
-                }
-            }
-
-            NPCActivity mobilizeActivity = NPCActivity::Mine;
-            switch (targetType) {
-                case CommodityType::Ore:          mobilizeActivity = NPCActivity::Mine; break;
-                case CommodityType::Food:         mobilizeActivity = NPCActivity::Farm; break;
-                case CommodityType::Equipment:    mobilizeActivity = NPCActivity::Craft; break;
-                case CommodityType::Materials:    mobilizeActivity = NPCActivity::Lumber; break;
-                case CommodityType::Pills:        mobilizeActivity = NPCActivity::Alchemy; break;
-                case CommodityType::SpiritStones: mobilizeActivity = NPCActivity::Mine; break;
-                default: break;
-            }
-
-            auto& registry = ECS::Registry::getInstance();
-            auto entities = registry.getEntitiesWithComponent<IdentityComponent>();
-            uint64_t expireFrame = ctx.currentTime + 300;
-
-            for (auto id : entities) {
-                auto* otherIdentity = registry.getComponent<IdentityComponent>(id);
-                if (!otherIdentity || otherIdentity->clanId != identity->clanId) continue;
-                auto* otherBehavior = registry.getComponent<BehaviorComponent>(id);
-                if (otherBehavior) {
-                    otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
-                }
-            }
-            return true;
         }
 
-        return false;
+        NPCActivity mobilizeActivity = NPCActivity::Mine;
+        switch (targetType) {
+            case CommodityType::Ore:          mobilizeActivity = NPCActivity::Mine; break;
+            case CommodityType::Food:         mobilizeActivity = NPCActivity::Farm; break;
+            case CommodityType::Equipment:    mobilizeActivity = NPCActivity::Craft; break;
+            case CommodityType::Materials:    mobilizeActivity = NPCActivity::Lumber; break;
+            case CommodityType::Pills:        mobilizeActivity = NPCActivity::Alchemy; break;
+            case CommodityType::SpiritStones: mobilizeActivity = NPCActivity::Mine; break;
+            default: break;
+        }
+
+        auto& registry = ECS::Registry::getInstance();
+        const auto& clanMembers = mkt.getClanMembers(identity->clanId);
+        uint64_t expireFrame = ctx.currentTime + 300;
+
+        for (auto id : clanMembers) {
+            auto* otherBehavior = registry.getComponent<BehaviorComponent>(id);
+            if (otherBehavior) {
+                otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
+            }
+        }
+        return true;
     }
 
     static constexpr EvaluateFn kEvaluateLayers[] = {
@@ -1090,7 +1047,7 @@ private:
         switch (role) {
             case NPCRole::FamilyHead:
             case NPCRole::Elder:
-                if (random01() < 0.3f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
+            if (random01() < 0.3f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
                 * economicBiasFor(NPCActivity::Patrol, identity, econSignals))
                 return NPCActivity::Patrol;
             if (random01() < 0.2f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Meditate, identity) : 1.0f)
@@ -1100,15 +1057,15 @@ private:
                 * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Trade, identity) : 1.0f)
                 * economicBiasFor(NPCActivity::Trade, identity, econSignals))
                 return NPCActivity::Trade;
-                return NPCActivity::Rest;
-            case NPCRole::LawEnforcementElder:
-                if (random01() < 0.4f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
+            return NPCActivity::Rest;
+        case NPCRole::LawEnforcementElder:
+            if (random01() < 0.4f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Patrol, identity) : 1.0f)
                 * economicBiasFor(NPCActivity::Patrol, identity, econSignals))
                 return NPCActivity::Patrol;
-                return NPCActivity::Rest;
-            case NPCRole::CoreDisciple:
-            case NPCRole::InnerDisciple:
-                if (p->isDiligent() && random01() < 0.35f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Cultivate, identity) : 1.0f)
+            return NPCActivity::Rest;
+        case NPCRole::CoreDisciple:
+        case NPCRole::InnerDisciple:
+            if (p->isDiligent() && random01() < 0.35f * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Cultivate, identity) : 1.0f)
                 * economicBiasFor(NPCActivity::Cultivate, identity, econSignals))
                 return NPCActivity::Cultivate;
             if (random01() < 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Patrol, currentTime, p) : 1.0f)
@@ -1123,8 +1080,8 @@ private:
                 * (identity ? RoleBaselineWeights::getRoleBaselineWeight(NPCActivity::Explore, identity) : 1.0f)
                 * economicBiasFor(NPCActivity::Explore, identity, econSignals))
                 return NPCActivity::Explore;
-                return NPCActivity::Rest;
-            case NPCRole::BranchDisciple:
+            return NPCActivity::Rest;
+        case NPCRole::BranchDisciple:
             default:
                 {
                     float mineProb = 0.25f * (behavior ? applyReflection(behavior, NPCActivity::Mine, currentTime, p) : 1.0f)

@@ -14,10 +14,10 @@ enum class EmotionType : uint8_t {
 
 #pragma pack(push, 1)
 struct EmotionCooldown {
-    uint32_t targetSlot;
-    EmotionType emotionType;
-    NPCActivity triggerBehavior;
-    uint64_t cooldownUntilFrame;
+    uint32_t targetSlot = 0;
+    EmotionType emotionType = EmotionType::Anger;
+    NPCActivity triggerBehavior = NPCActivity::Idle;
+    uint64_t cooldownUntilFrame = 0;
 };
 #pragma pack(pop)
 
@@ -41,7 +41,7 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
     static constexpr float GROUP_EMOTION_ABSOLUTE_MIN = 3;
     static constexpr float GROUP_EMOTION_RATIO_MIN = 0.3f;
     static constexpr float GROUP_EMOTION_RADIUS = 200.0f;
-    EmotionCooldown emotionCooldowns[MAX_COOLDOWNS];
+    EmotionCooldown emotionCooldowns[MAX_COOLDOWNS] = {};
     uint8_t cooldownCount;
 
     SocialComponent() : hunger(0.0f), fatigue(0.0f), energy(80.0f),
@@ -163,9 +163,6 @@ struct SocialComponent : public ECS::ComponentBase<SocialComponent> {
         emotionCooldowns[lruIdx].emotionType = type;
         emotionCooldowns[lruIdx].triggerBehavior = behavior;
         emotionCooldowns[lruIdx].cooldownUntilFrame = currentFrame + 72;
-        fprintf(stderr, "[DEBUG] EmotionCooldown LRU eviction: replaced slot=%u (oldest frame=%lu) "
-                "with targetSlot=%u type=%d behavior=%d\n",
-                lruIdx, (unsigned long)minFrame, targetSlot, static_cast<int>(type), static_cast<int>(behavior));
     }
 
     void cleanupExpiredCooldowns(uint64_t currentFrame) {

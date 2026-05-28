@@ -56,10 +56,8 @@ public:
         auto* resources = registry.getComponent<ResourcesComponent>(entityId);
         if (resources) resources->addSpiritStones(income);
 
-        if (type == CommodityType::SpiritStones) {
-            int64_t collected = getInstance().collectTax(identity->clanId, income);
-            if (resources) resources->familyContribution += static_cast<int32_t>(collected * 2);
-        }
+        int64_t collected = getInstance().collectTax(identity->clanId, income);
+        if (resources) resources->familyContribution += static_cast<int32_t>(collected * 2);
     }
 
     static void recordConsumption(ECS::EntityId entityId, CommodityType type, int64_t amount) {
@@ -133,7 +131,9 @@ public:
             for (auto& pair : signalCache_) {
                 pair.second.dirty = true;
             }
-            digestDirty_ = true;
+            for (auto& pair : digestDirty_) {
+                pair.second = true;
+            }
         }
     }
 
@@ -166,14 +166,20 @@ public:
     }
 
     const EconomicDigest& getEconomicDigest(const std::string& clanId, uint64_t currentFrame) {
-        if (!digestDirty_ && (currentFrame - digestCachedFrame_) < DIGEST_CACHE_TTL) {
-            return cachedDigest_;
+        auto dirtyIt = digestDirty_.find(clanId);
+        auto frameIt = digestCachedFrames_.find(clanId);
+        bool isDirty = (dirtyIt == digestDirty_.end()) ? true : dirtyIt->second;
+        uint64_t cachedFrame = (frameIt == digestCachedFrames_.end()) ? 0 : frameIt->second;
+        
+        if (!isDirty && (currentFrame - cachedFrame) < DIGEST_CACHE_TTL) {
+            return digestCache_[clanId];
         }
-        cachedDigest_ = computeEconomicDigest(clanId, currentFrame,
-            getTreasury(clanId), pools_, familyTreasury_);
-        digestCachedFrame_ = currentFrame;
-        digestDirty_ = false;
-        return cachedDigest_;
+        digestCache_[clanId] = computeEconomicDigest(clanId, currentFrame,
+            getTreasury(clanId), pools_, familyTreasury_,
+            treasuryIncomeAccumulator_, treasuryExpenseAccumulator_);
+        digestCachedFrames_[clanId] = currentFrame;
+        digestDirty_[clanId] = false;
+        return digestCache_[clanId];
     }
 
     float getClanTaxRate(const std::string& clanId) const {
@@ -250,9 +256,9 @@ private:
     std::unordered_map<std::string, float> clanTaxRates_;
     std::unordered_map<std::string, std::set<std::string>> embargoTargets_;
     std::unordered_map<std::string, float[6]> stockpileRatios_;
-    EconomicDigest cachedDigest_;
-    uint64_t digestCachedFrame_ = 0;
-    bool digestDirty_ = true;
+    std::unordered_map<std::string, EconomicDigest> digestCache_;
+    std::unordered_map<std::string, uint64_t> digestCachedFrames_;
+    std::unordered_map<std::string, bool> digestDirty_;
     uint32_t frameCounter_;
     int64_t treasuryIncomeAccumulator_ = 0;
     int64_t treasuryExpenseAccumulator_ = 0;

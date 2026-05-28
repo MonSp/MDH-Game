@@ -91,31 +91,6 @@ enum class NPCActivity : uint8_t {
     Incapacitated = 200
 };
 
-enum class BehaviorTag : uint32_t {
-    None = 0,
-    ProducesSpiritStones = 1 << 0,
-    ProducesCultivation = 1 << 1,
-    ProducesEquipment = 1 << 2,
-    ProducesFood = 1 << 3,
-    ProducesMaterials = 1 << 4,
-    SceneOutdoor = 1 << 5,
-    SceneIndoor = 1 << 6,
-    SceneAny = 1 << 7,
-    IntensityLow = 1 << 8,
-    IntensityMedium = 1 << 9,
-    IntensityHigh = 1 << 10,
-    CategoryProduction = 1 << 11,
-    CategorySocial = 1 << 12,
-    CategoryCombat = 1 << 13,
-    CategoryExploration = 1 << 14,
-    CategoryCultivation = 1 << 15,
-    RequiresSocial = 1 << 16,
-    RequiresMovement = 1 << 17,
-    RequiresResources = 1 << 18,
-    SoloActivity = 1 << 19,
-    GroupActivity = 1 << 20,
-};
-
 enum class CareerTag : uint16_t {
     None = 0,
     Miner = 1 << 0,
@@ -470,55 +445,6 @@ static ActivityTagBundle getActivityTagBundle(NPCActivity act) {
     }
 }
 
-// DEPRECATED: use getActivityTagBundle() instead
-static uint32_t getActivityTags(NPCActivity act) {
-    ActivityTagBundle bundle = getActivityTagBundle(act);
-    uint32_t result = static_cast<uint32_t>(BehaviorTag::None);
-
-    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesSpiritStones))
-        result |= static_cast<uint32_t>(BehaviorTag::ProducesSpiritStones);
-    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesCultivation))
-        result |= static_cast<uint32_t>(BehaviorTag::ProducesCultivation);
-    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesEquipment))
-        result |= static_cast<uint32_t>(BehaviorTag::ProducesEquipment);
-    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesFood))
-        result |= static_cast<uint32_t>(BehaviorTag::ProducesFood);
-    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::ProducesMaterials))
-        result |= static_cast<uint32_t>(BehaviorTag::ProducesMaterials);
-
-    if (bundle.careerTags & static_cast<uint16_t>(CareerTag::Cultivator))
-        result |= static_cast<uint32_t>(BehaviorTag::CategoryCultivation);
-    if (bundle.careerTags & static_cast<uint16_t>(CareerTag::Soldier))
-        result |= static_cast<uint32_t>(BehaviorTag::CategoryCombat);
-
-    uint16_t productiveMask = static_cast<uint16_t>(ResourceTag::ProducesSpiritStones)
-                            | static_cast<uint16_t>(ResourceTag::ProducesCultivation)
-                            | static_cast<uint16_t>(ResourceTag::ProducesEquipment)
-                            | static_cast<uint16_t>(ResourceTag::ProducesFood)
-                            | static_cast<uint16_t>(ResourceTag::ProducesMaterials);
-    if (bundle.resourceTags & productiveMask)
-        result |= static_cast<uint32_t>(BehaviorTag::CategoryProduction);
-
-    if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::PreferSolitude))
-        result |= static_cast<uint32_t>(BehaviorTag::SoloActivity);
-    if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::PreferCooperation)) {
-        result |= static_cast<uint32_t>(BehaviorTag::GroupActivity);
-        result |= static_cast<uint32_t>(BehaviorTag::RequiresSocial);
-    }
-
-    if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::HighStamina))
-        result |= static_cast<uint32_t>(BehaviorTag::IntensityHigh);
-    else if (bundle.personalityTags & static_cast<uint16_t>(PersonalityTag::LowStamina))
-        result |= static_cast<uint32_t>(BehaviorTag::IntensityLow);
-    else
-        result |= static_cast<uint32_t>(BehaviorTag::IntensityMedium);
-
-    if (bundle.resourceTags & static_cast<uint16_t>(ResourceTag::CostsSpiritStones))
-        result |= static_cast<uint32_t>(BehaviorTag::RequiresResources);
-
-    return result;
-}
-
 static float jaccardUint16(uint16_t a, uint16_t b) {
     if (a == 0 && b == 0) return 0.0f;
     uint16_t intersection = a & b;
@@ -660,7 +586,7 @@ enum class DecisionReason : uint8_t {
     SocialHelp = 65,
 };
 
-static const char* generateNarrativeSnippet(DecisionReason reason, NPCActivity oldAct, NPCActivity newAct) {
+[[maybe_unused]] static const char* generateNarrativeSnippet(DecisionReason reason, NPCActivity oldAct, NPCActivity newAct) {
     (void)oldAct;
     (void)newAct;
     switch (reason) {
@@ -690,7 +616,7 @@ static const char* generateNarrativeSnippet(DecisionReason reason, NPCActivity o
     }
 }
 
-static const char* getMoodQualifier(DecisionReason reason) {
+[[maybe_unused]] static const char* getMoodQualifier(DecisionReason reason) {
     switch (reason) {
         case DecisionReason::SurvivalLowHP:           return "受重伤";
         case DecisionReason::EmotionAnger:            return "愤怒中";
@@ -707,7 +633,7 @@ static const char* getMoodQualifier(DecisionReason reason) {
     }
 }
 
-static const char* getCareerChineseName(uint16_t careerTags) {
+[[maybe_unused]] static const char* getCareerChineseName(uint16_t careerTags) {
     if (careerTags & static_cast<uint16_t>(CareerTag::Miner))       return "矿工";
     if (careerTags & static_cast<uint16_t>(CareerTag::Farmer))      return "农夫";
     if (careerTags & static_cast<uint16_t>(CareerTag::Fisher))      return "渔夫";
@@ -722,7 +648,7 @@ static const char* getCareerChineseName(uint16_t careerTags) {
     return "平民";
 }
 
-static bool shouldRevealDecision(const PersonalityComponent* p, DecisionReason reason,
+[[maybe_unused]] static bool shouldRevealDecision(const PersonalityComponent* p, DecisionReason reason,
                                   uint64_t currentFrame, uint64_t entryFrame) {
     if (currentFrame - entryFrame > DECISION_REVEAL_WINDOW_FRAMES) return false;
     (void)reason;
@@ -909,8 +835,6 @@ struct ReflectionData {
         recentResults[idx][0] = recentResults[idx][1];
         recentResults[idx][1] = recentResults[idx][2];
         recentResults[idx][2] = score;
-
-        float oldWeight = weightMultiplier[idx];
 
         float baselineWeight = identity ? RoleBaselineWeights::getRoleBaselineWeight(act, identity) : 1.0f;
         float floorWeight = baselineWeight * 0.5f;

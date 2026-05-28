@@ -10,6 +10,8 @@ struct ItemSlot {
 };
 
 struct ResourcesComponent : public ECS::ComponentBase<ResourcesComponent> {
+    static constexpr int64_t MAX_SPIRIT_STONES = 999999;
+
     int64_t spiritStones;
     std::vector<ItemSlot> items;
     int32_t attackBonus;
@@ -24,6 +26,7 @@ struct ResourcesComponent : public ECS::ComponentBase<ResourcesComponent> {
 
     void addSpiritStones(int64_t amount) {
         spiritStones += amount;
+        if (spiritStones > MAX_SPIRIT_STONES) spiritStones = MAX_SPIRIT_STONES;
     }
 
     bool removeSpiritStones(int64_t amount) {

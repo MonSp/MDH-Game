@@ -69,11 +69,27 @@ static void exec_tradeEmbargo(ExecuteContext& ctx) {
     if (!identity || identity->clanId.empty()) return;
 
     auto& mkt = MarketRegistry::getInstance();
+    const EconomicDigest& digest = mkt.getEconomicDigest(identity->clanId, ctx.currentTime);
+
+    for (int i = 0; i < 2; i++) {
+        if (digest.enemyWeaknesses[i].weaknessType != WeaknessType::None) {
+            uint32_t targetHash = digest.enemyWeaknesses[i].clanId;
+            const auto& allPools = mkt.allPools();
+            for (const auto& pair : allPools) {
+                uint32_t hash = static_cast<uint32_t>(std::hash<std::string>{}(pair.first) & 0xFFFFFFFF);
+                if (hash == targetHash && pair.first != identity->clanId && !mkt.isEmbargoed(identity->clanId, pair.first)) {
+                    mkt.applyEmbargo(identity->clanId, pair.first, true);
+                    return;
+                }
+            }
+        }
+    }
+
     const auto& allPools = mkt.allPools();
     for (const auto& pair : allPools) {
         if (pair.first != identity->clanId && !mkt.isEmbargoed(identity->clanId, pair.first)) {
             mkt.applyEmbargo(identity->clanId, pair.first, true);
-            break;
+            return;
         }
     }
 }
@@ -83,14 +99,19 @@ static void exec_stockpileMaterial(ExecuteContext& ctx) {
     if (!identity || identity->clanId.empty()) return;
 
     auto& mkt = MarketRegistry::getInstance();
-    const EconomicDigest& digest = mkt.getEconomicDigest(identity->clanId, ctx.currentTime);
+    const CommodityPool* pool = mkt.getCommodityPool(identity->clanId);
+    if (!pool) return;
 
     CommodityType targetType = CommodityType::Ore;
-    float maxRatio = 0.0f;
-    for (int i = 0; i < 3; i++) {
-        if (digest.alerts[i].priceRatio > maxRatio) {
-            maxRatio = digest.alerts[i].priceRatio;
-            targetType = digest.alerts[i].commodityType;
+    float minRatio = 1000.0f;
+    for (uint8_t i = 0; i < static_cast<uint8_t>(CommodityType::COUNT); i++) {
+        int64_t s = pool->supply[i];
+        int64_t d = pool->demand[i];
+        if (s < 1) s = 1;
+        float ratio = static_cast<float>(d) / static_cast<float>(s);
+        if (ratio < minRatio) {
+            minRatio = ratio;
+            targetType = static_cast<CommodityType>(i);
         }
     }
 
@@ -166,13 +187,10 @@ static void exec_economicMobilize(ExecuteContext& ctx) {
     }
 
     auto& registry = ECS::Registry::getInstance();
-    auto entities = registry.getEntitiesWithComponent<IdentityComponent>();
+    const auto& clanMembers = mkt.getClanMembers(identity->clanId);
     uint64_t expireFrame = ctx.currentTime + 300;
 
-    for (auto id : entities) {
-        auto* otherIdentity = registry.getComponent<IdentityComponent>(id);
-        if (!otherIdentity || otherIdentity->clanId != identity->clanId) continue;
-
+    for (auto id : clanMembers) {
         auto* behavior = registry.getComponent<BehaviorComponent>(id);
         if (behavior) {
             behavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);

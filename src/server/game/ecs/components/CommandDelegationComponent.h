@@ -125,7 +125,7 @@ struct CommandDelegationComponent : public ECS::ComponentBase<CommandDelegationC
     void clearSlot(uint32_t parentCommandId) {
         for (size_t i = 0; i < slotCount; ++i) {
             if (slots[i].parentCommandId == parentCommandId) {
-                for (size_t j = i; j < slotCount - 1; ++j) {
+                for (size_t j = i; j < static_cast<size_t>(slotCount) - 1; ++j) {
                     slots[j] = slots[j + 1];
                 }
                 slots[slotCount - 1] = {};

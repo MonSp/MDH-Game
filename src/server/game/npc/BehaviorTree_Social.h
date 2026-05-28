@@ -359,6 +359,71 @@ static void trySpreadRumor(ExecuteContext& ctx, uint32_t listenerSlot) {
     if (listenerSocial) listenerSocial->onSocialSuccess();
 }
 
+static void exec_chat(ExecuteContext& ctx) {
+    auto* social = ctx.getSocial();
+    if (social) {
+        social->onSocialize();
+        social->onSocialSuccess();
+        if (exec_random01() < 0.15f) {
+            auto* personality = ctx.reg().getComponent<PersonalityComponent>(ctx.entityId);
+            if (personality) social->onInsulted(personality->caution);
+        }
+    }
+
+    auto& reg = ctx.reg();
+    uint32_t selfSlot = findSelfSlot(reg, ctx.entityId);
+    if (selfSlot == UINT32_MAX) return;
+
+    auto* selfPos = ctx.getPosition();
+    size_t candidateCount = 0;
+    uint32_t candidates[32];
+
+    if (selfPos) {
+        auto& spatialIdx = SpatialIndexCache::getInstance();
+        auto neighbors = spatialIdx.queryNeighbors(selfPos->x, selfPos->y, 200.0f);
+
+        for (uint32_t neighborSlot : neighbors) {
+            if (candidateCount >= 32) break;
+            if (neighborSlot != selfSlot && reg.activeSlots_[neighborSlot]) {
+                auto* npos = reg.getComponent<PositionComponent>(reg.entityIds_[neighborSlot]);
+                if (npos) {
+                    float dx = npos->x - selfPos->x;
+                    float dy = npos->y - selfPos->y;
+                    if (dx * dx + dy * dy <= 200.0f * 200.0f) {
+                        candidates[candidateCount++] = neighborSlot;
+                    }
+                }
+            }
+        }
+    }
+
+    if (candidateCount == 0) {
+        for (size_t i = 0; i < reg.entityIds_.size() && candidateCount < 32; ++i) {
+            if (i != selfSlot && reg.activeSlots_[i]) {
+                candidates[candidateCount++] = static_cast<uint32_t>(i);
+            }
+        }
+    }
+    if (candidateCount == 0) return;
+
+    uint32_t listenerSlot = candidates[exec_randRange(0, static_cast<int>(candidateCount) - 1)];
+
+    auto* myMemory = reg.getComponent<MemoryRingComponent>(ctx.entityId);
+    auto* otherMemory = reg.getComponent<MemoryRingComponent>(reg.entityIds_[listenerSlot]);
+    InteractionSlot slotMine;
+    slotMine.timestamp = ctx.currentTime;
+    slotMine.otherSlot = listenerSlot;
+    slotMine.type = 0;
+    slotMine.impactScore = 1;
+    if (myMemory) myMemory->interactions.push(slotMine);
+    InteractionSlot slotOther;
+    slotOther.timestamp = ctx.currentTime;
+    slotOther.otherSlot = selfSlot;
+    slotOther.type = 0;
+    slotOther.impactScore = 1;
+    if (otherMemory) otherMemory->interactions.push(slotOther);
+}
+
 static void exec_gossip(ExecuteContext& ctx) {
     auto* social = ctx.getSocial();
     if (social) {

@@ -50,15 +50,15 @@ enum class RumorSeverity : uint8_t {
 
 #pragma pack(push, 1)
 struct RumorPacket {
-    uint64_t timestamp;
-    uint32_t originalEventSlot;
-    uint32_t originalWitness;
-    int8_t   contentIntegrity;
-    uint8_t  hopCount;
-    uint8_t  sensitivity;
-    RumorSeverity severity;
-    uint64_t queuedSinceFrame;
-    uint64_t bornFrame;
+    uint64_t timestamp = 0;
+    uint32_t originalEventSlot = 0;
+    uint32_t originalWitness = 0;
+    int8_t   contentIntegrity = 0;
+    uint8_t  hopCount = 0;
+    uint8_t  sensitivity = 0;
+    RumorSeverity severity = RumorSeverity::GossipChatter;
+    uint64_t queuedSinceFrame = 0;
+    uint64_t bornFrame = 0;
 };
 #pragma pack(pop)
 
@@ -98,7 +98,7 @@ class RingBuffer {
     size_t head;
     size_t count;
 public:
-    RingBuffer() : head(0), count(0) { memset(data, 0, sizeof(data)); }
+    RingBuffer() : head(0), count(0) { data[0] = T{}; }
 
     void push(const T& item) {
         data[head] = item;

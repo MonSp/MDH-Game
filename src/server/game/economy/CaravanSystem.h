@@ -75,7 +75,10 @@ public:
         int64_t quantity = 100;
         float profit = quantity * (route.sellPrice - route.buyPrice) * 0.95f;
 
-        if (rand() % 100 < 5) {
+        uint64_t hash = currentFrame * 31 + static_cast<uint64_t>(route.commodity) * 17;
+        hash ^= std::hash<std::string>{}(route.fromClan);
+        hash ^= std::hash<std::string>{}(route.toClan);
+        if ((hash % 100) < 5) {
             profit *= 0.5f;
         }
 

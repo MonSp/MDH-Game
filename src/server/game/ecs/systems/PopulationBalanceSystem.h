@@ -35,7 +35,7 @@ public:
         }
 
         for (const auto& nation : nations_) {
-            for (int i = 0; i < familiesPerNation_; ++i) {
+            for (size_t i = 0; i < familiesPerNation_; ++i) {
                 std::string familyId = nation + "_family_" + std::to_string(i);
                 size_t familyTarget = targetPerFamily_;
                 target.familyTargets[familyId] = {
