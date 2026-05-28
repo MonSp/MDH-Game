@@ -10,7 +10,8 @@
     "dev:server": "ts-node src/server/index.ts",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:sim": "vitest run test/simulation/economy-npc-simulation.test.ts --reporter=verbose"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

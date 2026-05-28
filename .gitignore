@@ -26,6 +26,8 @@ tools/ecs-wasm/build/
 src/ecs/ecs_wasm.js
 public/ecs_wasm.wasm
 
+test/simulation/wasm_simulation
+
 public/atlas/*
 
 *.test
