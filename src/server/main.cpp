@@ -1,5 +1,7 @@
 #include "game/ecs/systems/WorldUpdateLoop.h"
 #include "game/npc/NPCCreationSystem.h"
+#include "game/economy/NationEconomyProfile.h"
+#include "game/world/WorldGenerator.h"
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -23,10 +25,24 @@ int main(int argc, char* argv[]) {
         npcCount = std::atoi(argv[2]);
     }
 
-    for (uint8_t layer = 9; layer >= 1; --layer) {
-        size_t layerNPCs = npcCount / 9;
-        std::cout << "Creating " << layerNPCs << " NPCs for layer " << (int)layer << "..." << std::endl;
-        NPCCreationSystem::getInstance().createBatchNPCs(layerNPCs, layer);
+    uint64_t seed = 12345;
+    int32_t width = 600;
+    int32_t height = 600;
+    int32_t heavenLevel = 9;
+
+    WorldGen::WorldGenerator worldGen(seed, width, height, heavenLevel);
+    auto worldOutput = worldGen.generateWorld();
+
+    if (!worldOutput.clans.empty()) {
+        for (const auto& clan : worldOutput.clans) {
+            const auto& profile = getNationProfile(clan.country);
+            NPCCreationSystem::getInstance().createFamilyNPCs(clan, profile, heavenLevel);
+        }
+    } else {
+        for (uint8_t layer = 9; layer >= 1; --layer) {
+            size_t layerNPCs = npcCount / 9;
+            NPCCreationSystem::getInstance().createBatchNPCs(layerNPCs, layer);
+        }
     }
 
     auto creationEnd = std::chrono::high_resolution_clock::now();

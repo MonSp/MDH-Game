@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include "SimplexNoise.h"
+#include "../ecs/components/RelationshipComponent.h"
 
 namespace WorldGen {
 
@@ -230,6 +231,9 @@ public:
 
         // --- Generate resource points ---
         generateResources(out);
+
+        // --- Initialize faction affinities ---
+        initializeFactionAffinities(out);
 
         return out;
     }
@@ -480,16 +484,83 @@ private:
     void generateResources(WorldOutput& out) {
         SimpleRand rng(seed_ + 4000);
         const char* types[] = {"灵田", "矿脉", "遗迹"};
+        int idx = 0;
 
-        for (int i = 0; i < 15; i++) {
+        struct NationRes { int ci; const char* type; };
+        NationRes nationRes[] = {
+            {0, "矿脉"}, {0, "矿脉"},
+            {1, "灵田"}, {1, "灵田"},
+            {2, "遗迹"},
+            {3, "矿脉"}, {3, "遗迹"},
+            {4, "灵田"}, {4, "灵田"},
+            {5, "遗迹"},
+            {6, "遗迹"}, {6, "灵田"},
+        };
+        int nationCount = static_cast<int>(sizeof(nationRes) / sizeof(nationRes[0]));
+
+        for (int i = 0; i < nationCount; i++) {
+            const auto& cap = CAPITALS[nationRes[i].ci];
             ResourceInfo r;
-            r.id = "res-" + std::to_string(seed_) + "-" + std::to_string(i);
+            r.id = "res-" + std::to_string(seed_) + "-" + std::to_string(idx);
+            r.type = nationRes[i].type;
+            r.amount = (rng.nextInt(50, 150)) * heavenLevel_;
+            r.posX = std::clamp(cap.x + rng.nextInt(-15, 15), 10, width_ - 10);
+            r.posY = std::clamp(cap.y + rng.nextInt(-15, 15), 10, height_ - 10);
+            out.resources.push_back(r);
+            idx++;
+        }
+
+        int remaining = rng.nextInt(5, 8);
+        for (int i = 0; i < remaining; i++) {
+            ResourceInfo r;
+            r.id = "res-" + std::to_string(seed_) + "-" + std::to_string(idx);
             r.type = types[rng.nextInt(0, 2)];
             r.amount = (rng.nextInt(50, 150)) * heavenLevel_;
-            // Place randomly somewhere on the map
             r.posX = rng.nextInt(10, width_ - 10);
             r.posY = rng.nextInt(10, height_ - 10);
             out.resources.push_back(r);
+            idx++;
+        }
+    }
+
+    void initializeFactionAffinities(WorldOutput& out) {
+        int matrix[COUNTRY_COUNT][COUNTRY_COUNT] = {};
+        matrix[0][1] = matrix[1][0] = -30;
+        matrix[0][5] = matrix[5][0] = 20;
+        matrix[0][6] = matrix[6][0] = 10;
+        matrix[1][4] = matrix[4][1] = -20;
+        matrix[1][2] = matrix[2][1] = 10;
+        matrix[1][6] = matrix[6][1] = 10;
+        matrix[2][3] = matrix[3][2] = -20;
+        matrix[2][4] = matrix[4][2] = 10;
+        matrix[3][4] = matrix[4][3] = 10;
+        matrix[4][6] = matrix[6][4] = -10;
+        matrix[5][6] = matrix[6][5] = 10;
+
+        SimpleRand rng(seed_ + 5000);
+
+        auto getCountryIdx = [](const std::string& country) -> int {
+            for (int i = 0; i < COUNTRY_COUNT; i++) {
+                if (country == COUNTRIES[i]) return i;
+            }
+            return -1;
+        };
+
+        for (size_t i = 0; i < out.clans.size(); i++) {
+            uint32_t hashA = hashStr(out.clans[i].id);
+            int idxA = getCountryIdx(out.clans[i].country);
+            for (size_t j = i + 1; j < out.clans.size(); j++) {
+                uint32_t hashB = hashStr(out.clans[j].id);
+                int idxB = getCountryIdx(out.clans[j].country);
+                int affinity;
+                if (idxA == idxB) {
+                    affinity = 10 + rng.nextInt(0, 20);
+                } else {
+                    affinity = matrix[idxA][idxB] + rng.nextInt(-10, 10);
+                }
+                affinity = std::clamp(affinity, -100, 100);
+                RelationshipComponent::setFactionAffinity(hashA, hashB, static_cast<int8_t>(affinity));
+            }
         }
     }
 };

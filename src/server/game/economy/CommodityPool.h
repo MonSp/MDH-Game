@@ -31,7 +31,21 @@ struct CommodityPool {
     CommodityPool() {
         for (int i = 0; i < 6; i++) {
             supply[i] = 100;
-            demand[i] = 0;
+            demand[i] = 100;
+        }
+    }
+
+    CommodityPool(float targetRatio) {
+        for (int i = 0; i < 6; i++) {
+            supply[i] = 100;
+            demand[i] = static_cast<int64_t>(100 * targetRatio);
+        }
+    }
+
+    void initWithProfile(float baseSupply, const float demandRatios[6]) {
+        for (int i = 0; i < 6; i++) {
+            supply[i] = static_cast<int64_t>(baseSupply);
+            demand[i] = static_cast<int64_t>(baseSupply * demandRatios[i]);
         }
     }
 
