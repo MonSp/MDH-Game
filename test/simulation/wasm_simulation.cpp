@@ -285,6 +285,9 @@ public:
         auto& reg = ECS::Registry::getInstance();
         auto entities = reg.getEntitiesWithComponent<LLMPlanComponent>();
 
+        int llmBudget = useRealLLM_ ? 4 : 999;
+        int llmUsed = 0;
+
         for (auto entityId : entities) {
             auto* plan = reg.getComponent<LLMPlanComponent>(entityId);
             if (!plan) continue;
@@ -303,9 +306,28 @@ public:
             }
 
             bool needsPlan = (plan->status != PlanStatus::ACTIVE);
-            if (needsPlan && !plan->pending_request) {
-                generatePlanForNPC(entityId, currentFrame);
+            if (!needsPlan || plan->pending_request) continue;
+
+            if (useRealLLM_) {
+                uint64_t stagger = (entityId % 50);
+                if (currentFrame < stagger) continue;
+
+                uint64_t interval;
+                switch (plan->tier) {
+                    case LLMTier::T0: interval = 600; break;
+                    case LLMTier::T1: interval = 200; break;
+                    case LLMTier::T2: interval = 60; break;
+                    default: interval = 300; break;
+                }
+
+                bool staggeredCheck = ((currentFrame - stagger) % interval == 0);
+                if (!staggeredCheck && plan->status == PlanStatus::INACTIVE) continue;
+
+                if (llmUsed >= llmBudget) continue;
+                llmUsed++;
             }
+
+            generatePlanForNPC(entityId, currentFrame);
         }
     }
 
