@@ -10,12 +10,9 @@ public:
         return instance;
     }
 
-    std::string buildSystemPrompt(LLMTier tier, bool warActive) {
-        std::string era = warActive ? "war time" : "peace time";
-        std::string tierDesc = getTierDescription(tier);
-
-        return std::string("You are an NPC planning expert in the cultivation world during ") + era + ".\n"
-               "You are responsible for generating reasonable action plans for " + tierDesc + " NPCs.\n"
+    std::string buildSystemPrompt() {
+        return "You are an NPC planning expert in a cultivation world.\n"
+               "Your task is to generate action plans for NPCs based on their role, tier, and personality.\n"
                "Plans should contain multiple sub-tasks, each with clear action types and priorities.\n"
                "Action types include:\n"
                "- IDLE: idle\n"
@@ -34,23 +31,25 @@ public:
                "- CAPTURE_RESOURCE_POINT: capture resource points\n"
                "- DOMAIN_WAR: domain war\n"
                "- ALLIANCE_FORMATION: alliance formation\n"
-               "- CULTIVATE_BREAKTHROUGH: closed-door breakthrough";
+               "- CULTIVATE_BREAKTHROUGH: closed-door breakthrough\n\n"
+               "Response format: JSON with 'actions' array containing objects with 'actionType', 'priority', and 'reason' fields.";
     }
 
-    std::string buildNPCContextPrompt(const std::string& name, const std::string& clan,
-                                     const std::string& nation, const std::string& role,
+    std::string buildNPCContextPrompt(LLMTier tier, const std::string& role,
                                      const std::string& realm, int32_t power,
                                      float ambition, float caution, float loyalty, float greed) {
-        return std::string("NPC Info:\n") + name + "\n"
-               "- Clan: " + clan + "\n"
-               "- Nation: " + nation + "\n"
-               "- Role: " + role + "\n"
-               "- Realm: " + realm + "\n"
-               "- Power: " + std::to_string(power) + "\n"
-               "- Personality: ambition " + std::to_string((int)ambition) +
-               ", caution " + std::to_string((int)caution) +
-               ", loyalty " + std::to_string((int)loyalty) +
-               ", greed " + std::to_string((int)greed);
+        std::string tierDesc = getTierDescription(tier);
+
+        return std::string("## NPC Profile\n") +
+               "Role: " + role + "\n" +
+               "Tier: " + tierDesc + "\n" +
+               "Realm: " + realm + "\n" +
+               "Power: " + std::to_string(power) + "\n" +
+               "Personality:\n" +
+               "- Ambition: " + std::to_string(static_cast<int>(ambition)) + "\n" +
+               "- Caution: " + std::to_string(static_cast<int>(caution)) + "\n" +
+               "- Loyalty: " + std::to_string(static_cast<int>(loyalty)) + "\n" +
+               "- Greed: " + std::to_string(static_cast<int>(greed)) + "\n";
     }
 
     std::string buildWorldContextPrompt(bool warActive, float resourceDensity,
@@ -59,11 +58,18 @@ public:
         std::string warStr = warActive ? "active" : "peaceful";
         std::string eventsStr = majorEvents.empty() ? "none" : joinStrings(majorEvents, ", ");
 
-        return std::string("World Situation:\n") +
+        return std::string("## World Situation\n") +
                "- War Status: " + warStr + "\n" +
                "- Resource Density: " + std::to_string(resourceDensity) + "\n" +
                "- Economy Status: " + economyStatus + "\n" +
-               "- Major Events: " + eventsStr;
+               "- Major Events: " + eventsStr + "\n";
+    }
+
+    std::string buildPlanningRequest(LLMTier tier) {
+        std::string horizon = getHorizonString(tier);
+        return "\n## Task\nPlease plan this NPC's actions for the next " + horizon + ".\n"
+               "Consider the NPC's tier, role, personality, and current world situation.\n"
+               "Provide 3-5 actions with priorities (1=highest, 10=lowest).";
     }
 
 private:
@@ -74,7 +80,16 @@ private:
             case LLMTier::T0: return "Tier-0 (Emperor, transcendent rulers)";
             case LLMTier::T1: return "Tier-1 (Family heads, generals)";
             case LLMTier::T2: return "Tier-2 (Elders, core disciples)";
-            default: return "ordinary NPCs";
+            default: return "Tier-3 (Ordinary NPCs)";
+        }
+    }
+
+    std::string getHorizonString(LLMTier tier) const {
+        switch (tier) {
+            case LLMTier::T0: return "one month";
+            case LLMTier::T1: return "one week";
+            case LLMTier::T2: return "one day";
+            default: return "one day";
         }
     }
 

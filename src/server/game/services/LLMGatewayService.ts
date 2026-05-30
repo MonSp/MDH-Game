@@ -60,7 +60,7 @@ export class LLMGatewayService {
   }
 
   private async callOpenAI(request: LLMPlanningRequest): Promise<LLMPlanningResponse> {
-    const systemPrompt = this.buildSystemPrompt(request);
+    const systemPrompt = this.buildSystemPrompt();
     const userPrompt = this.buildUserPrompt(request);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -109,32 +109,53 @@ export class LLMGatewayService {
     return this.parseLLMOutput(data.response);
   }
 
-  private buildSystemPrompt(request: LLMPlanningRequest): string {
-    return `你是修仙世界${request.world_context.war_active ? '战争时期' : '和平时期'}的NPC规划专家。
-根据NPC的身份、性格和当前世界局势，生成合理的行动规划。
-规划应该包含多个子任务，每个子任务有明确的行动类型和优先级。
-行动类型包括：IDLE, REST, PATROL, EXPLORE, CULTIVATE, TRADE, LOGISTICS, MILITARY_ORDER, DIPLOMACY, INTELLIGENCE, RESOURCE_ALLOCATION, RESOURCE_PURCHASE, RESOURCE_RAID, CAPTURE_RESOURCE_POINT, DOMAIN_WAR, ALLIANCE_FORMATION, CULTIVATE_BREAKTHROUGH`;
+  private buildSystemPrompt(): string {
+    return `You are an NPC planning expert in a cultivation world.
+Your task is to generate action plans for NPCs based on their role, tier, and personality.
+Plans should contain multiple sub-tasks, each with clear action types and priorities.
+Action types include:
+- IDLE: idle
+- REST: rest and recovery
+- PATROL: patrol
+- EXPLORE: explore opportunities
+- CULTIVATE: cultivation breakthrough
+- TRADE: market trading
+- LOGISTICS: logistics support
+- MILITARY_ORDER: military orders
+- DIPLOMACY: diplomatic activities
+- INTELLIGENCE: intelligence gathering
+- RESOURCE_ALLOCATION: resource allocation
+- RESOURCE_PURCHASE: resource purchase
+- RESOURCE_RAID: resource raid
+- CAPTURE_RESOURCE_POINT: capture resource points
+- DOMAIN_WAR: domain war
+- ALLIANCE_FORMATION: alliance formation
+- CULTIVATE_BREAKTHROUGH: closed-door breakthrough
+
+Response format: JSON with 'actions' array containing objects with 'actionType', 'priority', and 'reason' fields.`;
   }
 
   private buildUserPrompt(request: LLMPlanningRequest): string {
     const { npc_data, world_context, planning_horizon, frontline_summary, revision_flags, memory_context } = request;
     const parts: string[] = [];
 
-    parts.push(`NPC信息：`);
-    parts.push(`- 名字：${npc_data.name}`);
-    parts.push(`- 家族：${npc_data.clan_id}`);
-    parts.push(`- 国家：${npc_data.nation}`);
-    parts.push(`- 角色：${npc_data.role}`);
-    parts.push(`- 境界：${npc_data.realm}`);
-    parts.push(`- 实力：${npc_data.power}`);
-    parts.push(`- 性格：野心${npc_data.personality.ambition}，谨慎${npc_data.personality.caution}，忠诚${npc_data.personality.loyalty}，贪婪${npc_data.personality.greed}`);
+    parts.push(`## NPC Profile`);
+    parts.push(`Role: ${npc_data.role}`);
+    parts.push(`Tier: ${this.getTierDescription(npc_data.role)}`);
+    parts.push(`Realm: ${npc_data.realm}`);
+    parts.push(`Power: ${npc_data.power}`);
+    parts.push(`Personality:`);
+    parts.push(`- Ambition: ${npc_data.personality.ambition}`);
+    parts.push(`- Caution: ${npc_data.personality.caution}`);
+    parts.push(`- Loyalty: ${npc_data.personality.loyalty}`);
+    parts.push(`- Greed: ${npc_data.personality.greed}`);
 
     parts.push('');
-    parts.push(`世界局势：`);
-    parts.push(`- 战争状态：${world_context.war_active ? '进行中' : '和平'}`);
-    parts.push(`- 资源密度：${world_context.resource_density}`);
-    parts.push(`- 经济状态：${world_context.economy_status}`);
-    parts.push(`- 重大事件：${world_context.major_events.join(', ') || '无'}`);
+    parts.push(`## World Situation`);
+    parts.push(`- War Status: ${world_context.war_active ? 'active' : 'peaceful'}`);
+    parts.push(`- Resource Density: ${world_context.resource_density}`);
+    parts.push(`- Economy Status: ${world_context.economy_status}`);
+    parts.push(`- Major Events: ${world_context.major_events.join(', ') || 'none'}`);
 
     if (frontline_summary) {
       parts.push('');
@@ -143,7 +164,7 @@ export class LLMGatewayService {
 
     if (revision_flags && revision_flags.length > 0) {
       parts.push('');
-      parts.push('## 来自前线的修正建议');
+      parts.push('## Revision Suggestions from Frontline');
       for (const flag of revision_flags) {
         parts.push(`- ${flag}`);
       }
@@ -155,9 +176,24 @@ export class LLMGatewayService {
     }
 
     parts.push('');
-    parts.push(`请为这个NPC规划未来${planning_horizon}的行动计划。`);
+    parts.push(`## Task`);
+    parts.push(`Please plan this NPC's actions for the next ${planning_horizon}.`);
+    parts.push(`Consider the NPC's tier, role, personality, and current world situation.`);
+    parts.push(`Provide 3-5 actions with priorities (1=highest, 10=lowest).`);
 
     return parts.join('\n');
+  }
+
+  private getTierDescription(role: string): string {
+    const tierMap: Record<string, string> = {
+      'family_head': 'Tier-1 (Family heads, generals)',
+      'elder': 'Tier-2 (Elders, core disciples)',
+      'core_disciple': 'Tier-2 (Elders, core disciples)',
+      'inner_disciple': 'Tier-3 (Ordinary NPCs)',
+      'branch_disciple': 'Tier-3 (Ordinary NPCs)',
+      'law_enforcement_elder': 'Tier-2 (Elders, core disciples)'
+    };
+    return tierMap[role] || 'Tier-3 (Ordinary NPCs)';
   }
 
   private parseLLMOutput(output: string): LLMPlanningResponse {
@@ -238,7 +274,7 @@ export class LLMGatewayService {
   }
 
   private getCacheKey(request: LLMPlanningRequest): string {
-    return `${request.npc_id}_${request.planning_horizon}`;
+    return `${request.npc_data.role}_${request.npc_data.realm}_${request.planning_horizon}`;
   }
 
   private getFallbackResponse(request: LLMPlanningRequest): LLMPlanningResponse {

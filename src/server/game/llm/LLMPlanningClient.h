@@ -55,15 +55,13 @@ public:
         std::string npcId = identity->id;
         if (llmService_->hasActiveRequest(npcId)) return;
 
-        std::string systemPrompt = promptBuilder_->buildSystemPrompt(tier, false);
+        std::string systemPrompt = promptBuilder_->buildSystemPrompt();
         std::string userPrompt = promptBuilder_->buildNPCContextPrompt(
-            identity->name, identity->clanId, identity->nation,
-            getRoleString(identity->role), getRealmString(stats->realm), stats->power,
+            tier, getRoleString(identity->role), getRealmString(stats->realm), stats->power,
             personality->ambition, personality->caution, personality->loyalty, personality->greed
         );
 
-        std::string horizon = getHorizonString(tier);
-        userPrompt += "\n\nPlease plan the NPC's actions for the next " + horizon + ".";
+        userPrompt += promptBuilder_->buildPlanningRequest(tier);
 
         llmService_->requestPlan(npcId, systemPrompt, userPrompt);
     }
@@ -110,7 +108,6 @@ private:
         std::cout << "[FALLBACK] npc=" << npcId
                   << " reason=llm_error error=\"" << error << "\"" << std::endl;
 
-        // Find the entity and set fallback
         auto entities = ECS::Registry::getInstance().getEntitiesWithComponent<IdentityComponent>();
         for (auto entityId : entities) {
             auto* identity = ECS::Registry::getInstance().getComponent<IdentityComponent>(entityId);
@@ -133,7 +130,6 @@ private:
         plan->tasks.clear();
         plan->current_task_index = 0;
 
-        // Extract actions array using the minimal JSON helpers
         std::string actionsJson = extractArray(jsonResponse, "actions");
         if (actionsJson.empty() || actionsJson == "[]") {
             return true;
@@ -176,8 +172,6 @@ private:
         if (type == "train")    return ActionType::CULTIVATE;
         return ActionType::REST;
     }
-
-    // --- Minimal JSON helpers ---
 
     static std::string extractString(const std::string& json, const std::string& key) {
         std::string search = "\"" + key + "\":";
