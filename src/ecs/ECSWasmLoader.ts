@@ -115,6 +115,17 @@ export interface NPCState {
   activeCommandId: number;
   commandStatus: number;
   squadId: number;
+  anger: number;
+  fear: number;
+  joy: number;
+  sociability: number;
+  diligence: number;
+  spouseSlot: number;
+  mentorSlot: number;
+  relationCount: number;
+  lastDecisionSnippet: string;
+  energy: number;
+  mood: number;
 }
 
 export interface RelationEntry {
@@ -457,10 +468,51 @@ export function readNPCStates(): NPCState[] {
       activityName: NPCActivity[activity] ?? 'Rest',
       layer, cultivationProgress, hunger, fatigue, socialDesire, spiritStones, itemCount, equipmentItemId, name,
       activeCommandId, commandStatus, squadId,
+      anger: 0,
+      fear: 0,
+      joy: 0,
+      sociability: 0,
+      diligence: 0,
+      spouseSlot: 0,
+      mentorSlot: 0,
+      relationCount: 0,
+      lastDecisionSnippet: '',
+      energy: 0,
+      mood: 0,
     });
   }
 
   return result;
+}
+
+export interface NPCDetailFromState {
+  anger: number;
+  fear: number;
+  joy: number;
+  energy: number;
+  mood: number;
+  sociability: number;
+  diligence: number;
+  spouseSlot: number;
+  mentorSlot: number;
+  relationCount: number;
+  lastDecisionSnippet: string;
+}
+
+export function wasmGetNPCDetailFromState(state: NPCState): NPCDetailFromState {
+  return {
+    anger: state.anger,
+    fear: state.fear,
+    joy: state.joy,
+    energy: state.energy,
+    mood: state.mood,
+    sociability: state.sociability,
+    diligence: state.diligence,
+    spouseSlot: state.spouseSlot,
+    mentorSlot: state.mentorSlot,
+    relationCount: state.relationCount,
+    lastDecisionSnippet: state.lastDecisionSnippet,
+  };
 }
 
 export async function initECSWasm(maxNPC: number = 2000): Promise<boolean> {

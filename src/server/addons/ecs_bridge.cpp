@@ -11,6 +11,8 @@
 #include "game/ecs/components/PersonalityComponent.h"
 #include "game/ecs/components/ResourcesComponent.h"
 #include "game/ecs/components/LifecycleComponent.h"
+#include "game/ecs/components/SocialComponent.h"
+#include "game/ecs/components/RelationshipComponent.h"
 #include "game/npc/NPCCreationSystem.h"
 #include "game/ecs/systems/LLMPlanningSystem.h"
 #include "game/llm/LLMHttpClient.h"
@@ -173,6 +175,25 @@ static napi_value GetAllNPCStates(napi_env env, napi_callback_info info) {
 
         if (behavior) {
             setStr(env, obj, "activity", activityToString(behavior->currentActivity));
+
+            const char* snippet = behavior->getReadableDecisionSummary();
+            if (snippet && snippet[0] != '\0') {
+                setStr(env, obj, "lastDecisionSnippet", std::string(snippet));
+            } else {
+                setStr(env, obj, "lastDecisionSnippet", std::string(""));
+            }
+
+            napi_value refWeights;
+            napi_create_array_with_length(env, behavior->reflection.trackedCount, &refWeights);
+            for (uint8_t ri = 0; ri < behavior->reflection.trackedCount && ri < 8; ri++) {
+                napi_value rw;
+                napi_create_object(env, &rw);
+                setInt(env, rw, "activity", static_cast<int32_t>(behavior->reflection.trackedTypes[ri]));
+                setFloat(env, rw, "weight", behavior->reflection.weightMultiplier[ri]);
+                setInt(env, rw, "penalties", behavior->reflection.penaltyCount[ri]);
+                napi_set_element(env, refWeights, ri, rw);
+            }
+            napi_set_named_property(env, obj, "reflectionWeights", refWeights);
         }
 
         if (personality) {
@@ -180,6 +201,27 @@ static napi_value GetAllNPCStates(napi_env env, napi_callback_info info) {
             setFloat(env, obj, "caution", personality->caution);
             setFloat(env, obj, "loyalty", personality->loyalty);
             setFloat(env, obj, "greed", personality->greed);
+            setFloat(env, obj, "sociability", personality->sociability);
+            setFloat(env, obj, "diligence", personality->diligence);
+        }
+
+        auto* social = registry.getComponent<SocialComponent>(entityId);
+        if (social) {
+            setFloat(env, obj, "anger", social->anger);
+            setFloat(env, obj, "fear", social->fear);
+            setFloat(env, obj, "joy", social->joy);
+            setFloat(env, obj, "hunger", social->hunger);
+            setFloat(env, obj, "fatigue", social->fatigue);
+            setFloat(env, obj, "socialDesire", social->socialDesire);
+            setFloat(env, obj, "energy", social->energy);
+            setFloat(env, obj, "mood", social->mood);
+        }
+
+        auto* relationship = registry.getComponent<RelationshipComponent>(entityId);
+        if (relationship) {
+            setInt(env, obj, "spouseSlot", static_cast<int32_t>(relationship->spouseSlot));
+            setInt(env, obj, "mentorSlot", static_cast<int32_t>(relationship->mentorSlot));
+            setInt(env, obj, "relationCount", static_cast<int32_t>(relationship->relationCount));
         }
 
         if (resources) {

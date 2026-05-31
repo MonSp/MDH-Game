@@ -1,4 +1,5 @@
 import { CommandStatus } from '../../shared/types/LLMPlanning';
+import { OntologyBridge, activityIdToChinese } from '../game/services/OntologyBridge';
 
 import {
   wasmGetTopRelationships,
@@ -237,7 +238,7 @@ export class NPCMemoryStore {
     return 0;
   }
 
-  buildMemoryContext(npcId: string, nameResolver?: (slotOrId: number | string) => string): string {
+  buildMemoryContext(npcId: string, nameResolver?: (slotOrId: number | string) => string, npcState?: { anger?: number; fear?: number; joy?: number; hunger?: number; fatigue?: number; socialDesire?: number; energy?: number; mood?: number; ambition?: number; caution?: number; loyalty?: number; greed?: number; sociability?: number; diligence?: number; lastDecisionSnippet?: string; currentActivity?: number; reflectionData?: { trackedTypes: number[]; weightMultipliers: number[]; penaltyCounts: number[] } }): string {
     const slot = this.resolveSlot(npcId);
     const resolve = (s: number | string): string => {
       if (nameResolver) return nameResolver(s);
@@ -313,6 +314,62 @@ export class NPCMemoryStore {
         for (const ev of recentEv) {
           parts.push(`  - ${ev.description}`);
         }
+      }
+    }
+
+    if (npcState) {
+      const angerState = OntologyBridge.semanticizeEmotion(npcState.anger ?? 0, 'anger', npcState.caution);
+      const fearState = OntologyBridge.semanticizeEmotion(npcState.fear ?? 0, 'fear');
+      const joyState = OntologyBridge.semanticizeEmotion(npcState.joy ?? 0, 'joy', undefined, npcState.sociability);
+
+      const emotions: string[] = [];
+      if (angerState.value > 10) emotions.push(`愤怒：${angerState.state}(${Math.round(angerState.value)})`);
+      if (fearState.value > 10) emotions.push(`恐惧：${fearState.state}(${Math.round(fearState.value)})`);
+      if (joyState.value > 10) emotions.push(`喜悦：${joyState.state}(${Math.round(joyState.value)})`);
+
+      if (emotions.length > 0) {
+        parts.push('## 当前情感');
+        for (const e of emotions) parts.push(`  ${e}`);
+      }
+
+      if (npcState.hunger !== undefined || npcState.fatigue !== undefined) {
+        const needs = OntologyBridge.semanticizeNeeds(
+          npcState.hunger ?? 0,
+          npcState.fatigue ?? 0,
+          npcState.socialDesire ?? 0,
+          npcState.energy ?? 80,
+          npcState.mood ?? 60
+        );
+        const urgentNeeds: string[] = [];
+        if (needs.hunger === '饥饿' || needs.hunger === '极度饥饿') urgentNeeds.push(needs.hunger);
+        if (needs.fatigue === '疲惫' || needs.fatigue === '精疲力竭') urgentNeeds.push(needs.fatigue);
+        if (needs.energy === '低落' || needs.energy === '枯竭') urgentNeeds.push(`精力${needs.energy}`);
+        if (urgentNeeds.length > 0) {
+          if (emotions.length === 0) parts.push('## 当前情感');
+          parts.push(`  急迫需求：${urgentNeeds.join('、')}`);
+        }
+      }
+
+      if (npcState.reflectionData && npcState.reflectionData.trackedTypes.length > 0) {
+        const preferred: string[] = [];
+        const avoided: string[] = [];
+        for (let i = 0; i < npcState.reflectionData.trackedTypes.length && i < 8; i++) {
+          const actId = npcState.reflectionData.trackedTypes[i];
+          const weight = npcState.reflectionData.weightMultipliers[i];
+          const actName = activityIdToChinese(actId);
+          if (weight > 1.0) preferred.push(`${actName}(权重${weight.toFixed(1)})`);
+          else if (weight < 0.8) avoided.push(`${actName}(权重${weight.toFixed(1)})`);
+        }
+        if (preferred.length > 0 || avoided.length > 0) {
+          parts.push('## 行为偏好');
+          if (preferred.length > 0) parts.push(`  偏好：${preferred.join('、')}`);
+          if (avoided.length > 0) parts.push(`  回避：${avoided.join('、')}`);
+        }
+      }
+
+      if (npcState.lastDecisionSnippet && npcState.lastDecisionSnippet.length > 0) {
+        parts.push('## 最近决策');
+        parts.push(`  ${npcState.lastDecisionSnippet}`);
       }
     }
 

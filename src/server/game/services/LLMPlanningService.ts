@@ -14,6 +14,7 @@ import {
 import { LLMGatewayService } from './LLMGatewayService';
 import { determineTier } from '../../config/LLMConfig';
 import { EconomicDigestWasm, ECONOMIC_POSTURE_LABELS, wasmGetEconomicDigest } from '../../../ecs/ECSWasmLoader';
+import { OntologyBridge, SemanticNPCProfile } from './OntologyBridge';
 
 export enum NarrativeDimension {
   BATTLE_STATUS = '战况',
@@ -298,6 +299,27 @@ export class LLMPlanningService {
       return '[经济态势] 经济态势：正常，无需特别关注';
     }
 
+    if (digest.alertCount > 0 && tier <= 1) {
+      const causalChain = OntologyBridge.buildCausalChain(digest);
+      if (causalChain.steps.length > 0) {
+        lines.push('');
+        lines.push('[因果推理链]');
+        lines.push(`触发：${causalChain.trigger}`);
+        for (const step of causalChain.steps) {
+          lines.push(`  → ${step.effect}`);
+        }
+        if (causalChain.risk_projection) {
+          lines.push(`风险预测：${causalChain.risk_projection}`);
+        }
+        if (causalChain.countermeasures.length > 0) {
+          lines.push('对策建议：');
+          for (const cm of causalChain.countermeasures) {
+            lines.push(`  - ${cm.action}（${cm.effect}，成本：${cm.cost}，风险：${cm.risk}）`);
+          }
+        }
+      }
+    }
+
     return lines.join('\n');
   }
 
@@ -356,8 +378,40 @@ export class LLMPlanningService {
   ): string {
     const parts: string[] = [];
 
-    parts.push(`你是一个修仙世界的${request.npc_data.role}，名为${request.npc_data.name}。`);
-    parts.push(`你所在的势力: ${request.npc_data.clan_id}`);
+    const tierNum = this.determineTierFromRequest(request);
+    const systemPrompt = OntologyBridge.buildSystemPrompt(tierNum);
+    parts.push(systemPrompt);
+    parts.push('');
+
+    const npcProfile = OntologyBridge.semanticizeNPC({
+      name: request.npc_data.name,
+      role: request.npc_data.role,
+      layer: tierNum,
+      clanId: request.npc_data.clan_id,
+      nation: request.npc_data.nation,
+      realm: request.npc_data.realm,
+      hp: 0,
+      maxHp: 1,
+      anger: 0,
+      fear: 0,
+      joy: 0,
+      hunger: 0,
+      fatigue: 0,
+      socialDesire: 0,
+      energy: 80,
+      mood: 60,
+      ambition: request.npc_data.personality.ambition,
+      caution: request.npc_data.personality.caution,
+      loyalty: request.npc_data.personality.loyalty,
+      greed: request.npc_data.personality.greed,
+      sociability: 50,
+      diligence: 50,
+      currentActivity: 0,
+    });
+    const profileText = OntologyBridge.formatSemanticProfileForPrompt(npcProfile);
+    parts.push(profileText);
+
+    parts.push('');
     parts.push(`当前战争状态: ${request.world_context.war_active ? '战争进行中' : '和平时期'}`);
 
     if (frontlineSummary && frontlineSummary.length > 0) {
@@ -369,6 +423,8 @@ export class LLMPlanningService {
       parts.push('');
       parts.push(economicDigestText);
     }
+
+    // Note: causal chain is built from the digest text, which is already available
 
     if (narrativeStates && narrativeStates.length > 0) {
       parts.push('');
@@ -528,6 +584,14 @@ export class LLMPlanningService {
         plan.status = PlanStatus.COMPLETED;
       }
     }
+  }
+
+  private determineTierFromRequest(request: LLMPlanningRequest): number {
+    const role = request.npc_data.role;
+    if (role === '家主' || role === 'FamilyHead') return 0;
+    if (role === '长老' || role === 'Elder' || role === '执法堂长老' || role === 'LawEnforcementElder') return 1;
+    if (role === '核心子弟' || role === 'CoreDisciple') return 2;
+    return 3;
   }
 
   private getCacheKey(request: LLMPlanningRequest): string {
