@@ -729,8 +729,8 @@ export interface GameState {
   modifyTalent: (effect: Partial<TalentAttributes>) => void;
   updateNPCs: () => void;
   addReputation: (amount: number, source: string) => void;
-  buyItem: (itemName: string, amount: number) => void;
-  sellItem: (itemName: string, amount: number) => void;
+  buyItem: (itemName: string, amount: number) => void | Promise<void>;
+  sellItem: (itemName: string, amount: number) => void | Promise<void>;
   updateMarketPrices: () => void;
   attemptAscension: () => void;
   performCycleRebirth: (type: CycleType) => void;
@@ -789,7 +789,7 @@ export interface GameState {
   removeItem: (itemName: string) => void;
 
   // Phase 3.3d: Forge (equipment crafting)
-  forgeCraft: (recipeId: string) => { success: boolean; product?: string; message: string };
+  forgeCraft: (recipeId: string) => { success: boolean; product?: string; message: string } | Promise<{ success: boolean; product?: string; message: string }>;
 
   // Phase 1.4a: Faction AI with LLM
   enqueueFactionAI: (factionId: string) => void;

@@ -32,9 +32,9 @@ export const ForgePanel = ({ onClose }: ForgePanelProps) => {
 
   const selected = selectedRecipe ? CRAFT_RECIPES.find(r => r.id === selectedRecipe) : null;
 
-  const handleCraft = () => {
+  const handleCraft = async () => {
     if (!selected) return;
-    const result = forgeCraft(selected.id);
+    const result = await forgeCraft(selected.id);
     if (result) {
       setCraftSuccess(result.success);
       setCraftMessage(result.message);

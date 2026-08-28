@@ -116,26 +116,26 @@ describe('getForgeRecipes', () => {
 });
 
 describe('forgeCraft action', () => {
-  it('returns failure when player is null', () => {
+  it('returns failure when player is null', async () => {
     // Player is null from beforeEach
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(false);
     expect(result.message).toContain('玩家不存在');
   });
-  it('returns failure when player has no materials', () => {
+  it('returns failure when player has no materials', async () => {
     initPlayer({ inventory: { '灵石': 100 } });
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(false);
     expect(result.message).toContain('材料不足');
   });
 
-  it('consumes materials on success', () => {
+  it('consumes materials on success', async () => {
     // Mock Math.random to force success
     const origRandom = Math.random;
     Math.random = () => 0.1;
 
     initPlayer({ inventory: { '灵石': 10000, '精铁': 10, '木炭': 10 } });
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(true);
     // Materials should be consumed: 精铁 -3, 木炭 -2
     const inv = useGameStore.getState().player!.inventory;
@@ -145,13 +145,13 @@ describe('forgeCraft action', () => {
     Math.random = origRandom;
   });
 
-  it('consumes materials even on failure', () => {
+  it('consumes materials even on failure', async () => {
     // Mock Math.random to force failure
     const origRandom = Math.random;
     Math.random = () => 0.99;
 
     initPlayer({ inventory: { '灵石': 10000, '精铁': 10, '木炭': 10 } });
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(false);
     // Materials should still be consumed
     const inv = useGameStore.getState().player!.inventory;
@@ -161,12 +161,12 @@ describe('forgeCraft action', () => {
     Math.random = origRandom;
   });
 
-  it('generates equipment with isCrafted flag and proper name', () => {
+  it('generates equipment with isCrafted flag and proper name', async () => {
     const origRandom = Math.random;
     Math.random = () => 0.01;
 
     initPlayer({ inventory: { '灵石': 10000, '精铁': 10, '木炭': 10 } });
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(true);
     expect(result.product).toBe('精铁剑');
 
@@ -179,7 +179,7 @@ describe('forgeCraft action', () => {
     Math.random = origRandom;
   });
 
-  it('returns success message with forge buff percentage when 炼器房 exists', () => {
+  it('returns success message with forge buff percentage when 炼器房 exists', async () => {
     const origRandom = Math.random;
     Math.random = () => 0.01;
 
@@ -196,28 +196,28 @@ describe('forgeCraft action', () => {
       playerFactionId: 'test-clan',
     });
 
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(true);
     expect(result.message).toContain('炼器房加成+20%');
 
     Math.random = origRandom;
   });
 
-  it('returns failure for unknown recipe ID', () => {
+  it('returns failure for unknown recipe ID', async () => {
     initPlayer();
-    const result = useGameStore.getState().forgeCraft('nonexistent');
+    const result = await useGameStore.getState().forgeCraft('nonexistent');
     expect(result.success).toBe(false);
   });
 
-  it('returns failure for non-equipment recipe (pill)', () => {
+  it('returns failure for non-equipment recipe (pill)', async () => {
     initPlayer();
-    const result = useGameStore.getState().forgeCraft('pill_hp_basic');
+    const result = await useGameStore.getState().forgeCraft('pill_hp_basic');
     expect(result.success).toBe(false);
   });
 });
 
 describe('forgeCraft with 炼器房 buff', () => {
-  it('success rate increases with 炼器房 building level', () => {
+  it('success rate increases with 炼器房 building level', async () => {
     initPlayer({
       inventory: { '灵石': 10000, '精铁': 10, '木炭': 10 },
     });
@@ -235,7 +235,7 @@ describe('forgeCraft with 炼器房 buff', () => {
     const origRandom = Math.random;
     Math.random = () => 0.01;
 
-    const result = useGameStore.getState().forgeCraft('forge_sword_mortal');
+    const result = await useGameStore.getState().forgeCraft('forge_sword_mortal');
     expect(result.success).toBe(true);
 
     Math.random = origRandom;

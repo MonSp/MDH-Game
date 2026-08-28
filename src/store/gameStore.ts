@@ -3,7 +3,16 @@ import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from 
 import { isPositionPassable, getMovementCost } from '../utils/terrain';
 import { GAME_CONFIG } from '../shared/constants';
 import { connectSocketAsync } from '../shared/socket';
-import { initSocketListeners, onStateSync, serverCultivate as _serverCultivate, serverAttack as _serverAttack, serverDeclareWar as _serverDeclareWar, serverProposeAlliance as _serverProposeAlliance, serverProposeTruce as _serverProposeTruce, serverSurrender as _serverSurrender, serverBreakAlliance as _serverBreakAlliance, serverGather as _serverGather, serverCraft as _serverCraft, serverSave as _serverSave, serverLoad as _serverLoad } from './serverAdapter';
+import {
+  initSocketListeners, onStateSync,
+  serverCultivate as _serverCultivate, serverBreakthrough as _serverBreakthrough,
+  serverAttackCN as _serverAttackCN, serverDeclareWar as _serverDeclareWar,
+  serverProposeAlliance as _serverProposeAlliance, serverProposeTruce as _serverProposeTruce,
+  serverSurrender as _serverSurrender, serverBreakAlliance as _serverBreakAlliance,
+  serverGatherCN as _serverGatherCN, serverCraftByRecipe as _serverCraftByRecipe,
+  serverBuyByChineseName as _serverBuyCN, serverSellByChineseName as _serverSellCN,
+  serverSave as _serverSave, serverLoad as _serverLoad,
+} from './serverAdapter';
 
 // Import everything needed for the store body's local scope
 import {
@@ -326,118 +335,82 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (action === '攻击') {
       state.addLog({ type: 'combat', message: `你向 ${npc.name}(${npc.role}) 发起了攻击！` });
 
-      // Notify server of attack (server-authoritative path)
-      _serverAttack(npcId, 'npc').catch(() => {});
-      
-      // 秦国战力加成或简单对比
-      const playerAttack = state.player.country === '秦' ? state.player.stats.attack * 1.1 : state.player.stats.attack;
-      const winChance = playerAttack / (playerAttack + (npc.power / 10));
-      const win = Math.random() < Math.max(0.1, Math.min(0.9, winChance));
-      
-      if (win) {
-        // 战斗经验加成
-        const expGain = state.player.country === '秦' ? Math.floor(50 * 1.1) : 50;
-        
-        let dropStones = npc.resources.spiritStone;
-        let isMerchant = npc.activity === '坊市跑商';
-        if (isMerchant) {
-          dropStones += Math.floor(Math.random() * 200) + 100; // 大幅增加掉落
-        }
-        
-        let dropMessage = `你击败了 ${npc.name}，夺取了 ${dropStones} 块灵石！获得 ${expGain} 点修为。`;
-        let droppedItem = '';
-        if (Math.random() < 0.2) {
-          droppedItem = '洗髓丹';
-          dropMessage += ` 并在其储物袋中发现了一枚【洗髓丹】！`;
+      // Server-authoritative combat
+      _serverAttackCN(npcId, 'npc').then(res => {
+        if (!res.success) {
+          get().addLog({ type: 'combat', message: `攻击失败：${res.error}` });
+          return;
         }
 
-        set(s => {
-          let updatedInventory = { ...s.player!.inventory };
-          if (droppedItem) {
-            updatedInventory[droppedItem] = (updatedInventory[droppedItem] || 0) + 1;
-          }
-          updatedInventory['灵石'] = (updatedInventory['灵石'] || 0) + dropStones;
+        const killed = res.killed;
+        const damage = res.damage;
 
-          let newPlayer = { 
-            ...s.player!, 
-            stats: { ...s.player!.stats, exp: s.player!.stats.exp + expGain },
-            hiddenStats: { ...s.player!.hiddenStats, killCount: s.player!.hiddenStats.killCount + 1 },
-            inventory: updatedInventory
-          };
-
-          // @ts-ignore
-          if (typeof checkPotentialAwakening === 'function') {
-            // @ts-ignore
-            newPlayer = checkPotentialAwakening(newPlayer, (msg: string) => state.addLog({ type: 'event', message: msg }));
+        if (killed) {
+          // Apply loot from server
+          let dropStones = 0;
+          let droppedItem = '';
+          for (const l of res.loot) {
+            if (l.name === '灵石') dropStones += l.count;
+            else droppedItem = l.name;
           }
 
-          state.addLog({ type: 'event', message: dropMessage });
+          let dropMessage = `你击败了 ${npc.name}，造成 ${damage} 点伤害！夺取了 ${dropStones} 块灵石！获得 ${res.expGained} 点修为。`;
+          if (droppedItem) dropMessage += ` 获得【${droppedItem}】！`;
 
-          let updatedClans = [...s.clans];
-          let updatedNearbyNPCs = s.nearbyNPCs.filter(n => n.id !== npcId);
-          let spawnedEnforcer = false;
+          set(s => {
+            let updatedInventory = { ...s.player!.inventory };
+            if (droppedItem) updatedInventory[droppedItem] = (updatedInventory[droppedItem] || 0) + 1;
+            updatedInventory['灵石'] = (updatedInventory['灵石'] || 0) + dropStones;
 
-          updatedClans = updatedClans.map(c => {
-            if (c.id === npc.clanId) {
-              const repLoss = isMerchant ? 20 : 10;
-              const newReputation = c.reputation - repLoss;
-              // 当声望首次低于0，或每低10点时，概率生成执法堂长老
-              if (newReputation < 0 && Math.random() > 0.3) {
-                spawnedEnforcer = true;
-                const enforcerPower = s.player!.stats.attack * 3;
-                const enforcer: NPC = {
-                  id: `enforcer-${Date.now()}`,
-                  clanId: c.id,
-                  name: `${c.name.charAt(0)}执法长老`,
-                  role: '执法堂长老',
-                  realm: '化神', // 执法长老统一化神境界
-                  power: enforcerPower, // 强于玩家
-                  hp: enforcerPower * 10,
-                  maxHp: enforcerPower * 10,
-                  mp: enforcerPower * 5,
-                  maxMp: enforcerPower * 5,
-                  personality: { ambition: 50, caution: 50, loyalty: 100, greed: 10 },
-                  resources: { spiritStone: 500 },
-                  activity: '追杀中',
-                  position: { 
-                    x: s.player!.position.x + (Math.random() > 0.5 ? 10 : -10), 
-                    y: s.player!.position.y + (Math.random() > 0.5 ? 10 : -10) 
-                  },
-                  targetPlayerId: s.player!.id
-                };
-                updatedNearbyNPCs.push(enforcer);
+            let updatedClans = [...s.clans];
+            let updatedNearbyNPCs = s.nearbyNPCs.filter(n => n.id !== npcId);
+            const isMerchant = npc.activity === '坊市跑商';
+
+            updatedClans = updatedClans.map(c => {
+              if (c.id === npc.clanId) {
+                const repLoss = isMerchant ? 20 : 10;
+                const newReputation = c.reputation - repLoss;
+                if (newReputation < 0 && Math.random() > 0.3) {
+                  const enforcerPower = s.player!.stats.attack * 3;
+                  const enforcer: NPC = {
+                    id: `enforcer-${Date.now()}`,
+                    clanId: c.id,
+                    name: `${c.name.charAt(0)}执法长老`,
+                    role: '执法堂长老',
+                    realm: '化神',
+                    power: enforcerPower,
+                    hp: enforcerPower * 10,
+                    maxHp: enforcerPower * 10,
+                    mp: enforcerPower * 5,
+                    maxMp: enforcerPower * 5,
+                    personality: { ambition: 50, caution: 50, loyalty: 100, greed: 10 },
+                    resources: { spiritStone: 500 },
+                    activity: '追杀中',
+                    position: { x: s.player!.position.x + (Math.random() > 0.5 ? 10 : -10), y: s.player!.position.y + (Math.random() > 0.5 ? 10 : -10) },
+                    targetPlayerId: s.player!.id,
+                  };
+                  updatedNearbyNPCs.push(enforcer);
+                }
+                return { ...c, reputation: newReputation };
               }
-              return { ...c, reputation: newReputation };
-            }
-            return c;
+              return c;
+            });
+
+            get().addLog({ type: 'event', message: dropMessage });
+            return { clans: updatedClans, nearbyNPCs: updatedNearbyNPCs };
           });
 
-          return {
-            clans: updatedClans,
-            nearbyNPCs: updatedNearbyNPCs,
-            player: newPlayer
-          };
-        });
-        
-        const clan = get().clans.find(c => c.id === npc.clanId);
-        // 击败NPC后尝试俘虏
-        const playerIdx = REALM_LIST.indexOf(get().player!.realm);
-        const npcIdx = REALM_LIST.indexOf(npc.realm);
-        const realmDiff = npcIdx >= 0 && playerIdx >= 0 ? (playerIdx - npcIdx) : 0;
-        get().captureNPC(npc, realmDiff);
-        // 击败NPC获得声望
-        get().addReputation(Math.floor((npc.power / 1000) + 5), 'npc_combat_win');
-        if (clan && clan.reputation < 0) {
-          get().addLog({ type: 'system', message: `警告！${clan.name} 对你的仇恨已达冰点，已派出执法堂长老前来围剿！` });
-        } else if (clan && clan.reputation < 20) {
-          get().addLog({ type: 'system', message: `警告！${clan.name} 对你的仇恨极高！` });
+          const playerIdx = REALM_LIST.indexOf(get().player!.realm);
+          const npcIdx = REALM_LIST.indexOf(npc.realm);
+          const realmDiff = npcIdx >= 0 && playerIdx >= 0 ? (playerIdx - npcIdx) : 0;
+          get().captureNPC(npc, realmDiff);
+          get().addReputation(Math.floor((npc.power / 1000) + 5), 'npc_combat_win');
+        } else {
+          get().addLog({ type: 'combat', message: `你对 ${npc.name} 造成了 ${damage} 点伤害！(HP: ${res.targetHp}/${res.targetMaxHp})` });
         }
-      } else {
-        get().addLog({ type: 'combat', message: `你不敌 ${npc.name}，重伤逃遁，损失部分修为。` });
-        set(s => ({
-          player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - 30) } } : s.player
-        }));
-      }
+      }).catch(() => {
+        get().addLog({ type: 'combat', message: `攻击请求失败。` });
+      });
     } else if (action === '交谈') {
       get().addLog({ type: 'event', message: `${npc.name} 看了你一眼：“支脉子弟，也要努力修炼才是。”` });
     } else if (action === '交易') {
@@ -461,82 +434,62 @@ export const useGameStore = create<GameState>((set, get) => ({
       return;
     }
 
-    // Notify server of resource gathering
-    _serverGather(resource.type).catch(() => {});
-
-    let expGain = 0;
-    let logMsg = '';
-
-    // 机缘判定：概率触发双倍资源
-    const fortuneProc = Math.random() < (state.player.talent?.fortune ?? 20) / 100;
-    const fortuneMult = fortuneProc ? 2 : 1;
-
-    const fortuneTag = fortuneProc ? '（双倍）' : '';
-    if (resource.type === '灵田') {
-      expGain = Math.floor(30 * fortuneMult);
-      logMsg = `你在灵田采摘了仙草，获得了 ${expGain} 点修为${fortuneTag}。`;
-    } else if (resource.type === '矿脉') {
-      const yieldAmt = Math.floor(50 * fortuneMult);
-      logMsg = `你在矿脉开采了 ${yieldAmt} 块灵石${fortuneTag}`;
-      set(s => {
-        if (!s.player) return s;
-        const newInventory = { ...s.player.inventory };
-        newInventory['灵石'] = (newInventory['灵石'] || 0) + yieldAmt;
-        return { player: { ...s.player, inventory: newInventory } };
-      });
-    } else if (resource.type === '遗迹') {
-      const foundAmt = Math.floor(100 * fortuneMult);
-      const isLucky = Math.random() < 0.3 * fortuneMult;
-      logMsg = `你在遗迹中探索，发现了 ${foundAmt} 块灵石${fortuneTag}`;
-      if (isLucky) {
-        logMsg += '，以及一枚珍贵的【洗髓丹】！';
-      } else {
-        logMsg += '。';
+    // Server-authoritative gathering
+    _serverGatherCN(resource.type).then(res => {
+      if (!res.success) {
+        get().addLog({ type: 'system', message: `采集失败：${res.error}` });
+        return;
       }
+      let logMsg = '';
+      if (resource.type === '灵田') {
+        logMsg = `你在灵田采摘了仙草，获得了 ${res.expGained} 点修为。`;
+      } else if (resource.type === '矿脉') {
+        logMsg = `你在矿脉开采了 ${res.spiritStonesGained} 块灵石。`;
+      } else if (resource.type === '遗迹') {
+        logMsg = `你在遗迹中探索，发现了 ${res.spiritStonesGained} 块灵石。`;
+      }
+      if (res.materials.length > 0) {
+        logMsg += ` 获得：${res.materials.map(m => `${m.name}x${m.count}`).join('、')}。`;
+      }
+      get().addLog({ type: 'event', message: logMsg });
+
+      // Apply server results
       set(s => {
         if (!s.player) return s;
         const newInventory = { ...s.player.inventory };
-        newInventory['灵石'] = (newInventory['灵石'] || 0) + foundAmt;
-        if (isLucky) {
-          newInventory['洗髓丹'] = (newInventory['洗髓丹'] || 0) + 1;
+        newInventory['灵石'] = (newInventory['灵石'] || 0) + res.spiritStonesGained;
+        for (const m of res.materials) {
+          newInventory[m.name] = (newInventory[m.name] || 0) + m.count;
         }
-        return { player: { ...s.player, inventory: newInventory } };
-      });
-    }
-
-
-    state.addLog({ type: 'event', message: logMsg });
-    // 采集获得声望
-    get().addReputation(REPUTATION_SOURCES.gather.base, 'gather');
-    state.updateMarketPrices();
-    
-    set(s => {
-      if (!s.player) return s;
-      const newPoints = [...s.resourcePoints];
-      newPoints.splice(resourceIndex, 1);
-      
-      // 概率在附近生成新的资源点
-      if (Math.random() > 0.3) {
-        const types: ('灵田' | '矿脉' | '遗迹')[] = ['灵田', '矿脉', '遗迹'];
-        newPoints.push({
-          id: `res-${Date.now()}`,
-          type: types[Math.floor(Math.random() * types.length)],
-          amount: Math.floor(Math.random() * 100) + 50,
-          position: { 
-            x: s.player.position.x + Math.floor(Math.random() * 20) - 10, 
-            y: s.player.position.y + Math.floor(Math.random() * 20) - 10 
+        return {
+          player: {
+            ...s.player,
+            inventory: newInventory,
+            stats: { ...s.player.stats, exp: s.player.stats.exp + res.expGained },
           },
-          heavenLevel: s.player.heavenLevel
-        });
-      }
-      
-      return {
-        player: {
-          ...s.player,
-          stats: { ...s.player.stats, exp: s.player.stats.exp + expGain }
-        },
-        resourcePoints: newPoints
-      };
+        };
+      });
+      get().addReputation(REPUTATION_SOURCES.gather.base, 'gather');
+
+      // Remove resource point and maybe spawn new one
+      set(s => {
+        if (!s.player) return s;
+        const newPoints = [...s.resourcePoints];
+        newPoints.splice(resourceIndex, 1);
+        if (Math.random() > 0.3) {
+          const types: ('灵田' | '矿脉' | '遗迹')[] = ['灵田', '矿脉', '遗迹'];
+          newPoints.push({
+            id: `res-${Date.now()}`,
+            type: types[Math.floor(Math.random() * types.length)],
+            amount: Math.floor(Math.random() * 100) + 50,
+            position: { x: s.player.position.x + Math.floor(Math.random() * 20) - 10, y: s.player.position.y + Math.floor(Math.random() * 20) - 10 },
+            heavenLevel: s.player.heavenLevel,
+          });
+        }
+        return { resourcePoints: newPoints };
+      });
+    }).catch(() => {
+      get().addLog({ type: 'system', message: `采集请求失败。` });
     });
   },
 
@@ -628,54 +581,60 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
-  forgeCraft: (recipeId) => {
+  forgeCraft: async (recipeId) => {
     const state = get();
     if (!state.player) return { success: false, message: '玩家不存在' };
-    const recipe = getRecipe(recipeId);
-    if (!recipe || recipe.type !== 'equipment') {
-      return { success: false, message: '未知配方' };
-    }
-    const meta = FORGE_RECIPE_META[recipeId];
-    if (!meta) {
-      return { success: false, message: '配方元数据缺失' };
-    }
 
-    // Calculate forge buff from 炼器房 building level
     const forgeLevel = getFactionBuildingLevel(state.clans, state.playerFactionId, '炼器房');
     const buffMultiplier = 1 + forgeLevel * 0.1;
 
-    // Attempt craft
-    const result = attemptCraft(recipe, state.player.inventory, buffMultiplier);
+    // Try server first, fall back to local logic on timeout
+    const res = await _serverCraftByRecipe(recipeId, buffMultiplier);
 
-    if (result.success && result.product) {
-      // Consume materials
-      for (const [mat, count] of Object.entries(recipe.materials)) {
-        for (let i = 0; i < count; i++) get().removeItem(mat);
+    // If server returned an error (timeout/no server), fall back to local
+    if (!res.success && (res.message === '请求超时' || res.message === '合成失败')) {
+      const recipe = getRecipe(recipeId);
+      if (!recipe || recipe.type !== 'equipment') return { success: false, message: '未知配方' };
+      const meta = FORGE_RECIPE_META[recipeId];
+      if (!meta) return { success: false, message: '配方元数据缺失' };
+      const result = attemptCraft(recipe, state.player.inventory, buffMultiplier);
+      if (result.success && result.product) {
+        for (const [mat, count] of Object.entries(recipe.materials)) {
+          for (let i = 0; i < count; i++) get().removeItem(mat);
+        }
+        const eq = generateEquipment(`crafted_${recipeId}_${Date.now()}`, meta.slot, meta.targetRarity, meta.realmValue);
+        eq.name = result.product;
+        (eq as any).isCrafted = true;
+        get().equipItem(eq);
+        const buffPct = forgeLevel > 0 ? forgeLevel * 10 : 0;
+        const buffMsg = buffPct > 0 ? `（炼器房加成+${buffPct}%）` : '';
+        const fullMsg = `炼制成功！获得 ${result.product}${buffMsg}`;
+        state.addLog({ type: 'event', message: `[炼器] ${fullMsg}` });
+        return { success: true, product: result.product, message: fullMsg };
+      } else {
+        for (const [mat, count] of Object.entries(recipe.materials)) {
+          for (let i = 0; i < count; i++) get().removeItem(mat);
+        }
+        state.addLog({ type: 'event', message: `[炼器] ${result.message}` });
+        return { success: false, message: result.message };
       }
-      // Generate equipment with proper stats
-      const eq = generateEquipment(
-        `crafted_${recipeId}_${Date.now()}`,
-        meta.slot,
-        meta.targetRarity,
-        meta.realmValue,
-      );
-      eq.name = result.product;
-      (eq as any).isCrafted = true;
-      // Auto-equip
-      get().equipItem(eq);
-      const buffPct = forgeLevel > 0 ? forgeLevel * 10 : 0;
-      const buffMsg = buffPct > 0 ? `（炼器房加成+${buffPct}%）` : '';
-      const msg = `炼制成功！获得 ${result.product}${buffMsg}`;
-      state.addLog({ type: 'event', message: `[炼器] ${msg}` });
-      return { success: true, product: result.product, message: msg };
-    } else {
-      // Consume materials on failure too
-      for (const [mat, count] of Object.entries(recipe.materials)) {
-        for (let i = 0; i < count; i++) get().removeItem(mat);
-      }
-      state.addLog({ type: 'event', message: `[炼器] ${result.message}` });
-      return { success: false, message: result.message };
     }
+
+    // Server responded — use server result
+    state.addLog({ type: 'event', message: `[炼器] ${res.message}` });
+    if (res.success && res.equipment) {
+      const eq = {
+        id: res.equipment.id, name: res.equipment.name,
+        slot: res.equipment.slot, rarity: res.equipment.rarity,
+        baseStats: res.equipment.baseStats || {}, affixes: res.equipment.affixes || [],
+        requiredRealm: 1, price: 0, isCrafted: true,
+      };
+      get().equipItem(eq as any);
+    }
+    if (res.inventory && Object.keys(res.inventory).length > 0) {
+      set(s => ({ player: { ...s.player!, inventory: res.inventory } }));
+    }
+    return { success: res.success, product: res.product, message: res.message };
   },
 
   cultivate: () => {
@@ -1327,94 +1286,33 @@ export const useGameStore = create<GameState>((set, get) => ({
     return getDiplomaticStatusFrom(state, state.playerFactionId, clanId);
   },
 
-  buyItem: (itemName, amount) => {
+  buyItem: async (itemName, amount) => {
     const state = get();
     if (!state.player) return;
-    const item = state.market[itemName];
-    if (!item || item.stock < amount) {
-      state.addLog({ type: 'system', message: `坊市中【${itemName}】库存不足。` });
+    const res = await _serverBuyCN(itemName, amount);
+    if (!res.success) {
+      state.addLog({ type: 'system', message: res.error || `购买【${itemName}】失败。` });
       return;
     }
-    const cost = item.currentPrice * amount;
-    const currentStones = state.player.inventory['灵石'] || 0;
-    
-    // 计算关税（假设如果玩家不是魏国，则加收 15% 关税，因为坊市设在魏国中州）
-    const taxRate = state.player.country !== '魏' ? 0.15 : 0;
-    const finalCost = Math.floor(cost * (1 + taxRate));
-
-    if (currentStones >= finalCost) {
-      set(s => {
-        const newInventory = { ...s.player!.inventory };
-        newInventory['灵石'] -= finalCost;
-        newInventory[itemName] = (newInventory[itemName] || 0) + amount;
-        
-        const newMarket = { ...s.market };
-        newMarket[itemName] = { ...newMarket[itemName], stock: newMarket[itemName].stock - amount };
-        
-        return {
-          player: { ...s.player!, inventory: newInventory },
-          market: newMarket
-        };
-      });
-      state.addLog({ type: 'system', message: `花费 ${finalCost} 灵石购买了 ${amount} 个【${itemName}】${taxRate > 0 ? '(含15%跨国关税)' : ''}。` });
-      try {
-        const { wasmRecordMarketTransaction } = require('../ecs/ECSWasmLoader');
-        const clanId = state.player.clanId || state.player.country || 'default';
-        const itemToCommodity: Record<string, number> = {
-          '洗髓丹': 4, '低级法器': 2, '回血丹': 4, '聚气散': 4, '飞升令': 2,
-        };
-        const commodityType = itemToCommodity[itemName] ?? 5;
-        wasmRecordMarketTransaction(clanId, commodityType, amount, true);
-      } catch (_) {}
-      if (amount >= 10) state.updateMarketPrices(); // 大规模交易引起价格波动
-    } else {
-      state.addLog({ type: 'system', message: `灵石不足，需要 ${finalCost} 灵石。` });
-    }
+    // Apply server-authoritative inventory
+    set(s => ({
+      player: { ...s.player!, inventory: res.inventory },
+    }));
+    state.addLog({ type: 'system', message: `购买了 ${amount} 个【${itemName}】。` });
   },
 
-  sellItem: (itemName: string, amount: number) => {
+  sellItem: async (itemName: string, amount: number) => {
     const state = get();
     if (!state.player) return;
-    const currentAmount = state.player.inventory[itemName] || 0;
-    if (currentAmount < amount) {
-      state.addLog({ type: 'system', message: `你没有足够的【${itemName}】。` });
+    const res = await _serverSellCN(itemName, amount);
+    if (!res.success) {
+      state.addLog({ type: 'system', message: res.error || `出售【${itemName}】失败。` });
       return;
     }
-    const item = state.market[itemName];
-    if (!item) return;
-
-    // 出售价格为当前价格的 80%
-    const sellPrice = Math.floor(item.currentPrice * 0.8);
-    const totalEarned = sellPrice * amount;
-
-    // 出售不收跨国关税，或按需求也可以收，这里暂定出售收税为扣除利润的 15%
-    const taxRate = state.player.country !== '魏' ? 0.15 : 0;
-    const finalEarned = Math.floor(totalEarned * (1 - taxRate));
-
-    set(s => {
-      const newInventory = { ...s.player!.inventory };
-      newInventory['灵石'] = (newInventory['灵石'] || 0) + finalEarned;
-      newInventory[itemName] -= amount;
-      
-      const newMarket = { ...s.market };
-      newMarket[itemName] = { ...newMarket[itemName], stock: newMarket[itemName].stock + amount };
-      
-      return {
-        player: { ...s.player!, inventory: newInventory },
-        market: newMarket
-      };
-    });
-    state.addLog({ type: 'system', message: `出售 ${amount} 个【${itemName}】，获得 ${finalEarned} 灵石${taxRate > 0 ? '(已扣除15%跨国关税)' : ''}。` });
-    try {
-      const { wasmRecordMarketTransaction } = require('../ecs/ECSWasmLoader');
-      const clanId = state.player.clanId || state.player.country || 'default';
-      const itemToCommodity: Record<string, number> = {
-        '洗髓丹': 4, '低级法器': 2, '回血丹': 4, '聚气散': 4, '飞升令': 2,
-      };
-      const commodityType = itemToCommodity[itemName] ?? 5;
-      wasmRecordMarketTransaction(clanId, commodityType, amount, false);
-    } catch (_) {}
-    if (amount >= 10) state.updateMarketPrices();
+    set(s => ({
+      player: { ...s.player!, inventory: res.inventory },
+    }));
+    state.addLog({ type: 'system', message: `出售了 ${amount} 个【${itemName}】。` });
   },
 
   updateMarketPrices: () => {
