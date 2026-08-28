@@ -13,7 +13,9 @@ import {
   EconomyService,
   ItemService,
   WorldGenService,
-  ECSEngineService
+  ECSEngineService,
+  DeathService,
+  PopulationBalanceController
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
 import { MapGeneratorService } from './services/MapGeneratorService';
@@ -30,6 +32,7 @@ import { registerCraftingHandlers } from './handlers/crafting';
 import { registerSaveLoadHandlers } from './handlers/saveLoad';
 import { registerTechniqueHandlers } from './handlers/techniques';
 import { registerResourceHandlers } from './handlers/resources';
+import { spawnMonstersTick, getMonstersNearPlayer, marketPriceTick, getMarketPrices, drainCombatEvents, processNPCDeath } from './game/ServerGameLoop';
 
 import { PlayerState, Country, CultivationRealm, GAME_CONFIG, NPCEvent, EventBus } from '../shared';
 import type { CombatEvent, StateSync, PlayerSyncState } from '../shared/types/socket-events';
@@ -732,6 +735,10 @@ function initializeGame(): void {
   ResourceManager.getInstance().initialize(GAME_CONFIG.MAP_WIDTH, GAME_CONFIG.MAP_HEIGHT, 50);
   WorldGenService.getInstance().initialize();
 
+  // T13: Initialize DeathService and PopulationBalanceController
+  DeathService.getInstance();
+  PopulationBalanceController.getInstance();
+
   const ecsEngine = ECSEngineService.getInstance();
   ecsEngine.initialize(8);
 
@@ -797,6 +804,13 @@ function startGameLoop(): void {
       player.update(1000 / 60);
     }
   }, 1000 / 60);
+
+  // T13: Wire DeathService to NPC death events
+  EventBus.on(NPCEvent.DIED, (data: any) => {
+    if (data?.npc) {
+      processNPCDeath(data.npc, data.killerId ?? null);
+    }
+  });
 
   // Phase 1.1b: LLM planning tick every 5 seconds
   setInterval(() => {
@@ -953,9 +967,9 @@ function startGameLoop(): void {
     prevNpcIds = currentIds;
   }, 500);
 
-  // Player state:sync — authoritative player stats + nearby monsters
-  const combatEventsBuffer: CombatEvent[] = [];
+  // Player state:sync — authoritative player stats + nearby monsters + combat events
   setInterval(() => {
+    const events = drainCombatEvents();
     for (const [sockId, ps] of playerSockets) {
       const player = PlayerService.getInstance().getPlayer(ps.playerId);
       if (!player) continue;
@@ -976,12 +990,22 @@ function startGameLoop(): void {
           position: player.position,
           state: player.state
         },
-        nearbyMonsters: [], // TODO: spawn monsters server-side
-        combatEvents: combatEventsBuffer.splice(0)
+        nearbyMonsters: getMonstersNearPlayer(ps.playerId),
+        combatEvents: events,
       };
       ps.socket.emit('state:sync', syncState);
     }
   }, 1000);
+
+  // T7: Server-side monster spawning — every 5 seconds
+  setInterval(() => {
+    spawnMonstersTick(io);
+  }, 5000);
+
+  // T8: Market price tick — every 60 seconds
+  setInterval(() => {
+    marketPriceTick();
+  }, 60000);
 }
 
 httpServer.listen(PORT, () => {

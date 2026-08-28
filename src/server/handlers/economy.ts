@@ -1,6 +1,6 @@
 import type { Socket } from 'socket.io';
 import { EconomyService, ItemService } from '../services';
-import { MarketService } from '../services/MarketService';
+import { getMarketPrices, adjustMarketSupply, adjustMarketDemand } from '../game/ServerGameLoop';
 import type {
   EconomyBuyRequest, EconomySellRequest,
   SocketResult, EconomyBuyResponse, EconomySellResponse,
@@ -11,7 +11,6 @@ import { CurrencyType } from '../../shared';
 export function registerEconomyHandlers(socket: Socket, getPlayerId: () => string | undefined) {
   const economy = EconomyService.getInstance();
   const items = ItemService.getInstance();
-  const market = MarketService.getInstance();
 
   socket.on('economy:buy', (req: EconomyBuyRequest) => {
     const pid = getPlayerId();
@@ -29,7 +28,7 @@ export function registerEconomyHandlers(socket: Socket, getPlayerId: () => strin
 
     economy.spendCurrency(pid, CurrencyType.SpiritStone, totalCost);
     items.addItem(pid, req.itemId, req.quantity);
-    market.adjustSupply(req.itemId, -req.quantity);
+    adjustMarketSupply(req.itemId, -req.quantity);
 
     socket.emit('economy:buy:result', {
       success: true,
@@ -56,7 +55,7 @@ export function registerEconomyHandlers(socket: Socket, getPlayerId: () => strin
     const sellPrice = Math.floor(item.price * 0.6) * req.quantity;
     items.removeItem(pid, req.itemId, req.quantity);
     economy.addCurrency(pid, CurrencyType.SpiritStone, sellPrice);
-    market.adjustSupply(req.itemId, req.quantity);
+    adjustMarketSupply(req.itemId, req.quantity);
 
     socket.emit('economy:sell:result', {
       success: true,
@@ -73,7 +72,7 @@ export function registerEconomyHandlers(socket: Socket, getPlayerId: () => strin
     socket.emit('economy:market:result', {
       success: true,
       data: {
-        items: market.getAllMarketInfo(),
+        items: getMarketPrices(),
         balance
       }
     } satisfies SocketResult<EconomyMarketResponse>);

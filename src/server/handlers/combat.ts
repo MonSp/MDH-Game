@@ -75,6 +75,35 @@ export function registerCombatHandlers(
           timestamp: Date.now()
         });
       }
+    } else if (req.targetKind === 'monster') {
+      const { damageMonster } = require('../game/ServerGameLoop');
+      const monster = damageMonster(req.targetId, player.attack);
+      if (!monster) {
+        socket.emit('combat:attack:result', { success: false, error: '怪物不存在' } satisfies SocketResult<CombatAttackResponse>);
+        return;
+      }
+
+      const damage = calculateDamage(player.attack, monster.template.defense);
+      const killed = monster.hp <= 0;
+
+      const loot: Array<{ itemId: string; name: string; count: number }> = [];
+      let expGained = 0;
+      if (killed) {
+        loot.push({ itemId: 'spirit_stone', name: '灵石', count: monster.template.spiritStoneDrop });
+        player.addSpiritStones(monster.template.spiritStoneDrop);
+        expGained = monster.template.expReward;
+        player.addCultivation(expGained);
+        const matDrops = rollDrops(MONSTER_MATERIAL_DROPS);
+        loot.push(...matDrops);
+      }
+
+      broadcastCombatEvent({ type: 'player_attack', attackerId: pid, defenderId: req.targetId, damage, timestamp: Date.now() });
+      if (killed) broadcastCombatEvent({ type: 'death', attackerId: pid, defenderId: req.targetId, damage: 0, timestamp: Date.now() });
+
+      socket.emit('combat:attack:result', {
+        success: true,
+        data: { damage, targetHp: monster.hp, targetMaxHp: monster.maxHp, killed, playerHp: player.health, loot, expGained },
+      } satisfies SocketResult<CombatAttackResponse>);
     } else {
       socket.emit('combat:attack:result', { success: false, error: '暂不支持该目标类型' } satisfies SocketResult<CombatAttackResponse>);
     }

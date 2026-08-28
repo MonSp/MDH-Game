@@ -3,7 +3,7 @@ import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from 
 import { isPositionPassable, getMovementCost } from '../utils/terrain';
 import { GAME_CONFIG } from '../shared/constants';
 import { connectSocketAsync } from '../shared/socket';
-import { initSocketListeners, onStateSync, serverCultivate as _serverCultivate, serverAttack as _serverAttack } from './serverAdapter';
+import { initSocketListeners, onStateSync, serverCultivate as _serverCultivate, serverAttack as _serverAttack, serverDeclareWar as _serverDeclareWar, serverProposeAlliance as _serverProposeAlliance, serverProposeTruce as _serverProposeTruce, serverSurrender as _serverSurrender, serverBreakAlliance as _serverBreakAlliance, serverGather as _serverGather, serverCraft as _serverCraft, serverSave as _serverSave, serverLoad as _serverLoad } from './serverAdapter';
 
 // Import everything needed for the store body's local scope
 import {
@@ -460,6 +460,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       state.addLog({ type: 'system', message: `距离太远，无法采集【${resource.type}】。` });
       return;
     }
+
+    // Notify server of resource gathering
+    _serverGather(resource.type).catch(() => {});
 
     let expGain = 0;
     let logMsg = '';
@@ -1232,6 +1235,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       declaredBy: state.playerFactionId,
     });
     state.addLog({ type: 'event', message: `【宣战】向 ${target.name} 正式宣战！` });
+    _serverDeclareWar(clanId).catch(() => {});
   },
 
   proposeAlliance: (clanId: string) => {
@@ -1256,6 +1260,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       allianceDate: Date.now(),
     });
     state.addLog({ type: 'event', message: `【结盟】与 ${target.name} 缔结同盟！` });
+    _serverProposeAlliance(clanId).catch(() => {});
   },
 
   proposeTruce: (clanId: string) => {
@@ -1271,6 +1276,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       truceUntil: Date.now() + 120000, // 2 minutes truce
     });
     state.addLog({ type: 'event', message: `【停战】与 ${target.name} 达成停战协议。` });
+    _serverProposeTruce(clanId).catch(() => {});
   },
 
   surrenderTo: (clanId: string) => {
@@ -1286,6 +1292,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       vassalTribute: Math.floor((state.clans.find(c => c.id === state.playerFactionId)?.treasury || 0) * 0.1),
     });
     state.addLog({ type: 'event', message: `【臣服】向 ${target.name} 表示臣服，每周期进贡灵石。` });
+    _serverSurrender(clanId).catch(() => {});
   },
 
   breakAlliance: (clanId: string) => {
@@ -1296,6 +1303,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     get().removeDiplomacy(state.playerFactionId, clanId);
     state.addLog({ type: 'event', message: `【毁盟】解除了与 ${target.name} 的同盟关系。` });
+    _serverBreakAlliance(clanId).catch(() => {});
   },
 
   getDiplomaticRelations: () => {
