@@ -22,8 +22,13 @@ import { LLMHttpClient, DialogueRequestContext } from './llm/LLMHttpClient';
 import { buildDialogueSystemPrompt, buildDialogueUserPrompt } from './llm/DialoguePrompts';
 import { buildFactionSystemPrompt, buildFactionUserPrompt, FactionDecision } from './llm/FactionAIPrompts';
 import { parseFactionDecision } from './llm/FactionDecisionParser';
+import { registerEconomyHandlers } from './handlers/economy';
+import { registerCombatHandlers } from './handlers/combat';
+import { registerCultivationHandlers } from './handlers/cultivation';
+import { registerDiplomacyHandlers } from './handlers/diplomacy';
 
 import { PlayerState, Country, CultivationRealm, GAME_CONFIG, NPCEvent, EventBus } from '../shared';
+import type { CombatEvent, StateSync, PlayerSyncState } from '../shared/types/socket-events';
 
 const app = express();
 const httpServer = createServer(app);
@@ -130,6 +135,18 @@ const playerSockets: Map<string, PlayerSocket> = new Map();
 
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
+
+  const getPlayerId = (): string | undefined => playerSockets.get(socket.id)?.playerId;
+
+  const broadcastCombatEvent = (event: CombatEvent) => {
+    socket.broadcast.emit('combat:event', event);
+  };
+
+  // Register server-authoritative handlers
+  registerEconomyHandlers(socket, getPlayerId);
+  registerCombatHandlers(socket, getPlayerId, broadcastCombatEvent);
+  registerCultivationHandlers(socket, getPlayerId);
+  registerDiplomacyHandlers(socket, getPlayerId);
 
   socket.on('player:create', async (data: { name: string }) => {
     try {
@@ -887,6 +904,36 @@ function startGameLoop(): void {
     }
     prevNpcIds = currentIds;
   }, 500);
+
+  // Player state:sync — authoritative player stats + nearby monsters
+  const combatEventsBuffer: CombatEvent[] = [];
+  setInterval(() => {
+    for (const [sockId, ps] of playerSockets) {
+      const player = PlayerService.getInstance().getPlayer(ps.playerId);
+      if (!player) continue;
+
+      const realmConfig = CultivationService.getInstance().getRealmConfig(player.realm);
+      const syncState: StateSync = {
+        player: {
+          health: player.health,
+          maxHealth: player.maxHealth,
+          spirit: player.spirit,
+          maxSpirit: player.maxSpirit,
+          attack: player.attack,
+          defense: player.defense,
+          spiritStones: player.spiritStones,
+          realm: player.realm,
+          cultivation: player.cultivation,
+          maxCultivation: realmConfig.requiredCultivation,
+          position: player.position,
+          state: player.state
+        },
+        nearbyMonsters: [], // TODO: spawn monsters server-side
+        combatEvents: combatEventsBuffer.splice(0)
+      };
+      ps.socket.emit('state:sync', syncState);
+    }
+  }, 1000);
 }
 
 httpServer.listen(PORT, () => {

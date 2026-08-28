@@ -37,3 +37,5 @@ export {
   InputCommand,
   InteractionAction
 } from './types/player';
+
+export type * from './types/socket-events';
