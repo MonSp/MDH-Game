@@ -123,3 +123,56 @@ export function initSocketListeners() {
     for (const cb of combatEventCallbacks) cb(event);
   });
 }
+
+// ─── Crafting ───────────────────────────────────────────────────
+
+export interface CraftServerRequest {
+  recipeId: string;
+  buffMultiplier?: number;
+}
+
+export async function serverCraft(req: CraftServerRequest): Promise<SocketResult<any>> {
+  return emitWithAck<any>('economy:craft', req);
+}
+
+export async function serverGetRecipes(): Promise<SocketResult<any[]>> {
+  return emitWithAck<any[]>('economy:recipes');
+}
+
+// ─── Resource Gathering ─────────────────────────────────────────
+
+export async function serverGather(resourceType: string): Promise<SocketResult<any>> {
+  return emitWithAck<any>('resource:gather', { resourceType });
+}
+
+// ─── Techniques ─────────────────────────────────────────────────
+
+export async function serverTechniqueStatus(): Promise<SocketResult<any>> {
+  return emitWithAck<any>('technique:status');
+}
+
+export async function serverTechniqueLearn(techniqueId: string): Promise<SocketResult<any>> {
+  return emitWithAck<any>('technique:learn', { techniqueId });
+}
+
+export async function serverTechniqueLevelUp(techniqueId: string): Promise<SocketResult<any>> {
+  return emitWithAck<any>('technique:levelup', { techniqueId });
+}
+
+// ─── Save/Load ──────────────────────────────────────────────────
+
+export async function serverSaveList(): Promise<SocketResult<any[]>> {
+  return emitWithAck<any[]>('save:list');
+}
+
+export async function serverSave(slot: number, gameState: unknown, meta: { playerName: string; playerRealm: string; heavenLevel: number }): Promise<SocketResult<any>> {
+  return emitWithAck<any>('save:save', { slot, gameState, ...meta });
+}
+
+export async function serverLoad(slot: number): Promise<SocketResult<any>> {
+  return emitWithAck<any>('save:load', { slot });
+}
+
+export async function serverDeleteSave(slot: number): Promise<SocketResult<any>> {
+  return emitWithAck<any>('save:delete', { slot });
+}

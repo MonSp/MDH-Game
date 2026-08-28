@@ -26,6 +26,10 @@ import { registerEconomyHandlers } from './handlers/economy';
 import { registerCombatHandlers } from './handlers/combat';
 import { registerCultivationHandlers } from './handlers/cultivation';
 import { registerDiplomacyHandlers } from './handlers/diplomacy';
+import { registerCraftingHandlers } from './handlers/crafting';
+import { registerSaveLoadHandlers } from './handlers/saveLoad';
+import { registerTechniqueHandlers } from './handlers/techniques';
+import { registerResourceHandlers } from './handlers/resources';
 
 import { PlayerState, Country, CultivationRealm, GAME_CONFIG, NPCEvent, EventBus } from '../shared';
 import type { CombatEvent, StateSync, PlayerSyncState } from '../shared/types/socket-events';
@@ -147,6 +151,50 @@ io.on('connection', (socket) => {
   registerCombatHandlers(socket, getPlayerId, broadcastCombatEvent);
   registerCultivationHandlers(socket, getPlayerId);
   registerDiplomacyHandlers(socket, getPlayerId);
+  registerSaveLoadHandlers(socket, getPlayerId);
+  registerResourceHandlers(socket, getPlayerId,
+    (pid, amount) => { PlayerService.getInstance().getPlayer(pid)?.addSpiritStones(amount); },
+    (pid, amount) => { PlayerService.getInstance().getPlayer(pid)?.addCultivation(amount); },
+  );
+
+  // Crafting: inventory adapter using Player.spiritStones + ItemService
+  const itemSvc = ItemService.getInstance();
+  registerCraftingHandlers(socket, getPlayerId,
+    (pid) => {
+      // Build inventory map from ItemService + Player spirit stones
+      const player = PlayerService.getInstance().getPlayer(pid);
+      const items = itemSvc.getPlayerItems(pid);
+      const inv: Record<string, number> = { '灵石': player?.spiritStones ?? 0 };
+      for (const { item, count } of items) inv[item.name] = count;
+      return inv;
+    },
+    (pid, inv) => {
+      // Persist back: update spirit stones + items
+      const player = PlayerService.getInstance().getPlayer(pid);
+      if (player && inv['灵石'] !== undefined) player.spiritStones = inv['灵石'];
+      // Items are managed via ItemService, skip for now
+    },
+  );
+
+  // Techniques: in-memory per-player store
+  const playerTechniques = new Map<string, Array<{ techniqueId: string; level: number }>>();
+  registerTechniqueHandlers(socket, getPlayerId,
+    (pid) => {
+      const player = PlayerService.getInstance().getPlayer(pid);
+      if (!player) return null;
+      return {
+        realm: ['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'][player.realm - 1] || '凡人',
+        spiritStones: player.spiritStones,
+        learnedTechniques: playerTechniques.get(pid) || [],
+      };
+    },
+    (pid, updates) => {
+      const player = PlayerService.getInstance().getPlayer(pid);
+      if (!player) return;
+      if (updates.spiritStones !== undefined) player.spiritStones = updates.spiritStones;
+      if (updates.learnedTechniques !== undefined) playerTechniques.set(pid, updates.learnedTechniques);
+    },
+  );
 
   socket.on('player:create', async (data: { name: string }) => {
     try {

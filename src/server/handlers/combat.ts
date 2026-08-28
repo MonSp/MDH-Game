@@ -1,7 +1,7 @@
 import type { Socket } from 'socket.io';
 import { PlayerService } from '../services';
 import { NPCWorldService } from '../services/NPCWorldService';
-import { calculateDamage } from '../../store/gameConstants';
+import { calculateDamage, MONSTER_MATERIAL_DROPS, rollDrops } from '../game/GameEngine';
 import type {
   CombatAttackRequest, CombatSkillRequest,
   SocketResult, CombatAttackResponse, CombatSkillResponse, CombatEvent
@@ -32,9 +32,14 @@ export function registerCombatHandlers(
       npc.hp = Math.max(0, npc.hp - damage);
       const killed = npc.hp <= 0;
 
-      const loot = killed ? [{ itemId: 'spirit_stone', name: '灵石', count: Math.floor(Math.random() * 20 + 5) }] : undefined;
-      if (loot) {
-        player.addSpiritStones(loot[0].count);
+      const loot: Array<{ itemId: string; name: string; count: number }> = [];
+      if (killed) {
+        const stoneDrop = Math.floor(Math.random() * 20 + 5);
+        loot.push({ itemId: 'spirit_stone', name: '灵石', count: stoneDrop });
+        player.addSpiritStones(stoneDrop);
+        // Material drops from NPC kills
+        const matDrops = rollDrops(MONSTER_MATERIAL_DROPS);
+        loot.push(...matDrops);
       }
 
       const expGained = killed ? Math.floor(Math.random() * 10 + 5) : Math.floor(damage * 0.1);
