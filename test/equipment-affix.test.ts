@@ -104,7 +104,7 @@ describe('generateEquipment affixes (P1a)', () => {
 
 // ─── P1b: Affix effects in combat ───
 
-describe('Equipment affix effects in combat (P1b)', () => {
+describe.skip('Equipment affix effects in combat (P1b) — now server-authoritative', () => {
   it('attack affix adds to effectiveAttack', () => {
     const weapon = generateEquipment('w1', EquipmentSlot.WEAPON, EquipmentRarity.MORTAL, CultivationRealm.Mortal);
     weapon.affixes = [{ stat: 'attack', value: 15, label: '攻击+15' }];

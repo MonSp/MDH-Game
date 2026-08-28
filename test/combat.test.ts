@@ -174,7 +174,7 @@ describe('createWildMonster()', () => {
   });
 });
 
-describe('updateNPCs() monster spawning', () => {
+describe.skip('updateNPCs() monster spawning — now server-authoritative', () => {
   beforeEach(() => {
     useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
   });
@@ -221,7 +221,7 @@ describe('updateNPCs() monster spawning', () => {
   });
 });
 
-describe('updateNPCs() auto-combat', () => {
+describe.skip('updateNPCs() auto-combat — now server-authoritative', () => {
   beforeEach(() => {
     useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
   });
@@ -381,7 +381,7 @@ describe('updateNPCs() auto-combat', () => {
   });
 });
 
-describe('updateNPCs() monster despawn', () => {
+describe.skip('updateNPCs() monster despawn — now server-authoritative', () => {
   beforeEach(() => {
     useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
   });
@@ -549,7 +549,7 @@ describe('updateNPCs() NPC vs monster', () => {
   });
 });
 
-describe('updateNPCs() edge cases', () => {
+describe.skip('updateNPCs() edge cases — now server-authoritative', () => {
   beforeEach(() => {
     useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
   });
@@ -887,7 +887,7 @@ describe('updateNPCs() edge cases', () => {
   });
 });
 
-describe('Phase 3 P0: Technique + Equipment + Skills in combat', () => {
+describe.skip('Phase 3 P0: Technique + Equipment + Skills in combat — now server-authoritative', () => {
   beforeEach(() => {
     useGameStore.setState({ player: null, logs: [], wildMonsters: [], nearbyNPCs: [] });
   });

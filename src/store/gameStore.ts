@@ -121,6 +121,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       onStateSync((syncState) => {
         const s = get();
         if (!s.player) return;
+
+        // Sync player stats from server (authoritative)
+        const realmName = (['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'][syncState.player.realm - 1] || s.player.realm) as Realm;
         set({
           player: {
             ...s.player,
@@ -132,11 +135,40 @@ export const useGameStore = create<GameState>((set, get) => ({
               maxMp: syncState.player.maxSpirit,
               attack: syncState.player.attack,
               defense: syncState.player.defense,
+              exp: syncState.player.cultivation,
+              maxExp: syncState.player.maxCultivation,
             },
-            realm: (['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'][syncState.player.realm - 1] || s.player.realm) as Realm,
+            realm: realmName,
             position: syncState.player.position,
+            inventory: { ...s.player.inventory, '灵石': syncState.player.spiritStones },
           }
         });
+
+        // Sync server monsters → wildMonsters (authoritative)
+        if (syncState.nearbyMonsters.length > 0) {
+          const serverMonsters: typeof s.wildMonsters = syncState.nearbyMonsters.map(m => ({
+            id: m.id,
+            name: m.name as any,
+            type: m.type as any,
+            realm: realmName,
+            hp: m.hp,
+            maxHp: m.maxHp,
+            attack: m.attack,
+            defense: m.defense,
+            expReward: 0,
+            spiritStoneDrop: 0,
+            position: m.position,
+            isAlive: m.hp > 0,
+          }));
+          set({ wildMonsters: serverMonsters });
+        }
+
+        // Show server combat events in log
+        for (const evt of syncState.combatEvents) {
+          if (evt.type === 'death') {
+            s.addLog({ type: 'combat', message: `[战斗] 目标被击杀！` });
+          }
+        }
       });
       const world = await new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => {
@@ -1589,40 +1621,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.player) return;
 
-    // --- Monster spawning ---
+    // Monsters are now server-authoritative via state:sync → wildMonsters
     let monsters = state.wildMonsters.filter(m => m.isAlive);
     let siegeWarStats = { ...state.warStats };
-    if (monsters.length < MAX_MONSTERS && Math.random() < SPAWN_CHANCE) {
-      const newMonster = createWildMonster(state.player.position, state.player.realm);
-      if (newMonster) monsters.push(newMonster);
-    }
-
-    // --- Monster despawn (farther than 20 tiles from player) ---
-    monsters = monsters.filter(m => {
-      const dx = Math.abs(m.position.x - state.player!.position.x);
-      const dy = Math.abs(m.position.y - state.player!.position.y);
-      return dx <= DESPAWN_DIST && dy <= DESPAWN_DIST;
-    });
-
-    // --- Monster movement: seek nearest entity ---
-    monsters = monsters.map(m => {
-      // Find nearest target (player or NPC)
-      let targetPos = state.player!.position;
-      let minDist = Math.abs(m.position.x - targetPos.x) + Math.abs(m.position.y - targetPos.y);
-
-      for (const npc of state.nearbyNPCs) {
-        const d = Math.abs(m.position.x - npc.position.x) + Math.abs(m.position.y - npc.position.y);
-        if (d < minDist) {
-          minDist = d;
-          targetPos = npc.position;
-        }
-      }
-
-      // Move 1 tile toward target
-      const dx = Math.sign(targetPos.x - m.position.x);
-      const dy = Math.sign(targetPos.y - m.position.y);
-      return { ...m, position: { x: m.position.x + dx, y: m.position.y + dy } };
-    });
 
     // Track which monsters already fought this tick
     const foughtThisTick = new Set<string>();
@@ -1871,131 +1872,17 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
-    // Player vs Monster
+    // Player vs Monster — now server-authoritative via combat:attack socket
+    // Client only handles skill cooldown tick and player state copy
     let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory }, skillCooldowns: { ...(state.player.skillCooldowns || {}) } } : null;
     if (updatedPlayer) {
-      // --- Phase 3: 有效攻击/防御（功法 + 装备）---
-      const techniqueEffects = get().getTechniqueEffects();
-      let effectiveAttack = updatedPlayer.stats.attack;
-      let effectiveDefense = updatedPlayer.stats.defense || 0;
-
-      // 叠加被动功法加成
-      for (const eff of techniqueEffects) {
-        if (eff.stat === 'attack') effectiveAttack += eff.value;
-        if (eff.stat === 'defense') effectiveDefense += eff.value;
-      }
-
-      // 叠加装备 baseStats + affixes
-      const equipSlots = updatedPlayer.equipmentSlots || {};
-      for (const eq of Object.values(equipSlots)) {
-        if (!eq) continue;
-        if (eq.baseStats.attack) effectiveAttack += eq.baseStats.attack;
-        if (eq.baseStats.defense) effectiveDefense += eq.baseStats.defense;
-        for (const affix of eq.affixes || []) {
-          if (affix.stat === 'attack') effectiveAttack += affix.value;
-          if (affix.stat === 'defense') effectiveDefense += affix.value;
-        }
-      }
-
-      // --- P0c: 自动释放最优主动技能 ---
-      // 每 tick 递减冷却
+      // Tick skill cooldowns (client-side UI concern)
       const newCooldowns = { ...(updatedPlayer.skillCooldowns || {}) };
       for (const [techId, remaining] of Object.entries(newCooldowns)) {
         if (remaining <= 1) delete newCooldowns[techId];
         else newCooldowns[techId] = remaining - 1;
       }
       updatedPlayer.skillCooldowns = newCooldowns;
-
-      // 找最佳可用技能（伤害倍率最高、冷却=0、MP够）
-      let skillMultiplier = 1.0;
-      let usedSkillName: string | null = null;
-      const availableSkills: { lt: LearnedTechnique; tech: any }[] = (updatedPlayer.learnedTechniques || [])
-        .map(lt => ({ lt, tech: TECHNIQUES_DATA.find(t => t.id === lt.techniqueId) }))
-        .filter((x): x is { lt: LearnedTechnique; tech: any } => !!x.tech && x.tech.type === 'active' && !!x.tech.skill)
-        .filter(({ lt }) => (newCooldowns[lt.techniqueId] || 0) <= 0)
-        .filter(({ tech }) => (tech.skill.cost.mp || 0) <= updatedPlayer.stats.mp);
-
-      if (availableSkills.length > 0) {
-        const best = (availableSkills as any[]).reduce((a: any, b: any) =>
-          a.tech.skill.damageMultiplier > b.tech.skill.damageMultiplier ? a : b);
-        skillMultiplier = best.tech.skill.damageMultiplier;
-        usedSkillName = best.tech.skill.name;
-        updatedPlayer.stats.mp = Math.max(0, updatedPlayer.stats.mp - (best.tech.skill.cost.mp || 0));
-        newCooldowns[best.lt.techniqueId] = best.tech.skill.cooldown;
-        updatedPlayer.skillCooldowns = newCooldowns;
-      }
-
-      for (const monster of monsters) {
-        if (!monster.isAlive || foughtThisTick.has(monster.id) || playerMonsterHit) continue;
-
-        const dx = Math.abs(monster.position.x - updatedPlayer.position.x);
-        const dy = Math.abs(monster.position.y - updatedPlayer.position.y);
-        if (dx > 1 || dy > 1) continue;
-
-        foughtThisTick.add(monster.id);
-        playerMonsterHit = true;
-
-        const basePlayerDmg = calculateDamage(effectiveAttack, monster.defense);
-        const playerDmg = usedSkillName ? Math.floor(basePlayerDmg * skillMultiplier) : basePlayerDmg;
-        const monsterDmg = calculateDamage(monster.attack, effectiveDefense);
-
-        // --- P1b: 装备词条 — 暴击 + 吸血 ---
-        let critBonus = 1.0;
-        let lifestealPct = 0;
-        for (const eq of Object.values(equipSlots)) {
-          if (!eq) continue;
-          for (const affix of eq.affixes || []) {
-            if (affix.stat === 'critRate' && Math.random() * 100 < affix.value) critBonus = 1.5;
-            if (affix.stat === 'critDamage' && critBonus > 1.0) critBonus = 1.0 + affix.value / 100;
-            if (affix.stat === 'lifesteal') lifestealPct += affix.value / 100;
-          }
-        }
-        const finalPlayerDmg = Math.floor(playerDmg * critBonus);
-        const healFromLifesteal = Math.floor(finalPlayerDmg * lifestealPct);
-
-        monster.hp -= finalPlayerDmg;
-        updatedPlayer.stats.hp = Math.min(updatedPlayer.stats.maxHp, updatedPlayer.stats.hp - monsterDmg + healFromLifesteal);
-
-        const critTag = critBonus > 1.0 ? '【暴击】' : '';
-        if (usedSkillName) {
-          state.addLog({ type: 'combat', message: `${critTag}你施展【${usedSkillName}】攻击 ${monster.name}，造成 ${finalPlayerDmg} 点伤害！` });
-        } else {
-          state.addLog({ type: 'combat', message: `${critTag}你向 ${monster.name} 发起攻击，造成 ${finalPlayerDmg} 点伤害！` });
-        }
-        state.addLog({ type: 'combat', message: `${monster.name} 向你反击，造成 ${monsterDmg} 点伤害！` });
-
-        if (monster.hp <= 0) {
-          monster.isAlive = false;
-          // --- P1b: 装备 expRate 词条加成 ---
-          let expRateBonus = 0;
-          for (const eq of Object.values(equipSlots)) {
-            if (!eq) continue;
-            for (const affix of eq.affixes || []) {
-              if (affix.stat === 'expRate') expRateBonus += affix.value;
-            }
-          }
-          const expGain = Math.floor(monster.expReward * (1 + expRateBonus / 100));
-          const stonesGain = MONSTER_TYPES_DATA[monster.name].spiritStoneDrop;
-          updatedPlayer.stats.exp = Math.min(updatedPlayer.stats.exp + expGain, updatedPlayer.stats.maxExp);
-          const newInv = { ...updatedPlayer.inventory };
-          newInv['灵石'] = (newInv['灵石'] || 0) + stonesGain;
-          updatedPlayer.inventory = newInv;
-          updatedPlayer.hiddenStats = {
-            ...updatedPlayer.hiddenStats,
-            killCount: updatedPlayer.hiddenStats.killCount + 1,
-          };
-          state.addLog({ type: 'combat', message: `你击败了 ${monster.name}！获得 ${expGain} 点修为和 ${stonesGain} 灵石。` });
-          get().addReputation(Math.max(2, Math.floor(monster.expReward / 6)), 'monster_kill');
-        }
-
-        if (updatedPlayer.stats.hp <= 0) {
-          const capital = COUNTRIES_DATA[updatedPlayer.country]?.capital || { x: 50, y: 50 };
-          updatedPlayer.stats.hp = 1;
-          updatedPlayer.position = { ...capital };
-          state.addLog({ type: 'combat', message: `你不敌 ${monster.name}，重伤逃遁至${updatedPlayer.country}国都城！` });
-          siegeWarStats.battlesLost++;
-        }
-      }
     }
 
     // Phase 3: Squad member combat with monsters
@@ -2120,9 +2007,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         };
       });
     }
-
-    // Remove dead monsters
-    const aliveMonsters = monsters.filter(m => m.isAlive);
 
     // Squad desertion check: low loyalty + low morale
     const factionMorale = state.playerFactionId
@@ -2592,7 +2476,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       nearbyNPCs: npcs,
       clans: updatedClans,
-      wildMonsters: aliveMonsters,
+      // wildMonsters: now server-authoritative via state:sync
       player: updatedPlayer || state.player,
       squadMembers: updatedSquadMembers,
       resourcePoints: resourcePointsCopy,
