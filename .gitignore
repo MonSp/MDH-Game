@@ -43,3 +43,6 @@ public/atlas/*
 *.sln
 *.sw?
 .gstack/
+.codegraph/
+.trae/
+相机方案.md
