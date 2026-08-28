@@ -11,7 +11,7 @@ export class CountryService {
   }
 
   getRandomCountry(): Country {
-    const countries = Object.keys(Country) as Country[];
+    const countries = Object.values(Country) as Country[];
     return countries[Math.floor(Math.random() * countries.length)];
   }
 
