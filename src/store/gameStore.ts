@@ -118,6 +118,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       // Initialize server-authoritative state sync
       initSocketListeners();
+
+      // Register player with server so economy/combat/cultivation handlers work
+      socket.emit('player:create', { name: playerName || '无名修士' });
+
       onStateSync((syncState) => {
         const s = get();
         if (!s.player) return;
