@@ -177,5 +177,5 @@ Core systems: Cultivation, Alchemy & Forging, Combat, Faction, Diplomacy & War, 
 - **155 commits** on `main`, all authored by `MonSp <qgh132555@qq.com>`
 - **26 feature branches** (local + remote)
 - **Date range**: 2026-04-20 to present
-- **Remote**: `origin` at `/home/test/MyGame.git` (local bare repo)
+- **Remote**: `origin` at `/home/test/MyGame.git` (local bare repo), `github` at `https://github.com/MonSp/MDH-Game.git`
 - **No CI/CD**: No `.github/` directory or CI configuration files
