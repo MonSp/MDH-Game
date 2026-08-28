@@ -3,6 +3,7 @@ import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from 
 import { isPositionPassable, getMovementCost } from '../utils/terrain';
 import { GAME_CONFIG } from '../shared/constants';
 import { connectSocketAsync } from '../shared/socket';
+import { initSocketListeners, onStateSync, serverCultivate as _serverCultivate, serverAttack as _serverAttack } from './serverAdapter';
 
 // Import everything needed for the store body's local scope
 import {
@@ -105,6 +106,29 @@ export const useGameStore = create<GameState>((set, get) => ({
       console.log('[WorldGen] Connecting to server...');
       const socket = await connectSocketAsync();
       console.log('[WorldGen] Socket connected, requesting world data...');
+
+      // Initialize server-authoritative state sync
+      initSocketListeners();
+      onStateSync((syncState) => {
+        const s = get();
+        if (!s.player) return;
+        set({
+          player: {
+            ...s.player,
+            stats: {
+              ...s.player.stats,
+              hp: syncState.player.health,
+              maxHp: syncState.player.maxHealth,
+              mp: syncState.player.spirit,
+              maxMp: syncState.player.maxSpirit,
+              attack: syncState.player.attack,
+              defense: syncState.player.defense,
+            },
+            realm: (['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'][syncState.player.realm - 1] || s.player.realm) as Realm,
+            position: syncState.player.position,
+          }
+        });
+      });
       const world = await new Promise<any>((resolve, reject) => {
         const timeout = setTimeout(() => {
           console.log('[WorldGen] Request timeout (2s)');
@@ -301,6 +325,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     if (action === '攻击') {
       state.addLog({ type: 'combat', message: `你向 ${npc.name}(${npc.role}) 发起了攻击！` });
+
+      // Notify server of attack (server-authoritative path)
+      _serverAttack(npcId, 'npc').catch(() => {});
       
       // 秦国战力加成或简单对比
       const playerAttack = state.player.country === '秦' ? state.player.stats.attack * 1.1 : state.player.stats.attack;
@@ -652,7 +679,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.player) return;
     const { player } = state;
-    
+
+    // Notify server of cultivation action (server-authoritative path)
+    _serverCultivate().catch(() => {});
+
     const spiritMultiplier = HEAVEN_INFO[player.heavenLevel].spiritMultiplier;
     let expGain = Math.floor(10 * spiritMultiplier);
 
