@@ -71,17 +71,75 @@ static const char* roleToString(NPCRole r) {
 
 static const char* activityToString(NPCActivity a) {
     switch (a) {
-        case NPCActivity::Patrol: return "patrol";
-        case NPCActivity::Retreat: return "retreat";
-        case NPCActivity::Logistics: return "logistics";
-        case NPCActivity::Compete: return "compete";
-        case NPCActivity::Work: return "work";
-        case NPCActivity::Rest: return "rest";
-        case NPCActivity::Trade: return "trade";
-        case NPCActivity::Flee: return "flee";
-        case NPCActivity::Chase: return "chase";
-        case NPCActivity::Dead: return "dead";
-        default: return "rest";
+        // Combat / safety
+        case NPCActivity::Flee:          return "retreat";
+        case NPCActivity::Defend:        return "retreat";
+        case NPCActivity::DefendPosition: return "retreat";
+        case NPCActivity::Attack:        return "patrol";
+        case NPCActivity::Hunt:          return "patrol";
+        case NPCActivity::Duel:          return "compete";
+        case NPCActivity::Ambush:        return "patrol";
+        case NPCActivity::Assassinate:   return "patrol";
+        case NPCActivity::Patrol:        return "patrol";
+        case NPCActivity::Escort:        return "patrol";
+        case NPCActivity::Scout:         return "patrol";
+        // Production / logistics
+        case NPCActivity::Mine:          return "work";
+        case NPCActivity::Farm:          return "work";
+        case NPCActivity::Fish:          return "work";
+        case NPCActivity::Lumber:        return "work";
+        case NPCActivity::Gather:        return "work";
+        case NPCActivity::Build:         return "work";
+        case NPCActivity::Craft:         return "work";
+        case NPCActivity::Refine:        return "work";
+        case NPCActivity::Cook:          return "work";
+        case NPCActivity::Tailor:        return "work";
+        case NPCActivity::Construct:     return "work";
+        case NPCActivity::Repair:        return "work";
+        // Trade
+        case NPCActivity::Trade:         return "trade";
+        case NPCActivity::Buy:           return "trade";
+        case NPCActivity::Sell:          return "trade";
+        case NPCActivity::Bargain:       return "trade";
+        // Cultivation
+        case NPCActivity::Cultivate:     return "retreat";
+        case NPCActivity::Breakthrough:  return "retreat";
+        case NPCActivity::Tribulation:   return "retreat";
+        case NPCActivity::Meditate:      return "retreat";
+        case NPCActivity::Alchemy:       return "retreat";
+        case NPCActivity::SeekFortune:   return "compete";
+        // Social
+        case NPCActivity::Chat:          return "rest";
+        case NPCActivity::VisitFriend:   return "rest";
+        case NPCActivity::Date:          return "rest";
+        case NPCActivity::FamilyGathering: return "rest";
+        case NPCActivity::MentorTeach:   return "logistics";
+        case NPCActivity::DiscipleAsk:   return "rest";
+        case NPCActivity::Gossip:        return "rest";
+        case NPCActivity::SocialHelp:    return "logistics";
+        case NPCActivity::CoordinateSquad: return "logistics";
+        case NPCActivity::ReportTask:    return "logistics";
+        case NPCActivity::RefuseCommand: return "rest";
+        // Economy
+        case NPCActivity::SetTaxRate:        return "logistics";
+        case NPCActivity::TradeEmbargo:      return "logistics";
+        case NPCActivity::StockpileMaterial:  return "logistics";
+        case NPCActivity::PriceStabilize:    return "logistics";
+        case NPCActivity::EconomicMobilize:  return "logistics";
+        // Exploration
+        case NPCActivity::Explore:       return "compete";
+        case NPCActivity::TreasureHunt:  return "compete";
+        case NPCActivity::MapExplore:    return "patrol";
+        // Basic
+        case NPCActivity::Rest:          return "rest";
+        case NPCActivity::Eat:           return "rest";
+        case NPCActivity::Sleep:         return "rest";
+        case NPCActivity::Walk:          return "patrol";
+        case NPCActivity::AwaitOrders:   return "rest";
+        case NPCActivity::Idle:          return "rest";
+        case NPCActivity::Dead:          return "dead";
+        case NPCActivity::Incapacitated: return "dead";
+        default:                         return "rest";
     }
 }
 
@@ -176,12 +234,16 @@ static napi_value GetAllNPCStates(napi_env env, napi_callback_info info) {
         if (behavior) {
             setStr(env, obj, "activity", activityToString(behavior->currentActivity));
 
+#ifdef NPC_DECISION_LOG_ENABLED
             const char* snippet = behavior->getReadableDecisionSummary();
             if (snippet && snippet[0] != '\0') {
                 setStr(env, obj, "lastDecisionSnippet", std::string(snippet));
             } else {
                 setStr(env, obj, "lastDecisionSnippet", std::string(""));
             }
+#else
+            setStr(env, obj, "lastDecisionSnippet", std::string(""));
+#endif
 
             napi_value refWeights;
             napi_create_array_with_length(env, behavior->reflection.trackedCount, &refWeights);
@@ -300,12 +362,16 @@ static napi_value GetNearbyNPCStates(napi_env env, napi_callback_info info) {
 
         if (behavior) {
             setStr(env, obj, "activity", activityToString(behavior->currentActivity));
+#ifdef NPC_DECISION_LOG_ENABLED
             const char* snippet = behavior->getReadableDecisionSummary();
             if (snippet && snippet[0] != '\0') {
                 setStr(env, obj, "lastDecisionSnippet", std::string(snippet));
             } else {
                 setStr(env, obj, "lastDecisionSnippet", std::string(""));
             }
+#else
+            setStr(env, obj, "lastDecisionSnippet", std::string(""));
+#endif
         }
 
         if (personality) {
