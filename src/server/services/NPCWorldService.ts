@@ -492,6 +492,7 @@ export class NPCWorldService extends EventEmitter {
 
   private async tick(): Promise<void> {
     const now = Date.now();
+    this.memory.advanceCacheFrame();
     this.resetRumorCounter();
 
     // 1) Advance queues — move to next step when current expires

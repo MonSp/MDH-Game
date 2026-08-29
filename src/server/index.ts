@@ -805,44 +805,72 @@ function startGameLoop(): void {
   }
 
   // NPC state sync to connected clients — driven by C++ ECS engine
-  // Falls back to NPCWorldService if C++ addon is unavailable
-  let prevNpcIds: Set<string> = new Set();
+  // Per-player viewport culling when ECS is available, broadcast fallback otherwise
+  let prevNpcIds: Map<string, Set<string>> = new Map();
   setInterval(() => {
     const ecsEngine = ECSEngineService.getInstance();
-    let npcStates: Array<{
-      id: string; name: string; activity: string; emotion: string;
-      x: number; y: number; hp: number; maxHp: number; power: number;
-      clanId: string; role: string; realm: string;
-      mp: number; maxMp: number;
-      ambition: number; caution: number; loyalty: number; greed: number;
-      spiritStone: number;
-    }> = [];
 
     if (ecsEngine.isAvailable) {
-      const ecsNpcs = ecsEngine.getAllNPCStates();
-      npcStates = ecsNpcs.map(n => ({
-        id: n.id,
-        name: n.name,
-        activity: n.activity,
-        emotion: '平静',
-        x: n.x,
-        y: n.y,
-        hp: n.hp,
-        maxHp: n.maxHp,
-        power: n.power,
-        clanId: n.clanId,
-        role: n.role,
-        realm: n.realm,
-        mp: n.mp,
-        maxMp: n.maxMp,
-        ambition: n.ambition,
-        caution: n.caution,
-        loyalty: n.loyalty,
-        greed: n.greed,
-        spiritStone: n.spiritStones,
-      }));
+      const players = PlayerService.getInstance().getOnlinePlayers();
+      if (players.length > 0) {
+        const socketByPlayerId = new Map<string, PlayerSocket>();
+        for (const ps of playerSockets.values()) {
+          socketByPlayerId.set(ps.playerId, ps);
+        }
+
+        for (const player of players) {
+          const px = player.position.x;
+          const py = player.position.y;
+          const nearbyNpcs = ecsEngine.getNearbyNPCStates(px, py, 800);
+          const playerNpcStates = nearbyNpcs.map(n => ({
+            id: n.id,
+            name: n.name,
+            activity: n.activity,
+            emotion: '平静',
+            x: n.x,
+            y: n.y,
+            hp: n.hp,
+            maxHp: n.maxHp,
+            power: n.power,
+            clanId: n.clanId,
+            role: n.role,
+            realm: n.realm,
+            mp: n.mp,
+            maxMp: n.maxMp,
+            ambition: n.ambition,
+            caution: n.caution,
+            loyalty: n.loyalty,
+            greed: n.greed,
+            spiritStone: n.spiritStones,
+          }));
+
+          const ps = socketByPlayerId.get(player.id);
+          if (ps) {
+            ps.socket.emit('npc:state-sync', { npcStates: playerNpcStates, tick: Date.now() });
+          }
+
+          const currentIds = new Set(playerNpcStates.map(n => n.id));
+          const prevIds = prevNpcIds.get(player.id) ?? new Set<string>();
+          const removedIds: string[] = [];
+          for (const id of prevIds) {
+            if (!currentIds.has(id)) removedIds.push(id);
+          }
+          if (removedIds.length > 0 && ps) {
+            ps.socket.emit('npc:removed', { ids: removedIds, tick: Date.now() });
+          }
+          prevNpcIds.set(player.id, currentIds);
+        }
+      }
     } else {
       const npcWorld = NPCWorldService.getInstance();
+      let npcStates: Array<{
+        id: string; name: string; activity: string; emotion: string;
+        x: number; y: number; hp: number; maxHp: number; power: number;
+        clanId: string; role: string; realm: string;
+        mp: number; maxMp: number;
+        ambition: number; caution: number; loyalty: number; greed: number;
+        spiritStone: number;
+      }> = [];
       for (const [id, state] of npcWorld.getAllNPCs()) {
         npcStates.push({
           id,
@@ -866,8 +894,19 @@ function startGameLoop(): void {
           spiritStone: state.npc.resources.spiritStones,
         });
       }
+      io.emit('npc:state-sync', { npcStates, tick: Date.now() });
+
+      const currentIds = new Set(npcStates.map(n => n.id));
+      const prevIds = prevNpcIds.get('__broadcast__') ?? new Set<string>();
+      const removedIds: string[] = [];
+      for (const id of prevIds) {
+        if (!currentIds.has(id)) removedIds.push(id);
+      }
+      if (removedIds.length > 0) {
+        io.emit('npc:removed', { ids: removedIds, tick: Date.now() });
+      }
+      prevNpcIds.set('__broadcast__', currentIds);
     }
-    io.emit('npc:state-sync', { npcStates, tick: Date.now() });
 
     // Phase 1.3: NPC interaction event sync (from NPCWorldService)
     const npcWorld = NPCWorldService.getInstance();
@@ -875,17 +914,6 @@ function startGameLoop(): void {
     if (interactions.length > 0) {
       io.emit('npc:interactions', { interactions, tick: Date.now() });
     }
-
-    // Deletion broadcast: detect NPCs removed since last sync
-    const currentIds = new Set(npcStates.map(n => n.id));
-    const removedIds: string[] = [];
-    for (const id of prevNpcIds) {
-      if (!currentIds.has(id)) removedIds.push(id);
-    }
-    if (removedIds.length > 0) {
-      io.emit('npc:removed', { ids: removedIds, tick: Date.now() });
-    }
-    prevNpcIds = currentIds;
   }, 500);
 }
 

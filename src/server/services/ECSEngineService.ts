@@ -71,6 +71,11 @@ export class ECSEngineService {
     return this.addon.getAllNPCStates() as ECSNPCState[];
   }
 
+  getNearbyNPCStates(centerX: number, centerY: number, radius: number = 500): ECSNPCState[] {
+    if (!this.addon || !this.addon.getNearbyNPCStates) return [];
+    return this.addon.getNearbyNPCStates(centerX, centerY, radius) as ECSNPCState[];
+  }
+
   getStats(): ECSStats | null {
     if (!this.addon) return null;
     return this.addon.getStats() as ECSStats;

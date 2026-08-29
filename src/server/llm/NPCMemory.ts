@@ -7,6 +7,7 @@ import {
   wasmGetCommandMemory,
   wasmGetWitnessedEvents,
   wasmGetEventString,
+  type CommandMemoryEntryWasm,
 } from '../../ecs/ECSWasmLoader';
 
 interface RelationshipModifier {
@@ -196,7 +197,27 @@ export class NPCMemoryStore {
   readonly interactions: NPCInteractionRingBuffer = new NPCInteractionRingBuffer();
   readonly witnessedEvents: NPCWitnessedEvents = new NPCWitnessedEvents();
 
+  private cmdMemoryCache: Map<number, { data: CommandMemoryEntryWasm[]; frame: number }> = new Map();
+  private cacheFrame = 0;
+
   constructor() {}
+
+  advanceCacheFrame(): void {
+    this.cacheFrame++;
+    if (this.cmdMemoryCache.size > 100) {
+      this.cmdMemoryCache.clear();
+    }
+  }
+
+  private getCachedCommandMemory(slot: number, maxEntries: number): CommandMemoryEntryWasm[] {
+    const cached = this.cmdMemoryCache.get(slot);
+    if (cached && this.cacheFrame - cached.frame < 10) {
+      return cached.data;
+    }
+    const data = wasmGetCommandMemory(slot, maxEntries);
+    this.cmdMemoryCache.set(slot, { data, frame: this.cacheFrame });
+    return data;
+  }
 
   registerSlot(npcId: string, slot: number): void {
     this.slotMap.set(npcId, slot);
@@ -223,7 +244,7 @@ export class NPCMemoryStore {
     const slot = this.resolveSlot(npcId);
     const issuerSlot = this.resolveSlot(issuerId);
     if (slot < 0 || issuerSlot < 0) return 0;
-    const cmds = wasmGetCommandMemory(slot, 30);
+    const cmds = this.getCachedCommandMemory(slot, 30);
     let consecutive = 0;
     for (const c of cmds) {
       if (c.issuerSlot !== issuerSlot) continue;
@@ -275,7 +296,7 @@ export class NPCMemoryStore {
         }
       }
 
-      const recentCmd = wasmGetCommandMemory(slot, 30);
+      const recentCmd = this.getCachedCommandMemory(slot, 30);
       if (recentCmd.length > 0) {
         parts.push('## 近期命令记录');
         for (const cmd of recentCmd) {
