@@ -1384,7 +1384,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!state.player) return;
 
     const clanId = state.player.clanId || state.player.country || 'default';
-    const wasmAvailable = typeof (window as any).__ecsWasmReady === 'function' ? (window as any).__ecsWasmReady() : false;
+    const wasmAvailable = typeof window !== 'undefined' && typeof (window as any).__ecsWasmReady === 'function' ? (window as any).__ecsWasmReady() : false;
 
     set(s => {
       const newMarket = { ...s.market };
@@ -1409,11 +1409,15 @@ export const useGameStore = create<GameState>((set, get) => ({
             newPrice = newMarket[key].currentPrice;
           }
         } else {
-          const { MarketService } = require('../server/services/MarketService');
-          const svc = MarketService.getInstance();
-          const commodityNames = ['Ore', 'Food', 'Equipment', 'Materials', 'Pills', 'SpiritStones'];
-          const commodity = commodityNames[commodityType] ?? 'SpiritStones';
-          newPrice = svc.getPrice(commodity);
+          try {
+            const { MarketService } = require('../server/services/MarketService');
+            const svc = MarketService.getInstance();
+            const commodityNames = ['Ore', 'Food', 'Equipment', 'Materials', 'Pills', 'SpiritStones'];
+            const commodity = commodityNames[commodityType] ?? 'SpiritStones';
+            newPrice = svc.getPrice(commodity);
+          } catch {
+            newPrice = newMarket[key].currentPrice;
+          }
         }
 
         const item = newMarket[key];
