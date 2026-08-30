@@ -861,6 +861,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         talent: { ...state.player.talent, ...updated }
       }
     });
+
+    try { getSocket().emit('squad:action', { action: 'modify-talent', params: { effect } }); } catch {}
   },
 
   addReputation: (amount, source) => {
@@ -877,6 +879,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (newTitle !== oldTitle) {
       state.addLog({ type: 'event', message: `【声望提升】你从【${oldTitle}】晋升为【${newTitle}】！` });
     }
+
+    try { getSocket().emit('squad:action', { action: 'reputation', params: { amount, source, newRep } }); } catch {}
   },
 
   getRecruitCost: (npc) => {
@@ -1186,6 +1190,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     const member = state.squadMembers.find(m => m.id === squadMemberId);
     state.addLog({ type: 'event', message: `【任命】${member?.name || '未知'} 被任命为【${position}】。` });
+
+    try { getSocket().emit('squad:action', { action: 'appoint-officer', params: { squadMemberId, position } }); } catch {}
   },
 
   collectTax: () => {
@@ -1220,6 +1226,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       } : c),
     }));
     state.addLog({ type: 'event', message: `【税收】收取了 ${total} 块灵石的势力税收（领地${territory}，税率×${taxMultiplier.toFixed(1)}）。` });
+
+    try { getSocket().emit('squad:action', { action: 'collect-tax', params: { factionId: state.playerFactionId, total, territory } }); } catch {}
+
     return total;
   },
 

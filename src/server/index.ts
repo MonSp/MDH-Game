@@ -679,6 +679,16 @@ function resolveCombat(data: {
     const { action, params } = data;
     console.log(`[Squad] ${ps.playerId}: ${action}`, JSON.stringify(params).slice(0, 100));
 
+    // Server-side state updates for specific actions
+    if (action === 'collect-tax' && params.factionId) {
+      const clan = serverClans.get(params.factionId);
+      if (clan) clan.treasury += params.total || 0;
+    }
+    if (action === 'reputation' && params.newRep !== undefined) {
+      // Track reputation changes server-side
+      console.log(`[Squad] ${ps.playerId}: reputation ${params.amount > 0 ? '+' : ''}${params.amount} -> ${params.newRep}`);
+    }
+
     // Broadcast to other clients for multiplayer sync
     socket.broadcast.emit('squad:broadcast', {
       action, params, playerId: ps.playerId, timestamp: Date.now(),
