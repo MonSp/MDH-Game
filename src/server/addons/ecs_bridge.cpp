@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <cstdio>
 #include "game/ecs/Registry.h"
 #include "game/ecs/systems/WorldUpdateLoop.h"
 #include "game/ecs/components/IdentityComponent.h"

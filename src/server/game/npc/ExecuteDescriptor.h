@@ -100,10 +100,12 @@ public:
 };
 
 static inline float exec_random01() {
-    return static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    static thread_local unsigned int seed = 98765;
+    return static_cast<float>(rand_r(&seed)) / static_cast<float>(RAND_MAX);
 }
 static inline int exec_randRange(int min, int max) {
-    return min + rand() % (max - min + 1);
+    static thread_local unsigned int seed = 56789;
+    return min + rand_r(&seed) % (max - min + 1);
 }
 #include <cmath>
 static inline float exec_fabs(float v) { return std::fabs(v); }

@@ -672,7 +672,7 @@ function initializeGame(): void {
   WorldGenService.getInstance().initialize();
 
   const ecsEngine = ECSEngineService.getInstance();
-  ecsEngine.initialize(8);
+  ecsEngine.initialize(0);
 
   if (ecsEngine.isAvailable) {
     const totalNPCs = 10000;

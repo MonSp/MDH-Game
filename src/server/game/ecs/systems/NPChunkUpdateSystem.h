@@ -69,6 +69,45 @@ public:
             registry.getArray_<PositionComponent>(),
             totalSlots);
 
+        // Fast path: no thread pool — run single-threaded
+        if (!threadPool_ || threadCount_ == 0) {
+            float deltaHours = deltaTime / (1000.0f * 60.0f * 60.0f);
+            for (auto& br : batchRequests_) br.clear();
+            for (size_t slot = 0; slot < totalSlots; ++slot) {
+                if (!activeSlots[slot]) continue;
+                auto* lifecycle = &registry.getArray_<LifecycleComponent>()[slot];
+                if (lifecycle->lifeState != NPCLifeState::Active) continue;
+                auto* social = &registry.getArray_<SocialComponent>()[slot];
+                social->tickDaily(deltaHours);
+                auto* bt = &registry.getArray_<BehaviorTreeComponent>()[slot];
+                auto* behavior = &registry.getArray_<BehaviorComponent>()[slot];
+                auto& bb = registry.getArray_<BlackboardCache>()[slot];
+                uint8_t curAct = static_cast<uint8_t>(behavior->currentActivity);
+                uint16_t interval = BehaviorTreeComponent::evalIntervalForActivity(curAct);
+                bt->updatePhase++;
+                bt->evalInterval = interval;
+                bool needEvaluate = ((bt->updatePhase % interval) == 0) || bb.isDirty();
+                if (social->isHungry()) bb.set(BlackboardCache::IsHungry);
+                if (social->isExhausted()) bb.set(BlackboardCache::IsExhausted);
+                if (needEvaluate) {
+                    uint8_t prev = static_cast<uint8_t>(behavior->currentActivity);
+                    BehaviorTreeSystem::getInstance().evaluate(registry.entityIds_[slot], currentTime);
+                    uint8_t newAct = static_cast<uint8_t>(behavior->currentActivity);
+                    if (newAct != prev) bb.invalidate();
+                    uint8_t bucket = newAct < MAX_ACTIVITY_BUCKETS ? newAct : MAX_ACTIVITY_BUCKETS - 1;
+                    batchRequests_[bucket].push_back(static_cast<uint32_t>(slot));
+                } else {
+                    BehaviorTreeSystem::getInstance().execute(registry.entityIds_[slot], currentTime, deltaTime);
+                }
+                MovementSystem::getInstance().update(registry.entityIds_[slot], deltaTime);
+            }
+            for (size_t a = 0; a < MAX_ACTIVITY_BUCKETS; ++a) {
+                if (batchRequests_[a].empty()) continue;
+                batchExecute(registry, a, batchRequests_[a], deltaTime);
+            }
+            return;
+        }
+
         size_t chunkSize = 1000;
         size_t totalChunks = (totalSlots + chunkSize - 1) / chunkSize;
 

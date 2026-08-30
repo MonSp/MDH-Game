@@ -250,11 +250,13 @@ private:
     using EvaluateFn = bool (*)(EvaluateContext&);
 
     static float random01() {
-        return static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        static thread_local unsigned int seed = 12345;
+        return static_cast<float>(rand_r(&seed)) / static_cast<float>(RAND_MAX);
     }
 
     static int randRange(int min, int max) {
-        return min + rand() % (max - min + 1);
+        static thread_local unsigned int seed = 54321;
+        return min + rand_r(&seed) % (max - min + 1);
     }
 
     static float applyReflection(BehaviorComponent* behavior, NPCActivity activity,
@@ -918,64 +920,8 @@ private:
     }
 
     // LLM planning (T1/T2 ACTIVE) is now handled via evaluateLLMPlan layer.
-    static bool evaluateEconomicCrisis(EvaluateContext& ctx) {
-        auto* identity = ctx.identity;
-        auto* behavior = ctx.behavior;
-        if (!identity || !behavior) return false;
-        if (identity->layer > 2) return false;
-
-        auto& mkt = MarketRegistry::getInstance();
-        const EconomicDigest& digest = mkt.getEconomicDigest(identity->clanId, ctx.currentTime);
-
-        if (digest.posture != EconomicPosture::Crisis) return false;
-
-        CommodityType targetType = CommodityType::Ore;
-        float maxRatio = 0.0f;
-        for (int i = 0; i < 3; i++) {
-            if (digest.alerts[i].priceRatio > maxRatio) {
-                maxRatio = digest.alerts[i].priceRatio;
-                targetType = digest.alerts[i].commodityType;
-            }
-        }
-
-        if (identity->layer <= 1) {
-            int64_t treasury = mkt.getTreasury(identity->clanId);
-            int64_t maxSpend = treasury / 3;
-            if (maxSpend > 300) maxSpend = 300;
-
-            if (maxSpend > 0) {
-                auto& pool = mkt.getOrCreatePool(identity->clanId);
-                float price = PriceEngine::getPrice(pool, targetType);
-                int64_t buyAmount = static_cast<int64_t>(maxSpend / (price * 1.2f));
-                if (buyAmount > 0) {
-                    mkt.spendTreasury(identity->clanId, static_cast<int64_t>(buyAmount * price * 1.2f));
-                    pool.addSupply(targetType, buyAmount);
-                }
-            }
-        }
-
-        NPCActivity mobilizeActivity = NPCActivity::Mine;
-        switch (targetType) {
-            case CommodityType::Ore:          mobilizeActivity = NPCActivity::Mine; break;
-            case CommodityType::Food:         mobilizeActivity = NPCActivity::Farm; break;
-            case CommodityType::Equipment:    mobilizeActivity = NPCActivity::Craft; break;
-            case CommodityType::Materials:    mobilizeActivity = NPCActivity::Lumber; break;
-            case CommodityType::Pills:        mobilizeActivity = NPCActivity::Alchemy; break;
-            case CommodityType::SpiritStones: mobilizeActivity = NPCActivity::Mine; break;
-            default: break;
-        }
-
-        auto& registry = ECS::Registry::getInstance();
-        const auto& clanMembers = mkt.getClanMembers(identity->clanId);
-        uint64_t expireFrame = ctx.currentTime + 300;
-
-        for (auto id : clanMembers) {
-            auto* otherBehavior = registry.getComponent<BehaviorComponent>(id);
-            if (otherBehavior) {
-                otherBehavior->reflection.setTemporaryBoost(mobilizeActivity, 0.5f, expireFrame);
-            }
-        }
-        return true;
+    static bool evaluateEconomicCrisis(EvaluateContext&) {
+        return false;
     }
 
     static constexpr EvaluateFn kEvaluateLayers[] = {

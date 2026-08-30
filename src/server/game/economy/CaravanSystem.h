@@ -5,6 +5,7 @@
 #include <string>
 #include <cmath>
 #include <unordered_map>
+#include <mutex>
 
 struct CaravanRoute {
     std::string fromClan;
@@ -25,6 +26,7 @@ public:
     }
 
     CaravanRoute findBestRoute(const std::string& myClanId, uint64_t currentFrame) {
+        std::lock_guard<std::mutex> lock(mutex_);
         CaravanRoute best;
         best.margin = -1.0f;
 
@@ -70,6 +72,7 @@ public:
     }
 
     bool executeRoute(const CaravanRoute& route, uint64_t currentFrame) {
+        std::lock_guard<std::mutex> lock(mutex_);
         if (route.margin < 0.2f) return false;
 
         int64_t quantity = 100;
@@ -98,5 +101,6 @@ public:
 
 private:
     CaravanSystem() {}
+    std::mutex mutex_;
     std::unordered_map<std::string, uint64_t> cooldowns_;
 };

@@ -10,6 +10,7 @@
 #include <set>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 
 struct CachedEconSignals {
     float ironOreDemand = 1.0f;
@@ -30,10 +31,12 @@ public:
     }
 
     CommodityPool& getOrCreatePool(const std::string& clanId) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         return pools_[clanId];
     }
 
     const CommodityPool* getPool(const std::string& clanId) const {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         auto it = pools_.find(clanId);
         return (it != pools_.end()) ? &it->second : nullptr;
     }
@@ -43,12 +46,13 @@ public:
         auto* identity = registry.getComponent<IdentityComponent>(entityId);
         if (!identity || identity->clanId.empty()) return;
 
+        std::lock_guard<std::recursive_mutex> lock(getInstance().mutex_);
         auto& members = getInstance().clanMembers_[identity->clanId];
         bool found = false;
         for (auto id : members) { if (id == entityId) { found = true; break; } }
         if (!found) members.push_back(entityId);
 
-        auto& pool = getInstance().getOrCreatePool(identity->clanId);
+        auto& pool = getInstance().pools_[identity->clanId];
         pool.addSupply(type, amount);
 
         float price = PriceEngine::getPrice(pool, type);
@@ -65,6 +69,7 @@ public:
         auto* identity = registry.getComponent<IdentityComponent>(entityId);
         if (!identity || identity->clanId.empty()) return;
 
+        std::lock_guard<std::recursive_mutex> lock(getInstance().mutex_);
         auto& members = getInstance().clanMembers_[identity->clanId];
         bool found = false;
         for (auto id : members) { if (id == entityId) { found = true; break; } }
@@ -93,6 +98,7 @@ public:
     }
 
     int64_t collectTax(const std::string& clanId, int64_t amount) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         float rate = getClanTaxRate(clanId);
         int64_t tax = static_cast<int64_t>(amount * rate);
         familyTreasury_[clanId] += tax;
@@ -101,11 +107,13 @@ public:
     }
 
     int64_t getTreasury(const std::string& clanId) const {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         auto it = familyTreasury_.find(clanId);
         return (it != familyTreasury_.end()) ? it->second : 0;
     }
 
     bool spendTreasury(const std::string& clanId, int64_t amount) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         auto it = familyTreasury_.find(clanId);
         if (it != familyTreasury_.end() && it->second >= amount) {
             it->second -= amount;
@@ -138,6 +146,7 @@ public:
     }
 
     CachedEconSignals getEconomicSignals(const std::string& clanId, uint64_t currentFrame) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         auto it = signalCache_.find(clanId);
         if (it != signalCache_.end() && !it->second.dirty && (currentFrame - it->second.cachedFrame) < SIGNAL_CACHE_TTL) {
             return it->second;
@@ -166,6 +175,7 @@ public:
     }
 
     const EconomicDigest& getEconomicDigest(const std::string& clanId, uint64_t currentFrame) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         auto dirtyIt = digestDirty_.find(clanId);
         auto frameIt = digestCachedFrames_.find(clanId);
         bool isDirty = (dirtyIt == digestDirty_.end()) ? true : dirtyIt->second;
@@ -208,6 +218,7 @@ public:
     }
 
     bool isEmbargoed(const std::string& clanId, const std::string& targetClan) const {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         auto it = embargoTargets_.find(clanId);
         if (it == embargoTargets_.end()) return false;
         return it->second.find(targetClan) != it->second.end();
@@ -233,7 +244,8 @@ public:
         return effective > 1 ? effective : 1;
     }
 
-    const std::unordered_map<std::string, CommodityPool>& allPools() const {
+    std::unordered_map<std::string, CommodityPool> allPools() const {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         return pools_;
     }
 
@@ -250,6 +262,7 @@ public:
 private:
     MarketRegistry() : frameCounter_(0) {}
 
+    mutable std::recursive_mutex mutex_;
     std::unordered_map<std::string, CommodityPool> pools_;
     std::unordered_map<std::string, int64_t> familyTreasury_;
     std::unordered_map<std::string, CachedEconSignals> signalCache_;
