@@ -399,6 +399,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     try {
       const socket = getSocket();
+      // Remove any previous listener to prevent accumulation
+      socket.removeAllListeners('combat:duel-npc-result');
       socket.emit('combat:duel-npc', {
         npcId, npcName: npc.name, npcPower: npc.power, npcClanId: npc.clanId,
         npcRealm: npc.realm, npcActivity: npc.activity, npcSpiritStone: npc.resources.spiritStone,
@@ -448,6 +450,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     try {
       const socket = getSocket();
+      // Remove any previous listener to prevent accumulation
+      socket.removeAllListeners('combat:rob-npc-result');
       socket.emit('combat:rob-npc', {
         npcId, npcName: npc.name, npcPower: npc.power, npcClanId: npc.clanId,
         npcRealm: npc.realm, npcSpiritStone: npc.resources.spiritStone,

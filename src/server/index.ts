@@ -752,7 +752,7 @@ function resolveCombat(data: {
     const success = Math.random() < successChance;
 
     if (success) {
-      const stolenStones = Math.floor(npcSpiritStone * (0.3 + Math.random() * 0.5));
+      const stolenStones = Math.max(1, Math.floor(npcSpiritStone * (0.3 + Math.random() * 0.5)));
       const repLoss = 25;
       const clan = serverClans.get(npcClanId);
       if (clan) clan.reputation -= repLoss;
