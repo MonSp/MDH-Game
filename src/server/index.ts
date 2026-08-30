@@ -640,6 +640,77 @@ io.on('connection', (socket) => {
     socket.emit('market:sell-result', { ok: true, itemName: data.itemName, amount: data.amount });
   });
 
+  // Combat: player attacks NPC — server-authoritative
+  socket.on('combat:attack-npc', (data: {
+    npcId: string; npcName: string; npcPower: number; npcClanId: string;
+    npcRealm: string; npcActivity: string; npcSpiritStone: number;
+    playerAttack: number; playerCountry: string; playerRealm: string; playerPosition: { x: number; y: number };
+  }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+
+    const { npcName, npcPower, npcClanId, npcActivity, npcSpiritStone, playerAttack, playerCountry, playerPosition } = data;
+
+    // Server-authoritative combat calculation
+    const effectiveAttack = playerCountry === '秦' ? playerAttack * 1.1 : playerAttack;
+    const winChance = effectiveAttack / (effectiveAttack + (npcPower / 10));
+    const win = Math.random() < Math.max(0.1, Math.min(0.9, winChance));
+
+    if (win) {
+      const expGain = playerCountry === '秦' ? Math.floor(50 * 1.1) : 50;
+      let dropStones = npcSpiritStone;
+      const isMerchant = npcActivity === '坊市跑商';
+      if (isMerchant) dropStones += Math.floor(Math.random() * 200) + 100;
+
+      let droppedItem = '';
+      if (Math.random() < 0.2) droppedItem = '洗髓丹';
+
+      const repLoss = isMerchant ? 20 : 10;
+      // Update server clan state
+      const clan = serverClans.get(npcClanId);
+      const clanRepAfter = clan ? clan.reputation - repLoss : -repLoss;
+      if (clan) clan.reputation = clanRepAfter;
+
+      // Enforcer spawning
+      let enforcerSpawned = false;
+      let enforcer: any = null;
+      if (clanRepAfter < 0 && Math.random() > 0.3) {
+        enforcerSpawned = true;
+        const enforcerPower = playerAttack * 3;
+        enforcer = {
+          id: `enforcer-${Date.now()}`, clanId: npcClanId, name: `${clan?.name?.charAt(0) || '宗'}执法长老`,
+          role: '执法堂长老', realm: '化神', power: enforcerPower,
+          hp: enforcerPower * 10, maxHp: enforcerPower * 10, mp: enforcerPower * 5, maxMp: enforcerPower * 5,
+          personality: { ambition: 50, caution: 50, loyalty: 100, greed: 10 },
+          resources: { spiritStone: 500 }, activity: '追杀中',
+          position: { x: playerPosition.x + (Math.random() > 0.5 ? 10 : -10), y: playerPosition.y + (Math.random() > 0.5 ? 10 : -10) },
+        };
+      }
+
+      // Capture attempt
+      const realmIndex = ['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'].indexOf(data.playerRealm);
+      const npcRealmIndex = ['凡人','练气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'].indexOf(data.npcRealm);
+      const realmDiff = npcRealmIndex >= 0 && realmIndex >= 0 ? (realmIndex - npcRealmIndex) : 0;
+      const captureChance = Math.min(0.9, Math.max(0.1, 0.5 + realmDiff * 0.1));
+      const captureSuccess = Math.random() < captureChance;
+      const captiveLoyalty = Math.max(10, Math.min(90, 50 + Math.floor(Math.random() * 30) - 15));
+      const reputationGain = Math.floor((npcPower / 1000) + 5);
+
+      console.log(`[Combat] ${ps.playerId}: defeated ${npcName}, +${expGain}exp, +${dropStones} stones${droppedItem ? ', got ' + droppedItem : ''}`);
+
+      socket.emit('combat:attack-npc-result', {
+        win: true, expGain, dropStones, droppedItem, repLoss, clanRepAfter,
+        enforcerSpawned, enforcer, captureChance, captureSuccess, captiveLoyalty, reputationGain,
+      });
+    } else {
+      console.log(`[Combat] ${ps.playerId}: lost to ${npcName}`);
+      socket.emit('combat:attack-npc-result', {
+        win: false, expGain: 0, dropStones: 0, droppedItem: '', repLoss: 0, clanRepAfter: 0,
+        enforcerSpawned: false, captureChance: 0, captureSuccess: false, captiveLoyalty: 0, reputationGain: 0,
+      });
+    }
+  });
+
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
     const { buildingId, lx, ly, lz, damage, playerId } = data;
     

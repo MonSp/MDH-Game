@@ -300,116 +300,88 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!npc || !state.player) return;
 
     if (action === '攻击') {
-      state.addLog({ type: 'combat', message: `你向 ${npc.name}(${npc.role}) 发起了攻击！` });
-      
-      // 秦国战力加成或简单对比
-      const playerAttack = state.player.country === '秦' ? state.player.stats.attack * 1.1 : state.player.stats.attack;
-      const winChance = playerAttack / (playerAttack + (npc.power / 10));
-      const win = Math.random() < Math.max(0.1, Math.min(0.9, winChance));
-      
-      if (win) {
-        // 战斗经验加成
-        const expGain = state.player.country === '秦' ? Math.floor(50 * 1.1) : 50;
-        
-        let dropStones = npc.resources.spiritStone;
-        let isMerchant = npc.activity === '坊市跑商';
-        if (isMerchant) {
-          dropStones += Math.floor(Math.random() * 200) + 100; // 大幅增加掉落
-        }
-        
-        let dropMessage = `你击败了 ${npc.name}，夺取了 ${dropStones} 块灵石！获得 ${expGain} 点修为。`;
-        let droppedItem = '';
-        if (Math.random() < 0.2) {
-          droppedItem = '洗髓丹';
-          dropMessage += ` 并在其储物袋中发现了一枚【洗髓丹】！`;
-        }
-
-        set(s => {
-          let updatedInventory = { ...s.player!.inventory };
-          if (droppedItem) {
-            updatedInventory[droppedItem] = (updatedInventory[droppedItem] || 0) + 1;
-          }
-          updatedInventory['灵石'] = (updatedInventory['灵石'] || 0) + dropStones;
-
-          let newPlayer = { 
-            ...s.player!, 
-            stats: { ...s.player!.stats, exp: s.player!.stats.exp + expGain },
-            hiddenStats: { ...s.player!.hiddenStats, killCount: s.player!.hiddenStats.killCount + 1 },
-            inventory: updatedInventory
-          };
-
-          // @ts-ignore
-          if (typeof checkPotentialAwakening === 'function') {
-            // @ts-ignore
-            newPlayer = checkPotentialAwakening(newPlayer, (msg: string) => state.addLog({ type: 'event', message: msg }));
-          }
-
-          state.addLog({ type: 'event', message: dropMessage });
-
-          let updatedClans = [...s.clans];
-          let updatedNearbyNPCs = s.nearbyNPCs.filter(n => n.id !== npcId);
-          let spawnedEnforcer = false;
-
-          updatedClans = updatedClans.map(c => {
-            if (c.id === npc.clanId) {
-              const repLoss = isMerchant ? 20 : 10;
-              const newReputation = c.reputation - repLoss;
-              // 当声望首次低于0，或每低10点时，概率生成执法堂长老
-              if (newReputation < 0 && Math.random() > 0.3) {
-                spawnedEnforcer = true;
-                const enforcerPower = s.player!.stats.attack * 3;
-                const enforcer: NPC = {
-                  id: `enforcer-${Date.now()}`,
-                  clanId: c.id,
-                  name: `${c.name.charAt(0)}执法长老`,
-                  role: '执法堂长老',
-                  realm: '化神', // 执法长老统一化神境界
-                  power: enforcerPower, // 强于玩家
-                  hp: enforcerPower * 10,
-                  maxHp: enforcerPower * 10,
-                  mp: enforcerPower * 5,
-                  maxMp: enforcerPower * 5,
-                  personality: { ambition: 50, caution: 50, loyalty: 100, greed: 10 },
-                  resources: { spiritStone: 500 },
-                  activity: '追杀中',
-                  position: { 
-                    x: s.player!.position.x + (Math.random() > 0.5 ? 10 : -10), 
-                    y: s.player!.position.y + (Math.random() > 0.5 ? 10 : -10) 
-                  },
-                  targetPlayerId: s.player!.id
-                };
-                updatedNearbyNPCs.push(enforcer);
-              }
-              return { ...c, reputation: newReputation };
-            }
-            return c;
-          });
-
-          return {
-            clans: updatedClans,
-            nearbyNPCs: updatedNearbyNPCs,
-            player: newPlayer
-          };
+      // Emit combat intent to server — server is authoritative for combat results
+      try {
+        const socket = getSocket();
+        socket.emit('combat:attack-npc', {
+          npcId, npcName: npc.name, npcPower: npc.power, npcClanId: npc.clanId,
+          npcRealm: npc.realm, npcActivity: npc.activity, npcSpiritStone: npc.resources.spiritStone,
+          playerAttack: state.player.stats.attack, playerCountry: state.player.country,
+          playerRealm: state.player.realm, playerPosition: state.player.position,
         });
-        
-        const clan = get().clans.find(c => c.id === npc.clanId);
-        // 击败NPC后尝试俘虏
-        const playerIdx = REALM_LIST.indexOf(get().player!.realm);
-        const npcIdx = REALM_LIST.indexOf(npc.realm);
-        const realmDiff = npcIdx >= 0 && playerIdx >= 0 ? (playerIdx - npcIdx) : 0;
-        get().captureNPC(npc, realmDiff);
-        // 击败NPC获得声望
-        get().addReputation(Math.floor((npc.power / 1000) + 5), 'npc_combat_win');
-        if (clan && clan.reputation < 0) {
-          get().addLog({ type: 'system', message: `警告！${clan.name} 对你的仇恨已达冰点，已派出执法堂长老前来围剿！` });
-        } else if (clan && clan.reputation < 20) {
-          get().addLog({ type: 'system', message: `警告！${clan.name} 对你的仇恨极高！` });
+
+        // Listen for server result
+        socket.once('combat:attack-npc-result', (result: {
+          win: boolean; expGain: number; dropStones: number; droppedItem: string;
+          repLoss: number; clanRepAfter: number; enforcerSpawned: boolean;
+          enforcer?: any; captureChance: number; captureSuccess: boolean;
+          captiveLoyalty: number; reputationGain: number;
+        }) => {
+          const s = get();
+          if (result.win) {
+            let dropMessage = `你击败了 ${npc.name}，夺取了 ${result.dropStones} 块灵石！获得 ${result.expGain} 点修为。`;
+            if (result.droppedItem) dropMessage += ` 并在其储物袋中发现了一枚【${result.droppedItem}】！`;
+
+            set(prev => {
+              let updatedInventory = { ...prev.player!.inventory };
+              if (result.droppedItem) updatedInventory[result.droppedItem] = (updatedInventory[result.droppedItem] || 0) + 1;
+              updatedInventory['灵石'] = (updatedInventory['灵石'] || 0) + result.dropStones;
+              return {
+                player: {
+                  ...prev.player!,
+                  stats: { ...prev.player!.stats, exp: prev.player!.stats.exp + result.expGain },
+                  hiddenStats: { ...prev.player!.hiddenStats, killCount: prev.player!.hiddenStats.killCount + 1 },
+                  inventory: updatedInventory,
+                },
+                nearbyNPCs: prev.nearbyNPCs.filter(n => n.id !== npcId),
+                clans: prev.clans.map(c => c.id === npc.clanId ? { ...c, reputation: result.clanRepAfter } : c),
+              };
+            });
+
+            s.addLog({ type: 'event', message: dropMessage });
+
+            if (result.enforcerSpawned && result.enforcer) {
+              set(prev => ({ nearbyNPCs: [...prev.nearbyNPCs, result.enforcer] }));
+              const clan = get().clans.find(c => c.id === npc.clanId);
+              s.addLog({ type: 'system', message: `警告！${clan?.name || '未知势力'} 对你的仇恨已达冰点，已派出执法堂长老前来围剿！` });
+            } else if (result.clanRepAfter < 20) {
+              const clan = get().clans.find(c => c.id === npc.clanId);
+              s.addLog({ type: 'system', message: `警告！${clan?.name || '未知势力'} 对你的仇恨极高！` });
+            }
+
+            if (result.captureSuccess) {
+              const captive = {
+                npc: { ...npc }, capturedAtTick: get()._factionTickCount, loyalty: result.captiveLoyalty, originalClanId: npc.clanId,
+              };
+              set(prev => ({ captives: [...prev.captives, captive] }));
+              s.addLog({ type: 'combat', message: `【俘虏】你俘虏了 ${npc.name}！忠诚度 ${result.captiveLoyalty}。` });
+            }
+
+            get().addReputation(result.reputationGain, 'npc_combat_win');
+          } else {
+            s.addLog({ type: 'combat', message: `你不敌 ${npc.name}，重伤逃遁，损失部分修为。` });
+            set(prev => ({
+              player: prev.player ? { ...prev.player, stats: { ...prev.player.stats, hp: Math.max(1, prev.player.stats.hp - 30) } } : prev.player,
+            }));
+          }
+        });
+      } catch {
+        // Fallback: local combat if server unavailable
+        state.addLog({ type: 'combat', message: `你向 ${npc.name}(${npc.role}) 发起了攻击！` });
+        const playerAttack = state.player.country === '秦' ? state.player.stats.attack * 1.1 : state.player.stats.attack;
+        const winChance = playerAttack / (playerAttack + (npc.power / 10));
+        const win = Math.random() < Math.max(0.1, Math.min(0.9, winChance));
+        if (win) {
+          const expGain = state.player.country === '秦' ? Math.floor(50 * 1.1) : 50;
+          set(s => ({
+            player: { ...s.player!, stats: { ...s.player!.stats, exp: s.player!.stats.exp + expGain }, hiddenStats: { ...s.player!.hiddenStats, killCount: s.player!.hiddenStats.killCount + 1 }, inventory: { ...s.player!.inventory, '灵石': (s.player!.inventory['灵石'] || 0) + npc.resources.spiritStone } },
+            nearbyNPCs: s.nearbyNPCs.filter(n => n.id !== npcId),
+          }));
+          state.addLog({ type: 'event', message: `你击败了 ${npc.name}，夺取了 ${npc.resources.spiritStone} 块灵石！` });
+        } else {
+          state.addLog({ type: 'combat', message: `你不敌 ${npc.name}，重伤逃遁。` });
+          set(s => ({ player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - 30) } } : s.player }));
         }
-      } else {
-        get().addLog({ type: 'combat', message: `你不敌 ${npc.name}，重伤逃遁，损失部分修为。` });
-        set(s => ({
-          player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - 30) } } : s.player
-        }));
       }
     } else if (action === '交谈') {
       get().addLog({ type: 'event', message: `${npc.name} 看了你一眼：“支脉子弟，也要努力修炼才是。”` });
