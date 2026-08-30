@@ -2110,9 +2110,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
 
-    // Player vs Monster
+    // Player vs Monster — server handles combat when connected
     let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory }, skillCooldowns: { ...(state.player.skillCooldowns || {}) } } : null;
-    if (updatedPlayer) {
+    if (!serverConnected && updatedPlayer) {
       // --- Phase 3: 有效攻击/防御（功法 + 装备）---
       const techniqueEffects = get().getTechniqueEffects();
       let effectiveAttack = updatedPlayer.stats.attack;

@@ -1507,7 +1507,86 @@ function runGameTick(): void {
     if (!nearAny) serverMonsters.delete(id);
   }
 
-  // 5. Broadcast game state to all clients
+  // 5. NPC behavior processing (patrol, rest, trade, heal)
+  for (const [npcId, state] of NPCWorldService.getInstance().getAllNPCs()) {
+    try {
+      if (state.npc.hp <= 0) continue;
+      const oldActivity = state.activity;
+
+      if (state.activity === 'patrol' || state.activity === 'explore') {
+        const dx = Math.floor(Math.random() * 3) - 1;
+        const dy = Math.floor(Math.random() * 3) - 1;
+        state.npc.position.x = Math.max(0, Math.min(600, state.npc.position.x + dx));
+        state.npc.position.y = Math.max(0, Math.min(600, state.npc.position.y + dy));
+      } else if (state.activity === 'trade' || state.activity === 'work') {
+        if (Math.random() < 0.3) {
+          state.npc.resources.spiritStones += Math.floor(Math.random() * 5) + 1;
+        }
+      } else if (state.activity === 'rest' || state.activity === 'retreat') {
+        if (state.npc.hp < state.npc.maxHp) {
+          state.npc.hp = Math.min(state.npc.maxHp, state.npc.hp + Math.floor(state.npc.maxHp * 0.05));
+        }
+      }
+    } catch {}
+  }
+
+  // 6. Combat resolution for all connected players
+  const combatResults: Array<{ playerId: string; monsterId: string; playerDmg: number; monsterDmg: number; monsterDead: boolean; playerDead: boolean; expGain: number; stonesGain: number; droppedItem: string }> = [];
+
+  for (const player of players) {
+    const ps = [...playerSockets.values()].find(p => p.playerId === player.id);
+    if (!ps) continue;
+
+    const px = player.position.x;
+    const py = player.position.y;
+    const pAttack = player.attack || 50;
+    const pDefense = player.defense || 10;
+    const pHp = player.health || 100;
+    const pMaxHp = player.maxHealth || 100;
+
+    for (const monster of serverMonsters.values()) {
+      if (!monster.isAlive) continue;
+      const dx = Math.abs(monster.position.x - px);
+      const dy = Math.abs(monster.position.y - py);
+      if (dx > 1 || dy > 1) continue;
+
+      // Player attacks monster
+      const pDmg = Math.max(1, Math.floor(pAttack * pAttack / (pAttack + monster.defense)));
+      monster.hp -= pDmg;
+
+      // Monster attacks player
+      const mDmg = Math.max(1, Math.floor(monster.attack * monster.attack / (monster.attack + pDefense)));
+      const newPlayerHp = Math.max(0, pHp - mDmg);
+
+      let monsterDead = false;
+      let playerDead = false;
+      let expGain = 0;
+      let stonesGain = 0;
+      let droppedItem = '';
+
+      if (monster.hp <= 0) {
+        monsterDead = true;
+        monster.isAlive = false;
+        expGain = monster.expReward;
+        stonesGain = MONSTER_TYPES.find(t => t.name === monster.name)?.spiritStoneDrop || 20;
+        if (Math.random() < 0.1) droppedItem = '洗髓丹';
+      }
+
+      if (newPlayerHp <= 0) {
+        playerDead = true;
+      }
+
+      combatResults.push({
+        playerId: player.id, monsterId: monster.id,
+        playerDmg: pDmg, monsterDmg: mDmg,
+        monsterDead, playerDead, expGain, stonesGain, droppedItem,
+      });
+
+      break; // One combat per player per tick
+    }
+  }
+
+  // 7. Broadcast game state to all clients
   const marketData = Object.fromEntries(
     Object.entries(COMMODITY_PRICES).map(([k, v]) => [k, { currentPrice: v.current, basePrice: v.base }])
   );
@@ -1517,9 +1596,20 @@ function runGameTick(): void {
     expReward: m.expReward, position: m.position, isAlive: true,
   }));
 
+  // Collect NPC states for client rendering
+  const npcWorld = NPCWorldService.getInstance();
+  const npcStates = [...npcWorld.getAllNPCs()].map(([id, state]) => ({
+    id, name: state.npc.name, clanId: state.npc.clanId,
+    role: state.npc.role, realm: state.npc.realm,
+    hp: state.npc.hp, maxHp: state.npc.maxHp, power: state.npc.power,
+    position: state.npc.position, activity: state.activity,
+  }));
+
   io.emit('game:tick', {
     market: marketData,
     monsters: monsterData,
+    combatResults,
+    npcStates,
     timestamp: now,
   });
 }

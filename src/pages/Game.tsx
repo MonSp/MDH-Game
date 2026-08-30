@@ -369,7 +369,15 @@ export const Game = () => {
     };
     socket.on('cycle:rebirth-result', onCycleResult);
 
-    const onGameTick = (data: { market: Record<string, { currentPrice: number; basePrice: number }>; monsters: any[]; timestamp: number }) => {
+    const onGameTick = (data: {
+      market: Record<string, { currentPrice: number; basePrice: number }>;
+      monsters: any[];
+      combatResults: Array<{
+        playerId: string; monsterId: string; playerDmg: number; monsterDmg: number;
+        monsterDead: boolean; playerDead: boolean; expGain: number; stonesGain: number; droppedItem: string;
+      }>;
+      timestamp: number;
+    }) => {
       const store = useGameStore.getState();
       // Apply server market prices
       if (data.market) {
@@ -387,6 +395,43 @@ export const Game = () => {
       // Apply server monsters
       if (data.monsters) {
         useGameStore.setState({ wildMonsters: data.monsters });
+      }
+      // Apply server combat results
+      if (data.combatResults) {
+        for (const cr of data.combatResults) {
+          if (cr.playerId !== store.player?.id) continue;
+          const s = useGameStore.getState();
+          if (cr.monsterDead) {
+            // Monster killed — gain exp and stones
+            const inv = { ...s.player!.inventory };
+            inv['灵石'] = (inv['灵石'] || 0) + cr.stonesGain;
+            if (cr.droppedItem) inv[cr.droppedItem] = (inv[cr.droppedItem] || 0) + 1;
+            useGameStore.setState(prev => ({
+              player: prev.player ? {
+                ...prev.player,
+                stats: { ...prev.player.stats, exp: Math.min(prev.player.stats.exp + cr.expGain, prev.player.stats.maxExp) },
+                hiddenStats: { ...prev.player.hiddenStats, killCount: prev.player.hiddenStats.killCount + 1 },
+                inventory: inv,
+              } : prev.player,
+              wildMonsters: prev.wildMonsters.filter(m => m.id !== cr.monsterId),
+            }));
+            s.addLog({ type: 'combat', message: `你击败了怪物！获得 ${cr.expGain} 修为和 ${cr.stonesGain} 灵石${cr.droppedItem ? '，获得【' + cr.droppedItem + '】' : ''}。` });
+            s.addReputation(Math.max(2, Math.floor(cr.expGain / 6)), 'monster_kill');
+          } else {
+            // Monster alive — take damage
+            useGameStore.setState(prev => ({
+              player: prev.player ? { ...prev.player, stats: { ...prev.player.stats, hp: Math.max(1, prev.player.stats.hp - cr.monsterDmg) } } : prev.player,
+            }));
+            s.addLog({ type: 'combat', message: `你受到 ${cr.monsterDmg} 点伤害！` });
+          }
+          if (cr.playerDead) {
+            const capital = { x: 300, y: 300 }; // Default respawn
+            useGameStore.setState(prev => ({
+              player: prev.player ? { ...prev.player, stats: { ...prev.player.stats, hp: 1 }, position: capital } : prev.player,
+            }));
+            s.addLog({ type: 'combat', message: `你不敌怪物，重伤逃遁至安全区域！` });
+          }
+        }
       }
     };
     socket.on('game:tick', onGameTick);
