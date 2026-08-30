@@ -276,6 +276,32 @@ export const Game = () => {
     };
   }, []);
 
+  // Listen for server-side diplomacy events
+  useEffect(() => {
+    const socket = getSocket();
+    const onTruceExpired = (data: { expired: Array<{ fromClanId: string; toClanId: string }>; timestamp: number }) => {
+      const store = useGameStore.getState();
+      for (const { fromClanId, toClanId } of data.expired) {
+        store.removeDiplomacy(fromClanId, toClanId);
+        const target = store.clans.find(c => c.id === toClanId || c.id === fromClanId);
+        if (fromClanId === store.playerFactionId || toClanId === store.playerFactionId) {
+          store.addLog({ type: 'event', message: `【停战到期】与 ${target?.name || '未知'} 的停战协议已到期。` });
+        }
+      }
+    };
+    const onBroadcast = (data: { action: string; fromClanId: string; toClanId: string; sourcePlayerId: string }) => {
+      // Multi-player sync: apply diplomacy changes from other players
+      if (data.sourcePlayerId === (useGameStore.getState().player?.id)) return; // skip own actions
+      console.log(`[Diplomacy] Received broadcast: ${data.action} ${data.fromClanId} -> ${data.toClanId}`);
+    };
+    socket.on('diplomacy:truce-expired', onTruceExpired);
+    socket.on('diplomacy:broadcast', onBroadcast);
+    return () => {
+      socket.off('diplomacy:truce-expired', onTruceExpired);
+      socket.off('diplomacy:broadcast', onBroadcast);
+    };
+  }, []);
+
   const handleChoice = useCallback(async (choiceIndex: number) => {
     if (!activeScene) return;
     const choice = activeScene.choices[choiceIndex];

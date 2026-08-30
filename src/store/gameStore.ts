@@ -1246,7 +1246,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
     state.addLog({ type: 'event', message: `【停战】与 ${target.name} 达成停战协议。` });
 
-    try { getSocket().emit('diplomacy:action', { action: 'propose-truce', fromClanId: state.playerFactionId, toClanId: clanId }); } catch {}
+    try {
+      const socket = getSocket();
+      socket.emit('diplomacy:action', { action: 'propose-truce', fromClanId: state.playerFactionId, toClanId: clanId });
+      socket.emit('diplomacy:register-truce', { fromClanId: state.playerFactionId, toClanId: clanId, truceUntil: Date.now() + 120000 });
+    } catch {}
   },
 
   surrenderTo: (clanId: string) => {

@@ -817,6 +817,32 @@ function startGameLoop(): void {
     }, 5000);
   }
 
+  // Diplomacy tick: broadcast truce expiry checks every 10s
+  const activeTruces: Map<string, number> = new Map(); // key: "fromClanId:toClanId" → truceUntil
+  setInterval(() => {
+    const now = Date.now();
+    const expired: string[] = [];
+    for (const [key, truceUntil] of activeTruces) {
+      if (now > truceUntil) {
+        expired.push(key);
+        activeTruces.delete(key);
+      }
+    }
+    if (expired.length > 0) {
+      io.emit('diplomacy:truce-expired', { expired: expired.map(k => {
+        const [fromClanId, toClanId] = k.split(':');
+        return { fromClanId, toClanId };
+      }), timestamp: now });
+    }
+  }, 10000);
+
+  // Listen for truce registrations from clients
+  io.on('connection', (socket) => {
+    socket.on('diplomacy:register-truce', (data: { fromClanId: string; toClanId: string; truceUntil: number }) => {
+      activeTruces.set(`${data.fromClanId}:${data.toClanId}`, data.truceUntil);
+    });
+  });
+
   // NPC behavior processing via C++ ECS engine (every 100ms = ~10 FPS simulation)
   // Falls back to TS-based processing if C++ addon is unavailable
   setInterval(() => {
