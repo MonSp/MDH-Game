@@ -1405,6 +1405,125 @@ function syncResourcePoints(points: ServerResourcePoint[]): void {
   }
 }
 
+// ============================================================
+// Server-side game tick — handles updateNPCs and updateMarketPrices
+// ============================================================
+
+interface ServerMonster {
+  id: string; name: string; realm: string;
+  hp: number; maxHp: number; attack: number; defense: number;
+  expReward: number; position: { x: number; y: number }; isAlive: boolean;
+}
+
+const MONSTER_TYPES: Array<{ name: string; realm: string; hp: number; attack: number; defense: number; expReward: number; spiritStoneDrop: number }> = [
+  { name: '赤焰蛇', realm: '练气', hp: 200, attack: 15, defense: 5, expReward: 30, spiritStoneDrop: 20 },
+  { name: '噬魂兽', realm: '筑基', hp: 500, attack: 35, defense: 15, expReward: 60, spiritStoneDrop: 40 },
+  { name: '玄冰蟒', realm: '金丹', hp: 1200, attack: 80, defense: 40, expReward: 120, spiritStoneDrop: 80 },
+  { name: '幽冥狼', realm: '元婴', hp: 3000, attack: 200, defense: 100, expReward: 250, spiritStoneDrop: 150 },
+  { name: '天魔蛛', realm: '化神', hp: 8000, attack: 500, defense: 250, expReward: 500, spiritStoneDrop: 300 },
+];
+
+const serverMonsters: Map<string, ServerMonster> = new Map();
+let monsterIdCounter = 0;
+
+const COMMODITY_PRICES: Record<string, { base: number; current: number; trend: number }> = {
+  '洗髓丹': { base: 500, current: 500, trend: 0 },
+  '低级法器': { base: 200, current: 200, trend: 0 },
+  '回血丹': { base: 50, current: 50, trend: 0 },
+  '聚气散': { base: 80, current: 80, trend: 0 },
+  '飞升令': { base: 5000, current: 5000, trend: 0 },
+  '灵石': { base: 1, current: 1, trend: 0 },
+};
+
+function runGameTick(): void {
+  const now = Date.now();
+  const players = PlayerService.getInstance().getOnlinePlayers();
+
+  // 1. Market price fluctuation (every tick)
+  for (const [item, data] of Object.entries(COMMODITY_PRICES)) {
+    const noise = (Math.random() - 0.5) * 0.06;
+    const meanRevert = (data.base - data.current) / data.base * 0.02;
+    data.trend = data.trend * 0.8 + (noise + meanRevert);
+    data.current = Math.max(1, Math.floor(data.current * (1 + data.trend)));
+  }
+
+  // 2. Monster spawning per player
+  for (const player of players) {
+    const px = player.position.x;
+    const py = player.position.y;
+    const playerMonsters = [...serverMonsters.values()].filter(m => {
+      if (!m.isAlive) return false;
+      const dx = Math.abs(m.position.x - px);
+      const dy = Math.abs(m.position.y - py);
+      return dx <= 20 && dy <= 20;
+    });
+
+    if (playerMonsters.length < 6 && Math.random() < 0.15) {
+      const type = MONSTER_TYPES[Math.floor(Math.random() * MONSTER_TYPES.length)];
+      const id = `monster-${++monsterIdCounter}`;
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 8 + Math.random() * 12;
+      serverMonsters.set(id, {
+        id, name: type.name, realm: type.realm,
+        hp: type.hp, maxHp: type.hp, attack: type.attack, defense: type.defense,
+        expReward: type.expReward,
+        position: { x: Math.floor(px + Math.cos(angle) * dist), y: Math.floor(py + Math.sin(angle) * dist) },
+        isAlive: true,
+      });
+    }
+  }
+
+  // 3. Monster movement toward nearest player
+  for (const monster of serverMonsters.values()) {
+    if (!monster.isAlive) continue;
+    let nearestDist = Infinity;
+    let nearestPos = monster.position;
+    for (const player of players) {
+      const dx = player.position.x - monster.position.x;
+      const dy = player.position.y - monster.position.y;
+      const dist = Math.abs(dx) + Math.abs(dy);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestPos = player.position;
+      }
+    }
+    if (nearestDist > 1) {
+      monster.position = {
+        x: monster.position.x + Math.sign(nearestPos.x - monster.position.x),
+        y: monster.position.y + Math.sign(nearestPos.y - monster.position.y),
+      };
+    }
+  }
+
+  // 4. Despawn monsters far from all players
+  for (const [id, monster] of serverMonsters) {
+    if (!monster.isAlive) { serverMonsters.delete(id); continue; }
+    let nearAny = false;
+    for (const player of players) {
+      if (Math.abs(monster.position.x - player.position.x) <= 25 && Math.abs(monster.position.y - player.position.y) <= 25) {
+        nearAny = true; break;
+      }
+    }
+    if (!nearAny) serverMonsters.delete(id);
+  }
+
+  // 5. Broadcast game state to all clients
+  const marketData = Object.fromEntries(
+    Object.entries(COMMODITY_PRICES).map(([k, v]) => [k, { currentPrice: v.current, basePrice: v.base }])
+  );
+  const monsterData = [...serverMonsters.values()].filter(m => m.isAlive).map(m => ({
+    id: m.id, name: m.name, realm: m.realm,
+    hp: m.hp, maxHp: m.maxHp, attack: m.attack, defense: m.defense,
+    expReward: m.expReward, position: m.position, isAlive: true,
+  }));
+
+  io.emit('game:tick', {
+    market: marketData,
+    monsters: monsterData,
+    timestamp: now,
+  });
+}
+
 function startGameLoop(): void {
   setInterval(() => {
     const players = PlayerService.getInstance().getOnlinePlayers();
@@ -1427,6 +1546,11 @@ function startGameLoop(): void {
     runDiplomacyAI();
     runResourceTick();
   }, 30000);
+
+  // Server game tick: market prices + monster spawning/movement every 1s
+  setInterval(() => {
+    runGameTick();
+  }, 1000);
 
   // NPC behavior processing via C++ ECS engine (every 100ms = ~10 FPS simulation)
   // Falls back to TS-based processing if C++ addon is unavailable

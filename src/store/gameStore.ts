@@ -1520,6 +1520,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.player) return;
 
+    // Skip local update when server is connected (server sends prices via game:tick)
+    try {
+      const socket = getSocket();
+      if (socket && socket.connected) return;
+    } catch {}
+
     const clanId = state.player.clanId || state.player.country || 'default';
     const wasmAvailable = typeof window !== 'undefined' && typeof (window as any).__ecsWasmReady === 'function' ? (window as any).__ecsWasmReady() : false;
 
@@ -1800,10 +1806,17 @@ export const useGameStore = create<GameState>((set, get) => ({
     const state = get();
     if (!state.player) return;
 
+    // Skip monster spawning when server is connected (server sends via game:tick)
+    let serverConnected = false;
+    try {
+      const socket = getSocket();
+      serverConnected = !!(socket && socket.connected);
+    } catch {}
+
     // --- Monster spawning ---
     let monsters = state.wildMonsters.filter(m => m.isAlive);
     let siegeWarStats = { ...state.warStats };
-    if (monsters.length < MAX_MONSTERS && Math.random() < SPAWN_CHANCE) {
+    if (!serverConnected && monsters.length < MAX_MONSTERS && Math.random() < SPAWN_CHANCE) {
       const newMonster = createWildMonster(state.player.position, state.player.realm);
       if (newMonster) monsters.push(newMonster);
     }

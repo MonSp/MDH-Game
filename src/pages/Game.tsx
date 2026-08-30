@@ -369,6 +369,28 @@ export const Game = () => {
     };
     socket.on('cycle:rebirth-result', onCycleResult);
 
+    const onGameTick = (data: { market: Record<string, { currentPrice: number; basePrice: number }>; monsters: any[]; timestamp: number }) => {
+      const store = useGameStore.getState();
+      // Apply server market prices
+      if (data.market) {
+        const newMarket: any = {};
+        for (const [name, price] of Object.entries(data.market)) {
+          const existing = store.market[name];
+          if (existing) {
+            newMarket[name] = { ...existing, currentPrice: price.currentPrice };
+          }
+        }
+        if (Object.keys(newMarket).length > 0) {
+          useGameStore.setState(s => ({ market: { ...s.market, ...newMarket } }));
+        }
+      }
+      // Apply server monsters
+      if (data.monsters) {
+        useGameStore.setState({ wildMonsters: data.monsters });
+      }
+    };
+    socket.on('game:tick', onGameTick);
+
     return () => {
       socket.off('diplomacy:truce-expired', onTruceExpired);
       socket.off('diplomacy:ai-decisions', onAIDecisions);
@@ -379,6 +401,7 @@ export const Game = () => {
       socket.off('combat:army-result', onArmyResult);
       socket.off('ascension:result', onAscensionResult);
       socket.off('cycle:rebirth-result', onCycleResult);
+      socket.off('game:tick', onGameTick);
     };
   }, []);
 
