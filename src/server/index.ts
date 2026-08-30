@@ -556,6 +556,33 @@ io.on('connection', (socket) => {
     socket.emit('game:delete-save-result', { ok: true, slot: data.slot });
   });
 
+  // Diplomacy actions — server validates and logs
+  socket.on('diplomacy:action', (data: { action: string; fromClanId: string; toClanId: string; params?: any }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('diplomacy:result', { ok: false, error: '未登录' }); return; }
+
+    const { action, fromClanId, toClanId, params } = data;
+    if (!fromClanId || !toClanId || fromClanId === toClanId) {
+      socket.emit('diplomacy:result', { ok: false, error: '无效的外交参数' });
+      return;
+    }
+
+    // Log the action for audit
+    console.log(`[Diplomacy] ${ps.playerId}: ${action} ${fromClanId} -> ${toClanId}`);
+
+    // Broadcast to all clients so server is aware of the state change
+    io.emit('diplomacy:broadcast', {
+      action,
+      fromClanId,
+      toClanId,
+      params,
+      timestamp: Date.now(),
+      sourcePlayerId: ps.playerId,
+    });
+
+    socket.emit('diplomacy:result', { ok: true, action, fromClanId, toClanId });
+  });
+
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
     const { buildingId, lx, ly, lz, damage, playerId } = data;
     

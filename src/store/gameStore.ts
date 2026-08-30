@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { saveGame, loadGame, deleteSave, getSaveSlots, type SaveSlotInfo } from './saveManager';
 import { isPositionPassable, getMovementCost } from '../utils/terrain';
 import { GAME_CONFIG } from '../shared/constants';
-import { connectSocketAsync } from '../shared/socket';
+import { connectSocketAsync, getSocket } from '../shared/socket';
 
 // Import everything needed for the store body's local scope
 import {
@@ -1202,6 +1202,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       declaredBy: state.playerFactionId,
     });
     state.addLog({ type: 'event', message: `【宣战】向 ${target.name} 正式宣战！` });
+
+    try { getSocket().emit('diplomacy:action', { action: 'declare-war', fromClanId: state.playerFactionId, toClanId: clanId }); } catch {}
   },
 
   proposeAlliance: (clanId: string) => {
@@ -1226,6 +1228,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       allianceDate: Date.now(),
     });
     state.addLog({ type: 'event', message: `【结盟】与 ${target.name} 缔结同盟！` });
+
+    try { getSocket().emit('diplomacy:action', { action: 'propose-alliance', fromClanId: state.playerFactionId, toClanId: clanId }); } catch {}
   },
 
   proposeTruce: (clanId: string) => {
@@ -1241,6 +1245,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       truceUntil: Date.now() + 120000, // 2 minutes truce
     });
     state.addLog({ type: 'event', message: `【停战】与 ${target.name} 达成停战协议。` });
+
+    try { getSocket().emit('diplomacy:action', { action: 'propose-truce', fromClanId: state.playerFactionId, toClanId: clanId }); } catch {}
   },
 
   surrenderTo: (clanId: string) => {
@@ -1256,6 +1262,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       vassalTribute: Math.floor((state.clans.find(c => c.id === state.playerFactionId)?.treasury || 0) * 0.1),
     });
     state.addLog({ type: 'event', message: `【臣服】向 ${target.name} 表示臣服，每周期进贡灵石。` });
+
+    try { getSocket().emit('diplomacy:action', { action: 'surrender', fromClanId: state.playerFactionId, toClanId: clanId }); } catch {}
   },
 
   breakAlliance: (clanId: string) => {
@@ -1266,6 +1274,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     get().removeDiplomacy(state.playerFactionId, clanId);
     state.addLog({ type: 'event', message: `【毁盟】解除了与 ${target.name} 的同盟关系。` });
+
+    try { getSocket().emit('diplomacy:action', { action: 'break-alliance', fromClanId: state.playerFactionId, toClanId: clanId }); } catch {}
   },
 
   getDiplomaticRelations: () => {
