@@ -107,6 +107,7 @@ export class NPCBehaviorTree {
 export class NPCBehaviorTreeManager {
   private static instance: NPCBehaviorTreeManager;
   private trees: Map<string, NPCBehaviorTree> = new Map();
+  private static readonly MAX_TREES = 200;
 
   private constructor() {}
 
@@ -120,6 +121,11 @@ export class NPCBehaviorTreeManager {
   getOrCreateTree(npcId: string): NPCBehaviorTree {
     let tree = this.trees.get(npcId);
     if (!tree) {
+      // Evict oldest if at capacity
+      if (this.trees.size >= NPCBehaviorTreeManager.MAX_TREES) {
+        const firstKey = this.trees.keys().next().value;
+        if (firstKey) this.trees.delete(firstKey);
+      }
       tree = new NPCBehaviorTree(npcId);
       this.trees.set(npcId, tree);
     }

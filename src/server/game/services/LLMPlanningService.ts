@@ -581,7 +581,8 @@ export class LLMPlanningService {
     const now = Date.now();
     for (const [npcId, plan] of this.activePlans.entries()) {
       if (plan.expires_at < now) {
-        plan.status = PlanStatus.COMPLETED;
+        this.activePlans.delete(npcId);
+        this.planningQueue.delete(npcId);
       }
     }
   }

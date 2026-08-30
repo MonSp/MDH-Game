@@ -206,6 +206,10 @@ export class NPCResourceCompetition {
   }
 
   npcReleases(npcId: string, resourceId: string): void {
-    this.npcResources.get(npcId)?.delete(resourceId);
+    const set = this.npcResources.get(npcId);
+    if (set) {
+      set.delete(resourceId);
+      if (set.size === 0) this.npcResources.delete(npcId);
+    }
   }
 }

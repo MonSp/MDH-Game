@@ -127,6 +127,7 @@ interface PlayerSocket {
 }
 
 const playerSockets: Map<string, PlayerSocket> = new Map();
+const prevNpcIds: Map<string, Set<string>> = new Map();
 
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -505,10 +506,13 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const playerSocket = playerSockets.get(socket.id);
     if (playerSocket) {
-      PlayerService.getInstance().savePlayerData(playerSocket.playerId);
+      const playerService = PlayerService.getInstance();
+      playerService.savePlayerData(playerSocket.playerId);
+      playerService.removePlayer(playerSocket.playerId);
+      prevNpcIds.delete(playerSocket.playerId);
       playerSockets.delete(socket.id);
     }
-    dialogueRateMap.delete(socket.id); // clean up rate limit state
+    dialogueRateMap.delete(socket.id);
     factionRateMap.delete(socket.id);
     console.log(`Client disconnected: ${socket.id}`);
   });
@@ -806,7 +810,6 @@ function startGameLoop(): void {
 
   // NPC state sync to connected clients — driven by C++ ECS engine
   // Per-player viewport culling when ECS is available, broadcast fallback otherwise
-  let prevNpcIds: Map<string, Set<string>> = new Map();
   setInterval(() => {
     const ecsEngine = ECSEngineService.getInstance();
 

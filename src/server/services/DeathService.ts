@@ -163,10 +163,31 @@ export class ReincarnationPool {
     return ReincarnationPool.instance;
   }
 
+  private static readonly SOUL_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+  private static readonly SOUL_POOL_MAX_SIZE = 500;
+
   addSoul(npcId: string, soul: SoulData): void {
     soul.poolEntryTime = Date.now();
     this.souls.set(npcId, soul);
     EventBus.emit(DeathEvent.SOUL_ENTER_POOL, { npcId, soul });
+    this.evictExpiredSouls();
+  }
+
+  private evictExpiredSouls(): void {
+    const now = Date.now();
+    for (const [npcId, soul] of this.souls) {
+      if (now - soul.poolEntryTime > ReincarnationPool.SOUL_MAX_AGE_MS) {
+        this.souls.delete(npcId);
+      }
+    }
+    // Hard cap: remove oldest entries if still over limit
+    if (this.souls.size > ReincarnationPool.SOUL_POOL_MAX_SIZE) {
+      const entries = [...this.souls.entries()].sort((a, b) => a[1].poolEntryTime - b[1].poolEntryTime);
+      const toRemove = entries.slice(0, entries.length - ReincarnationPool.SOUL_POOL_MAX_SIZE);
+      for (const [npcId] of toRemove) {
+        this.souls.delete(npcId);
+      }
+    }
   }
 
   getSoul(npcId: string): SoulData | undefined {
@@ -229,6 +250,8 @@ export class WorldRecoveryPool {
     return WorldRecoveryPool.instance;
   }
 
+  private static readonly MAX_POOL_ITEMS = 200;
+
   addRecoveredResources(drops: DropItem[]): void {
     for (const drop of drops) {
       if (drop.recipient !== 'world_pool') continue;
@@ -244,6 +267,13 @@ export class WorldRecoveryPool {
           if (drop.equipment) this.recoveredResources.equipment.push(drop.equipment);
           break;
       }
+    }
+    // Cap arrays to prevent unbounded growth
+    if (this.recoveredResources.items.length > WorldRecoveryPool.MAX_POOL_ITEMS) {
+      this.recoveredResources.items.splice(0, this.recoveredResources.items.length - WorldRecoveryPool.MAX_POOL_ITEMS);
+    }
+    if (this.recoveredResources.equipment.length > WorldRecoveryPool.MAX_POOL_ITEMS) {
+      this.recoveredResources.equipment.splice(0, this.recoveredResources.equipment.length - WorldRecoveryPool.MAX_POOL_ITEMS);
     }
   }
 
@@ -262,6 +292,8 @@ export class WorldRecoveryPool {
     const reinvestAmount = this.recoveredResources.spiritStones * 0.5;
 
     this.recoveredResources.spiritStones *= 0.5;
+    this.recoveredResources.items.length = 0;
+    this.recoveredResources.equipment.length = 0;
 
     const currentInterval = Date.now() - this.lastReinvestTime;
     if (currentInterval > 24 * 60 * 60 * 1000) {

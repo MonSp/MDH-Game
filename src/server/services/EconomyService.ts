@@ -69,6 +69,8 @@ export class EconomyService {
     return basePrice;
   }
 
+  private static readonly MAX_HISTORY = 10000;
+
   private recordTransaction(playerId: string, type: TransactionType, currency: CurrencyType, amount: number, toPlayerId?: string): void {
     this.transactionHistory.push({
       playerId,
@@ -78,6 +80,9 @@ export class EconomyService {
       targetPlayerId: toPlayerId,
       timestamp: Date.now()
     });
+    if (this.transactionHistory.length > EconomyService.MAX_HISTORY) {
+      this.transactionHistory.splice(0, this.transactionHistory.length - EconomyService.MAX_HISTORY);
+    }
   }
 
   getTransactionHistory(playerId: string): TransactionRecord[] {
