@@ -2066,6 +2066,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           };
           state.addLog({ type: 'combat', message: `你击败了 ${monster.name}！获得 ${expGain} 点修为和 ${stonesGain} 灵石。` });
           get().addReputation(Math.max(2, Math.floor(monster.expReward / 6)), 'monster_kill');
+
+          try { getSocket().emit('combat:monster-kill', { monsterName: monster.name, expGain, stonesGain, reputationGain: Math.max(2, Math.floor(monster.expReward / 6)) }); } catch {}
         }
 
         if (updatedPlayer.stats.hp <= 0) {

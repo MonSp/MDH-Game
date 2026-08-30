@@ -711,6 +711,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Monster combat notifications
+  socket.on('combat:monster-kill', (data: { monsterName: string; expGain: number; stonesGain: number; reputationGain: number }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+    console.log(`[Combat] ${ps.playerId}: killed ${data.monsterName}, +${data.expGain}exp, +${data.stonesGain} stones`);
+  });
+
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
     const { buildingId, lx, ly, lz, damage, playerId } = data;
     
