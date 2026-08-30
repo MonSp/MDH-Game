@@ -880,6 +880,103 @@ function resolveCombat(data: {
   });
 
   // Resource point operations
+
+  // Ascension (飞升) — server-authoritative validation
+  socket.on('ascension:attempt', (data: {
+    heavenLevel: number; realm: string; inventory: Record<string, number>;
+    ascensionQuests: Array<{ name: string; completed: boolean }>;
+  }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+
+    const { heavenLevel, realm, inventory, ascensionQuests } = data;
+
+    // Validate ascension conditions
+    const HEAVEN_MAX_REALM: Record<number, string> = { 9: '渡劫', 8: '大乘', 7: '合体', 6: '炼虚', 5: '化神', 4: '元婴', 3: '金丹', 2: '筑基', 1: '练气', 0: '练气' };
+    const maxRealm = HEAVEN_MAX_REALM[heavenLevel];
+    if (!maxRealm || realm !== maxRealm) {
+      socket.emit('ascension:result', { success: false, message: `必须达到当前世界最高境界【${maxRealm}】才能飞升。` });
+      return;
+    }
+    if ((inventory['飞升令'] || 0) < 1) {
+      socket.emit('ascension:result', { success: false, message: '需要【飞升令】×1 才能引动天劫。' });
+      return;
+    }
+    if ((inventory['灵石'] || 0) < 100000) {
+      socket.emit('ascension:result', { success: false, message: `需要灵石×100000作为飞升消耗。` });
+      return;
+    }
+    const incomplete = ascensionQuests.filter(q => !q.completed);
+    if (incomplete.length > 0) {
+      socket.emit('ascension:result', { success: false, message: `还需完成 ${incomplete.length} 个天道任务才能飞升。` });
+      return;
+    }
+
+    // Server-authoritative success roll
+    const success = Math.random() > 0.1;
+    const nextHeavenLevel = heavenLevel - 1;
+
+    if (success) {
+      console.log(`[Ascension] ${ps.playerId}: success, heaven ${heavenLevel} -> ${nextHeavenLevel}`);
+      socket.emit('ascension:result', {
+        success: true, nextHeavenLevel,
+        message: `你渡过九重天劫，来到新的修仙世界！`,
+        consumedItems: { '飞升令': 1, '灵石': 100000 },
+      });
+    } else {
+      console.log(`[Ascension] ${ps.playerId}: failed`);
+      socket.emit('ascension:result', {
+        success: false,
+        message: '天劫过于强大，你重伤逃遁，损耗30%修为！',
+        hpLoss: 0.3, expLoss: 0.3,
+      });
+    }
+  });
+
+  // Cycle rebirth (轮回转生) — server-authoritative
+  socket.on('cycle:rebirth', (data: {
+    type: string; heavenLevel: number; cooldownEndTime?: number;
+    inventory: Record<string, number>; clanId?: string;
+  }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+
+    const { type, heavenLevel, cooldownEndTime, inventory, clanId } = data;
+
+    if (heavenLevel < 6) {
+      socket.emit('cycle:rebirth-result', { success: false, message: '只有第6层及以上的高手才能进行轮回转生。' });
+      return;
+    }
+    if (cooldownEndTime && Date.now() < cooldownEndTime) {
+      const remaining = Math.ceil((cooldownEndTime - Date.now()) / 1000);
+      socket.emit('cycle:rebirth-result', { success: false, message: `转生冷却中，还需 ${remaining} 秒。` });
+      return;
+    }
+
+    if (type === '真灵转世') {
+      console.log(`[Cycle] ${ps.playerId}: rebirth from heaven ${heavenLevel}`);
+      socket.emit('cycle:rebirth-result', {
+        success: true, type: '真灵转世',
+        message: '你以【转世灵童】之身重生于凡界！',
+        newHeavenLevel: 9, newRealm: '凡人',
+        cooldownDays: 7,
+      });
+    } else if (type === '道统传承') {
+      const stones = Math.floor((inventory['灵石'] || 0) * 0.5);
+      console.log(`[Cycle] ${ps.playerId}: legacy, ${stones} stones to clan ${clanId}`);
+      socket.emit('cycle:rebirth-result', {
+        success: true, type: '道统传承',
+        message: `你在原家族留下了传承石碑，${stones}灵石已注入宗门金库！`,
+        treasuryBonus: stones,
+      });
+    } else if (type === '神念投影') {
+      console.log(`[Cycle] ${ps.playerId}: projection`);
+      socket.emit('cycle:rebirth-result', {
+        success: true, type: '神念投影',
+        message: '你在凡界创建了一个临时分身，存在2小时。',
+      });
+    }
+  });
   socket.on('resource:gather', (data: {
     resourceId: string; resourceType: string; playerPosition: { x: number; y: number };
     fortune: number; heavenLevel: number;

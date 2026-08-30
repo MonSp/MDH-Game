@@ -357,6 +357,18 @@ export const Game = () => {
     };
     socket.on('combat:army-result', onArmyResult);
 
+    const onAscensionResult = (data: { success: boolean; message: string; nextHeavenLevel?: number; hpLoss?: number; expLoss?: number }) => {
+      const store = useGameStore.getState();
+      store.addWorldEvent({ type: 'system', npcNameA: store.player?.name || '', npcNameB: '', description: data.message, timestamp: Date.now() });
+    };
+    socket.on('ascension:result', onAscensionResult);
+
+    const onCycleResult = (data: { success: boolean; type?: string; message: string }) => {
+      const store = useGameStore.getState();
+      store.addWorldEvent({ type: 'system', npcNameA: store.player?.name || '', npcNameB: '', description: data.message, timestamp: Date.now() });
+    };
+    socket.on('cycle:rebirth-result', onCycleResult);
+
     return () => {
       socket.off('diplomacy:truce-expired', onTruceExpired);
       socket.off('diplomacy:ai-decisions', onAIDecisions);
@@ -365,6 +377,8 @@ export const Game = () => {
       socket.off('resource:tick', onResourceTick);
       socket.off('combat:npc-war-result', onNpcWarResult);
       socket.off('combat:army-result', onArmyResult);
+      socket.off('ascension:result', onAscensionResult);
+      socket.off('cycle:rebirth-result', onCycleResult);
     };
   }, []);
 

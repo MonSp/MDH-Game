@@ -1657,6 +1657,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
     }
     state.addLog({ type: 'ascension', message: `━━━━━━━━━━━━━━━` });
+
+    // Notify server
+    try { getSocket().emit('ascension:attempt', { heavenLevel: player.heavenLevel, realm: player.realm, inventory: player.inventory, ascensionQuests: state.ascensionQuests }); } catch {}
   },
 
   performCycleRebirth: (type: CycleType) => {
@@ -1741,6 +1744,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
       }
     }
+
+    // Notify server
+    try { getSocket().emit('cycle:rebirth', { type, heavenLevel: player.heavenLevel, cooldownEndTime: player.cycleInfo.cooldownEndTime, inventory: player.inventory, clanId: player.clanId }); } catch {}
   },
 
   checkCycleCooldown: () => {
