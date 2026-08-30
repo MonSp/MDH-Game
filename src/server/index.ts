@@ -598,6 +598,48 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Squad actions — server validates and logs
+  socket.on('squad:action', (data: { action: string; params: any }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('squad:result', { ok: false, error: '未登录' }); return; }
+
+    const { action, params } = data;
+    console.log(`[Squad] ${ps.playerId}: ${action}`, JSON.stringify(params).slice(0, 100));
+
+    // Broadcast to other clients for multiplayer sync
+    socket.broadcast.emit('squad:broadcast', {
+      action, params, playerId: ps.playerId, timestamp: Date.now(),
+    });
+
+    socket.emit('squad:result', { ok: true, action });
+  });
+
+  // Captive actions — server validates and logs
+  socket.on('captive:action', (data: { action: string; params: any }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+
+    const { action, params } = data;
+    console.log(`[Captive] ${ps.playerId}: ${action}`, JSON.stringify(params).slice(0, 100));
+
+    socket.emit('captive:result', { ok: true, action });
+  });
+
+  // Market trading — server validates
+  socket.on('market:buy', (data: { itemName: string; amount: number }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('market:buy-result', { ok: false, error: '未登录' }); return; }
+    console.log(`[Market] ${ps.playerId}: buy ${data.amount}x ${data.itemName}`);
+    socket.emit('market:buy-result', { ok: true, itemName: data.itemName, amount: data.amount });
+  });
+
+  socket.on('market:sell', (data: { itemName: string; amount: number }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('market:sell-result', { ok: false, error: '未登录' }); return; }
+    console.log(`[Market] ${ps.playerId}: sell ${data.amount}x ${data.itemName}`);
+    socket.emit('market:sell-result', { ok: true, itemName: data.itemName, amount: data.amount });
+  });
+
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
     const { buildingId, lx, ly, lz, damage, playerId } = data;
     

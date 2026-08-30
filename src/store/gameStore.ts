@@ -508,6 +508,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         resourcePoints: newPoints
       };
     });
+
+    try { getSocket().emit('squad:action', { action: 'collect-resource', params: { resourceId } }); } catch {}
   },
 
   useItem: (itemName) => {
@@ -577,6 +579,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         state.addLog({ type: 'event', message: `【突破成功】你强忍洗髓剧痛，破茧成蝶，进阶为【${newPlayer.bodyType}】！` });
       }
     }
+
+    try { getSocket().emit('squad:action', { action: 'use-item', params: { itemName } }); } catch {}
   },
 
   addItem: (itemName) => {
@@ -637,6 +641,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       const buffMsg = buffPct > 0 ? `（炼器房加成+${buffPct}%）` : '';
       const msg = `炼制成功！获得 ${result.product}${buffMsg}`;
       state.addLog({ type: 'event', message: `[炼器] ${msg}` });
+
+      try { getSocket().emit('squad:action', { action: 'craft', params: { recipeId, success: true, product: result.product } }); } catch {}
+
       return { success: true, product: result.product, message: msg };
     } else {
       // Consume materials on failure too
@@ -644,6 +651,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         for (let i = 0; i < count; i++) get().removeItem(mat);
       }
       state.addLog({ type: 'event', message: `[炼器] ${result.message}` });
+
+      try { getSocket().emit('squad:action', { action: 'craft', params: { recipeId, success: false } }); } catch {}
+
       return { success: false, message: result.message };
     }
   },
@@ -760,6 +770,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         hiddenStats: { ...s.player.hiddenStats, cultivateCount: s.player.hiddenStats.cultivateCount + 1 }
       } : s.player
     }));
+
+    try { getSocket().emit('squad:action', { action: 'cultivate', params: { expGain } }); } catch {}
   },
 
   modifyTalent: (effect: Partial<TalentAttributes>) => {
@@ -885,6 +897,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       } : s.player,
     }));
     state.addLog({ type: 'event', message: `【招募】${npc.name} 加入了你的队伍，定位【${role}】！消耗了 ${spiritStoneCost} 块灵石。` });
+
+    try { getSocket().emit('squad:action', { action: 'recruit', params: { npcId, role, spiritStoneCost } }); } catch {}
   },
 
   dismissFromSquad: (squadMemberId) => {
@@ -926,6 +940,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
     });
     state.addLog({ type: 'event', message: `${member.name} 离开了你的队伍。` });
+
+    try { getSocket().emit('squad:action', { action: 'dismiss', params: { squadMemberId } }); } catch {}
   },
 
   assignSquadRole: (squadMemberId, role) => {
@@ -934,6 +950,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       squadMembers: s.squadMembers.map(m => m.id === squadMemberId ? { ...m, role } : m),
     }));
     state.addLog({ type: 'event', message: `小队成员职务已调整。` });
+
+    try { getSocket().emit('squad:action', { action: 'assign-role', params: { squadMemberId, role } }); } catch {}
   },
 
   // === P1 小队增强 ===
@@ -968,6 +986,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       ),
     }));
     state.addLog({ type: 'event', message: `${member.name} 装备了【${itemName}】！` });
+
+    try { getSocket().emit('squad:action', { action: 'equip', params: { squadMemberId, itemName } }); } catch {}
   },
 
   unequipMember: (squadMemberId, itemName) => {
@@ -985,6 +1005,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       ),
     }));
     state.addLog({ type: 'event', message: `${member.name} 卸下了【${itemName}】。` });
+
+    try { getSocket().emit('squad:action', { action: 'unequip', params: { squadMemberId, itemName } }); } catch {}
   },
 
   // === 势力系统 ===
@@ -1343,6 +1365,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         wasmRecordMarketTransaction(clanId, commodityType, amount, true);
       } catch (_) {}
       if (amount >= 10) state.updateMarketPrices(); // 大规模交易引起价格波动
+
+      try { getSocket().emit('market:buy', { itemName, amount }); } catch {}
     } else {
       state.addLog({ type: 'system', message: `灵石不足，需要 ${finalCost} 灵石。` });
     }
@@ -1391,6 +1415,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       wasmRecordMarketTransaction(clanId, commodityType, amount, false);
     } catch (_) {}
     if (amount >= 10) state.updateMarketPrices();
+
+    try { getSocket().emit('market:sell', { itemName, amount }); } catch {}
   },
 
   updateMarketPrices: () => {
@@ -2656,6 +2682,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       } : s.player,
     }));
     state.addLog({ type: 'event', message: `【习得功法】你学会了 ${technique.grade}功法「${technique.name}」！消耗了 ${technique.learnCost} 灵石。` });
+
+    try { getSocket().emit('squad:action', { action: 'learn-technique', params: { techniqueId } }); } catch {}
   },
 
   cultivateTechnique: (techniqueId: string) => {
@@ -2690,6 +2718,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       } : s.player,
     }));
     state.addLog({ type: 'event', message: `【功法提升】${technique.name} 提升至 ${lt.level + 1} 级！消耗了 ${cost} 灵石。` });
+
+    try { getSocket().emit('squad:action', { action: 'cultivate-technique', params: { techniqueId, newLevel: lt.level + 1 } }); } catch {}
   },
 
   equipItem: (item: Equipment) => {
@@ -2719,6 +2749,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     } else {
       state.addLog({ type: 'event', message: `【装备】你装备了 ${item.name}。` });
     }
+
+    try { getSocket().emit('squad:action', { action: 'equip-item', params: { itemName: item.name, slot: item.slot } }); } catch {}
   },
 
   unequipItem: (slot: EquipmentSlot) => {
@@ -2733,6 +2765,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       player: s.player ? { ...s.player, equipmentSlots: currentSlots } : s.player,
     }));
     state.addLog({ type: 'event', message: '你卸下了装备。' });
+
+    try { getSocket().emit('squad:action', { action: 'unequip-item', params: { slot } }); } catch {}
   },
 
   getTechniqueEffects: () => {
@@ -2798,6 +2832,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
       set(s => ({ captives: [...s.captives, captive] }));
       state.addLog({ type: 'combat', message: `【俘虏】你俘虏了 ${npc.name}！忠诚度 ${captive.loyalty}。` });
+      try { getSocket().emit('captive:action', { action: 'capture', params: { npcId: npc.id, loyalty: captive.loyalty } }); } catch {}
     } else {
       state.addLog({ type: 'combat', message: `${npc.name} 宁死不降，未能俘虏。` });
     }
@@ -2810,6 +2845,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     set(s => ({ captives: s.captives.filter((_, i) => i !== index) }));
     get().addReputation(10, 'captive_release');
     state.addLog({ type: 'event', message: `【释放】你释放了 ${captive.npc.name}，声望+10。` });
+
+    try { getSocket().emit('captive:action', { action: 'release', params: { index } }); } catch {}
   },
 
   executeCaptive: (index) => {
@@ -2828,6 +2865,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
     get().addReputation(-30, 'captive_execute');
     state.addLog({ type: 'combat', message: `【处决】你处决了 ${captive.npc.name}，获得 ${stonesFound} 灵石。天下修士无不胆寒...` });
+
+    try { getSocket().emit('captive:action', { action: 'execute', params: { index, stonesFound } }); } catch {}
   },
 
   recruitCaptive: (index) => {
@@ -2870,6 +2909,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       }));
       state.addLog({ type: 'event', message: `【招降】${captive.npc.name} 拒绝归顺（忠诚度 ${captive.loyalty}/70），忠誠+10。` });
     }
+
+    try { getSocket().emit('captive:action', { action: 'recruit', params: { index, success: captive.loyalty >= 70 } }); } catch {}
   },
 
   // Phase 1.1d: Merge server NPC states into nearbyNPCs
