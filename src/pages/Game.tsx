@@ -289,17 +289,51 @@ export const Game = () => {
         }
       }
     };
+    const onAIDecisions = (data: { decisions: Array<{ action: string; fromClanId: string; toClanId: string; description: string }>; timestamp: number }) => {
+      const store = useGameStore.getState();
+      for (const d of data.decisions) {
+        // Apply to client state
+        if (d.action === 'truce-expired') {
+          store.removeDiplomacy(d.fromClanId, d.toClanId);
+        } else if (d.action === 'alliance') {
+          store.setDiplomacy(d.fromClanId, d.toClanId, { status: '同盟', conflictLevel: '和平', declaredBy: d.fromClanId, allianceDate: data.timestamp });
+        } else if (d.action === 'war') {
+          store.setDiplomacy(d.fromClanId, d.toClanId, { status: '战争', conflictLevel: '局部冲突', declaredBy: d.fromClanId });
+        } else if (d.action === 'truce') {
+          store.setDiplomacy(d.fromClanId, d.toClanId, { status: '停战', conflictLevel: '和平', declaredBy: d.fromClanId, truceUntil: data.timestamp + 120000 });
+        }
+        // Log if involves player's faction
+        if (d.fromClanId === store.playerFactionId || d.toClanId === store.playerFactionId) {
+          store.addWorldEvent({ type: d.action === 'war' ? 'conflict' : d.action === 'alliance' ? 'alliance' : 'system', npcNameA: d.fromClanId, npcNameB: d.toClanId, description: d.description, timestamp: data.timestamp });
+        }
+      }
+    };
     const onBroadcast = (data: { action: string; fromClanId: string; toClanId: string; sourcePlayerId: string }) => {
-      // Multi-player sync: apply diplomacy changes from other players
-      if (data.sourcePlayerId === (useGameStore.getState().player?.id)) return; // skip own actions
+      if (data.sourcePlayerId === (useGameStore.getState().player?.id)) return;
       console.log(`[Diplomacy] Received broadcast: ${data.action} ${data.fromClanId} -> ${data.toClanId}`);
     };
     socket.on('diplomacy:truce-expired', onTruceExpired);
+    socket.on('diplomacy:ai-decisions', onAIDecisions);
     socket.on('diplomacy:broadcast', onBroadcast);
     return () => {
       socket.off('diplomacy:truce-expired', onTruceExpired);
+      socket.off('diplomacy:ai-decisions', onAIDecisions);
       socket.off('diplomacy:broadcast', onBroadcast);
     };
+  }, []);
+
+  // Sync clan data to server every 30s for AI decisions
+  useEffect(() => {
+    const socket = getSocket();
+    const syncClans = () => {
+      const store = useGameStore.getState();
+      if (store.clans.length > 0) {
+        socket.emit('diplomacy:sync-clans', { clans: store.clans, playerFactionId: store.playerFactionId });
+      }
+    };
+    syncClans(); // initial sync
+    const interval = setInterval(syncClans, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleChoice = useCallback(async (choiceIndex: number) => {

@@ -567,6 +567,9 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Apply the diplomacy change to server clan state
+    applyDiplomacyChange(action, fromClanId, toClanId, params);
+
     // Log the action for audit
     console.log(`[Diplomacy] ${ps.playerId}: ${action} ${fromClanId} -> ${toClanId}`);
 
@@ -581,6 +584,18 @@ io.on('connection', (socket) => {
     });
 
     socket.emit('diplomacy:result', { ok: true, action, fromClanId, toClanId });
+  });
+
+  // Client sends clan data for server-side AI
+  socket.on('diplomacy:sync-clans', (data: { clans: ServerClan[]; playerFactionId?: string }) => {
+    for (const clan of data.clans) {
+      const existing = serverClans.get(clan.id);
+      serverClans.set(clan.id, {
+        ...clan,
+        diplomacy: existing?.diplomacy || clan.diplomacy || {},
+        playerFactionId: data.playerFactionId === clan.id ? data.playerFactionId : existing?.playerFactionId,
+      });
+    }
   });
 
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
@@ -800,6 +815,116 @@ function initializeGame(): void {
   console.log('Game systems initialized.');
 }
 
+// ============================================================
+// Server-side clan state & AI diplomacy
+// ============================================================
+
+interface ServerClan {
+  id: string;
+  name: string;
+  reputation: number;
+  treasury: number;
+  diplomacy: Record<string, { status: string; conflictLevel: string; declaredBy: string; truceUntil?: number; allianceDate?: number; vassalTribute?: number }>;
+  playerFactionId?: string; // which player controls this clan
+}
+
+const serverClans: Map<string, ServerClan> = new Map();
+
+function applyDiplomacyChange(action: string, fromClanId: string, toClanId: string, params?: any): void {
+  const from = serverClans.get(fromClanId);
+  const to = serverClans.get(toClanId);
+  if (!from || !to) return;
+
+  const now = Date.now();
+
+  switch (action) {
+    case 'declare-war':
+      from.diplomacy[toClanId] = { status: '战争', conflictLevel: '局部冲突', declaredBy: fromClanId };
+      to.diplomacy[fromClanId] = { status: '战争', conflictLevel: '局部冲突', declaredBy: fromClanId };
+      break;
+    case 'propose-alliance':
+      from.diplomacy[toClanId] = { status: '同盟', conflictLevel: '和平', declaredBy: fromClanId, allianceDate: now };
+      to.diplomacy[fromClanId] = { status: '同盟', conflictLevel: '和平', declaredBy: fromClanId, allianceDate: now };
+      break;
+    case 'propose-truce':
+      from.diplomacy[toClanId] = { status: '停战', conflictLevel: '和平', declaredBy: fromClanId, truceUntil: now + 120000 };
+      to.diplomacy[fromClanId] = { status: '停战', conflictLevel: '和平', declaredBy: fromClanId, truceUntil: now + 120000 };
+      break;
+    case 'surrender':
+      from.diplomacy[toClanId] = { status: '臣服', conflictLevel: '和平', declaredBy: fromClanId, vassalTribute: Math.floor((from.treasury || 0) * 0.1) };
+      to.diplomacy[fromClanId] = { status: '皇族', conflictLevel: '和平', declaredBy: fromClanId, vassalTribute: Math.floor((from.treasury || 0) * 0.1) };
+      break;
+    case 'break-alliance':
+      delete from.diplomacy[toClanId];
+      delete to.diplomacy[fromClanId];
+      break;
+  }
+}
+
+function runDiplomacyAI(): void {
+  const now = Date.now();
+  const decisions: Array<{ action: string; fromClanId: string; toClanId: string; description: string }> = [];
+
+  // 1. Truce expiry
+  for (const clan of serverClans.values()) {
+    for (const [targetId, entry] of Object.entries(clan.diplomacy)) {
+      if (entry.status === '停战' && entry.truceUntil && now > entry.truceUntil) {
+        delete clan.diplomacy[targetId];
+        const target = serverClans.get(targetId);
+        if (target) delete target.diplomacy[clan.id];
+        decisions.push({ action: 'truce-expired', fromClanId: clan.id, toClanId: targetId, description: `【${clan.name}】与【${target?.name || targetId}】的停战协议到期` });
+      }
+    }
+  }
+
+  // 2. AI diplomatic decisions
+  const aiClans = [...serverClans.values()].filter(c => !c.playerFactionId && c.treasury >= 100);
+
+  for (const clan of aiClans) {
+    for (const other of serverClans.values()) {
+      if (other.id === clan.id) continue;
+
+      const currentStatus = clan.diplomacy[other.id]?.status || '中立';
+      const powerRatio = (clan.reputation + 10) / (other.reputation + 10);
+
+      // Alliance: similar power, neutral
+      if (currentStatus === '中立' && powerRatio > 0.5 && powerRatio < 2.0 && Math.random() < 0.02) {
+        applyDiplomacyChange('propose-alliance', clan.id, other.id);
+        decisions.push({ action: 'alliance', fromClanId: clan.id, toClanId: other.id, description: `【${clan.name}】与【${other.name}】缔结同盟！` });
+      }
+
+      // War: much stronger, neutral
+      if (currentStatus === '中立' && powerRatio > 1.8 && Math.random() < 0.015) {
+        applyDiplomacyChange('declare-war', clan.id, other.id);
+        decisions.push({ action: 'war', fromClanId: clan.id, toClanId: other.id, description: `【${clan.name}】向【${other.name}】宣战！` });
+      }
+
+      // Truce: at war, random chance
+      if (currentStatus === '战争' && Math.random() < 0.03) {
+        applyDiplomacyChange('propose-truce', clan.id, other.id);
+        decisions.push({ action: 'truce', fromClanId: clan.id, toClanId: other.id, description: `【${clan.name}】与【${other.name}】达成停战。` });
+      }
+    }
+
+    // Vassal tribute
+    for (const [vassalId, entry] of Object.entries(clan.diplomacy)) {
+      if (entry.status === '臣服' && entry.vassalTribute && entry.vassalTribute > 0) {
+        const vassal = serverClans.get(vassalId);
+        if (vassal && vassal.treasury >= entry.vassalTribute) {
+          const tribute = Math.min(entry.vassalTribute, vassal.treasury);
+          vassal.treasury -= tribute;
+          clan.treasury += tribute;
+        }
+      }
+    }
+  }
+
+  // 3. Broadcast decisions to all clients
+  if (decisions.length > 0) {
+    io.emit('diplomacy:ai-decisions', { decisions, timestamp: now });
+  }
+}
+
 function startGameLoop(): void {
   setInterval(() => {
     const players = PlayerService.getInstance().getOnlinePlayers();
@@ -817,31 +942,10 @@ function startGameLoop(): void {
     }, 5000);
   }
 
-  // Diplomacy tick: broadcast truce expiry checks every 10s
-  const activeTruces: Map<string, number> = new Map(); // key: "fromClanId:toClanId" → truceUntil
+  // Diplomacy AI tick: truce expiry + AI decisions every 30s
   setInterval(() => {
-    const now = Date.now();
-    const expired: string[] = [];
-    for (const [key, truceUntil] of activeTruces) {
-      if (now > truceUntil) {
-        expired.push(key);
-        activeTruces.delete(key);
-      }
-    }
-    if (expired.length > 0) {
-      io.emit('diplomacy:truce-expired', { expired: expired.map(k => {
-        const [fromClanId, toClanId] = k.split(':');
-        return { fromClanId, toClanId };
-      }), timestamp: now });
-    }
-  }, 10000);
-
-  // Listen for truce registrations from clients
-  io.on('connection', (socket) => {
-    socket.on('diplomacy:register-truce', (data: { fromClanId: string; toClanId: string; truceUntil: number }) => {
-      activeTruces.set(`${data.fromClanId}:${data.toClanId}`, data.truceUntil);
-    });
-  });
+    runDiplomacyAI();
+  }, 30000);
 
   // NPC behavior processing via C++ ECS engine (every 100ms = ~10 FPS simulation)
   // Falls back to TS-based processing if C++ addon is unavailable
