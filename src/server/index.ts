@@ -13,7 +13,8 @@ import {
   EconomyService,
   ItemService,
   WorldGenService,
-  ECSEngineService
+  ECSEngineService,
+  DataService
 } from './services';
 import { NPCWorldService } from './services/NPCWorldService';
 import { MapGeneratorService } from './services/MapGeneratorService';
@@ -516,6 +517,43 @@ io.on('connection', (socket) => {
     dialogueRateMap.delete(socket.id);
     factionRateMap.delete(socket.id);
     console.log(`Client disconnected: ${socket.id}`);
+  });
+
+  // Server-side save/load
+  socket.on('game:save', (data: { slot: number; meta: any; state: any }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('game:save-result', { ok: false, error: '未登录' }); return; }
+    try {
+      DataService.getInstance().saveGameSlot(ps.playerId, data.slot, data.meta, data.state);
+      socket.emit('game:save-result', { ok: true, slot: data.slot });
+    } catch (e) {
+      socket.emit('game:save-result', { ok: false, error: String(e) });
+    }
+  });
+
+  socket.on('game:load', (data: { slot: number }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('game:load-result', { ok: false, error: '未登录' }); return; }
+    const result = DataService.getInstance().loadGameSlot(ps.playerId, data.slot);
+    if (result) {
+      socket.emit('game:load-result', { ok: true, slot: data.slot, meta: result.meta, state: result.state });
+    } else {
+      socket.emit('game:load-result', { ok: false, slot: data.slot, error: '存档不存在' });
+    }
+  });
+
+  socket.on('game:save-slots', () => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) { socket.emit('game:save-slots-result', { ok: false }); return; }
+    const slots = DataService.getInstance().getSaveSlots(ps.playerId);
+    socket.emit('game:save-slots-result', { ok: true, slots });
+  });
+
+  socket.on('game:delete-save', (data: { slot: number }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+    DataService.getInstance().deleteSaveSlot(ps.playerId, data.slot);
+    socket.emit('game:delete-save-result', { ok: true, slot: data.slot });
   });
 
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {

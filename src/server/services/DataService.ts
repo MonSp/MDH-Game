@@ -287,6 +287,15 @@ export class DataService {
         grudges_json TEXT,
         active_bounties_json TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS game_saves (
+        player_id TEXT NOT NULL,
+        slot INTEGER NOT NULL,
+        meta_json TEXT NOT NULL,
+        state_json TEXT NOT NULL,
+        saved_at INTEGER NOT NULL,
+        PRIMARY KEY (player_id, slot)
+      );
     `);
   }
 
@@ -429,5 +438,44 @@ export class DataService {
     const row = this.db.prepare('SELECT data FROM npc_memory_blob WHERE id = 1').get() as { data: Buffer } | undefined;
     if (!row || !row.data) return false;
     return ecsLoadMemory(row.data.buffer.slice(row.data.byteOffset, row.data.byteOffset + row.data.byteLength) as ArrayBuffer);
+  }
+
+  saveGameSlot(playerId: string, slot: number, meta: object, state: object): void {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO game_saves (player_id, slot, meta_json, state_json, saved_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(playerId, slot, JSON.stringify(meta), JSON.stringify(state), Date.now());
+  }
+
+  loadGameSlot(playerId: string, slot: number): { meta: object; state: object } | null {
+    const row = this.db.prepare('SELECT meta_json, state_json FROM game_saves WHERE player_id = ? AND slot = ?')
+      .get(playerId, slot) as { meta_json: string; state_json: string } | undefined;
+    if (!row) return null;
+    try {
+      return { meta: JSON.parse(row.meta_json), state: JSON.parse(row.state_json) };
+    } catch {
+      return null;
+    }
+  }
+
+  getSaveSlots(playerId: string): Array<{ slot: number; meta: object | null }> {
+    const rows = this.db.prepare('SELECT slot, meta_json FROM game_saves WHERE player_id = ?')
+      .all(playerId) as Array<{ slot: number; meta_json: string }>;
+    const result: Array<{ slot: number; meta: object | null }> = [];
+    for (let i = 1; i <= 5; i++) {
+      const row = rows.find(r => r.slot === i);
+      if (row) {
+        try { result.push({ slot: i, meta: JSON.parse(row.meta_json) }); }
+        catch { result.push({ slot: i, meta: null }); }
+      } else {
+        result.push({ slot: i, meta: null });
+      }
+    }
+    return result;
+  }
+
+  deleteSaveSlot(playerId: string, slot: number): void {
+    this.db.prepare('DELETE FROM game_saves WHERE player_id = ? AND slot = ?').run(playerId, slot);
   }
 }
