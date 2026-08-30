@@ -1127,6 +1127,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       playerFactionId: factionId,
     }));
     state.addLog({ type: 'event', message: `【创立势力】你消耗了 ${FACTION_CREATE_REQUIREMENTS.spiritStones} 块灵石，创立了【${name}】！` });
+
+    try { getSocket().emit('squad:action', { action: 'create-faction', params: { name, factionId, country: state.player.country, cost: FACTION_CREATE_REQUIREMENTS.spiritStones } }); } catch {}
+
     return true;
   },
 
@@ -1160,6 +1163,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         } : s.player,
       }));
       state.addLog({ type: 'event', message: `【建造】你在驻地建造了【${buildingType}】！消耗了 ${cost} 块灵石。` });
+
+      try { getSocket().emit('squad:action', { action: 'build-building', params: { buildingType, cost, factionId: state.playerFactionId } }); } catch {}
     } else if (existing.level < 3) {
       const newLevel = (existing.level + 1) as BuildingLevel;
       const cost = BUILDING_UPGRADE_COST[buildingType][existing.level];
@@ -1178,6 +1183,8 @@ export const useGameStore = create<GameState>((set, get) => ({
         } : s.player,
       }));
       state.addLog({ type: 'event', message: `【升级】${buildingType} 升至 ${newLevel} 级！消耗了 ${cost} 块灵石。` });
+
+      try { getSocket().emit('squad:action', { action: 'upgrade-building', params: { buildingType, newLevel, cost, factionId: state.playerFactionId } }); } catch {}
     } else {
       state.addLog({ type: 'system', message: `${buildingType} 已达最高等级。` });
     }
