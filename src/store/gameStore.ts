@@ -390,6 +390,101 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
+  duelNPC: (npcId: string) => {
+    const state = get();
+    const npc = state.nearbyNPCs.find(n => n.id === npcId);
+    if (!npc || !state.player) return;
+
+    state.addLog({ type: 'combat', message: `你向 ${npc.name} 发起决斗！这是一场生死之战！` });
+
+    try {
+      const socket = getSocket();
+      socket.emit('combat:duel-npc', {
+        npcId, npcName: npc.name, npcPower: npc.power, npcClanId: npc.clanId,
+        npcRealm: npc.realm, npcActivity: npc.activity, npcSpiritStone: npc.resources.spiritStone,
+        playerAttack: state.player.stats.attack, playerCountry: state.player.country,
+        playerRealm: state.player.realm, playerPosition: state.player.position,
+      });
+      socket.once('combat:duel-npc-result', (result: any) => {
+        if (result.win) {
+          let msg = `【决斗】你击败了 ${npc.name}，夺取了 ${result.dropStones} 块灵石！获得 ${result.expGain} 点修为。`;
+          if (result.droppedItem) msg += ` 获得了【${result.droppedItem}】！`;
+          set(s => {
+            const inv = { ...s.player!.inventory };
+            inv['灵石'] = (inv['灵石'] || 0) + result.dropStones;
+            if (result.droppedItem) inv[result.droppedItem] = (inv[result.droppedItem] || 0) + 1;
+            return {
+              player: { ...s.player!, stats: { ...s.player!.stats, exp: s.player!.stats.exp + result.expGain }, hiddenStats: { ...s.player!.hiddenStats, killCount: s.player!.hiddenStats.killCount + 1 }, inventory: inv },
+              nearbyNPCs: s.nearbyNPCs.filter(n => n.id !== npcId),
+              clans: s.clans.map(c => c.id === npc.clanId ? { ...c, reputation: result.clanRepAfter } : c),
+            };
+          });
+          get().addLog({ type: 'event', message: msg });
+          get().addReputation(result.reputationGain, 'duel_win');
+        } else {
+          get().addLog({ type: 'combat', message: `【决斗】你不敌 ${npc.name}，重伤败退！损失 ${result.hpLoss} 点生命。` });
+          set(s => ({ player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - result.hpLoss) } } : s.player }));
+        }
+      });
+    } catch {
+      // Fallback
+      const win = Math.random() < 0.5;
+      if (win) {
+        set(s => ({ nearbyNPCs: s.nearbyNPCs.filter(n => n.id !== npcId) }));
+        get().addLog({ type: 'event', message: `【决斗】你击败了 ${npc.name}！` });
+      } else {
+        set(s => ({ player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - 50) } } : s.player }));
+        get().addLog({ type: 'combat', message: `【决斗】你不敌 ${npc.name}，重伤败退！` });
+      }
+    }
+  },
+
+  robNPC: (npcId: string) => {
+    const state = get();
+    const npc = state.nearbyNPCs.find(n => n.id === npcId);
+    if (!npc || !state.player) return;
+
+    state.addLog({ type: 'combat', message: `你对 ${npc.name} 发起了掠夺！` });
+
+    try {
+      const socket = getSocket();
+      socket.emit('combat:rob-npc', {
+        npcId, npcName: npc.name, npcPower: npc.power, npcClanId: npc.clanId,
+        npcRealm: npc.realm, npcSpiritStone: npc.resources.spiritStone,
+        playerAttack: state.player.stats.attack, playerRealm: state.player.realm,
+      });
+      socket.once('combat:rob-npc-result', (result: any) => {
+        if (result.success) {
+          set(s => ({
+            player: { ...s.player!, inventory: { ...s.player!.inventory, '灵石': (s.player!.inventory['灵石'] || 0) + result.stolenStones } },
+            clans: s.clans.map(c => c.id === npc.clanId ? { ...c, reputation: result.clanRepAfter } : c),
+          }));
+          get().addLog({ type: 'event', message: result.message });
+          get().addReputation(-result.repLoss, 'robbery');
+        } else {
+          set(s => ({
+            player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - result.hpLoss) } } : s.player,
+            clans: s.clans.map(c => c.id === npc.clanId ? { ...c, reputation: result.clanRepAfter } : c),
+          }));
+          get().addLog({ type: 'combat', message: result.message });
+          get().addReputation(-result.repLoss, 'robbery_fail');
+        }
+      });
+    } catch {
+      // Fallback
+      const success = Math.random() < 0.4;
+      if (success) {
+        const stolen = Math.floor(npc.resources.spiritStone * 0.5);
+        set(s => ({ player: { ...s.player!, inventory: { ...s.player!.inventory, '灵石': (s.player!.inventory['灵石'] || 0) + stolen } } }));
+        get().addLog({ type: 'event', message: `你从 ${npc.name} 处窃取了 ${stolen} 块灵石！` });
+      } else {
+        set(s => ({ player: s.player ? { ...s.player, stats: { ...s.player.stats, hp: Math.max(1, s.player.stats.hp - 30) } } : s.player }));
+        get().addLog({ type: 'combat', message: `掠夺 ${npc.name} 失败，被反击！` });
+      }
+      get().addReputation(-30, 'robbery');
+    }
+  },
+
   interactWithResource: (resourceId) => {
     const state = get();
     if (!state.player) return;

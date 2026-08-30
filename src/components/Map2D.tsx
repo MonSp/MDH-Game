@@ -1816,7 +1816,8 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0, onBlockWorldTogg
             {(() => {
               const recruitCost = useGameStore.getState().getRecruitCost(selectedNPC);
               return (
-                <div className="grid grid-cols-4 gap-2">
+                <div>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     className="py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded transition-colors text-sm"
                     onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '交谈'); setSelectedNPC(null); }}
@@ -1828,12 +1829,6 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0, onBlockWorldTogg
                     onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '交易'); setSelectedNPC(null); }}
                   >
                     交易
-                  </button>
-                  <button
-                    className="py-2 bg-rose-900/50 hover:bg-rose-800 text-rose-400 rounded transition-colors border border-rose-900 text-sm"
-                    onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '攻击'); setSelectedNPC(null); }}
-                  >
-                    攻击
                   </button>
                   <button
                     className={`py-2 rounded transition-colors text-sm ${
@@ -1851,6 +1846,29 @@ export const Map2D = ({ onProximityTrigger, triggerVersion = 0, onBlockWorldTogg
                   >
                     招募
                   </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <button
+                    className="py-2 bg-rose-900/50 hover:bg-rose-800 text-rose-400 rounded transition-colors border border-rose-900 text-sm"
+                    onClick={() => { useGameStore.getState().interactWithNPC(selectedNPC.id, '攻击'); setSelectedNPC(null); }}
+                  >
+                    攻击
+                  </button>
+                  <button
+                    className="py-2 bg-orange-900/50 hover:bg-orange-800 text-orange-400 rounded transition-colors border border-orange-900 text-sm"
+                    onClick={() => { useGameStore.getState().duelNPC(selectedNPC.id); setSelectedNPC(null); }}
+                    title="高风险高回报的1v1决斗，胜利获得更多奖励，失败损失更多生命"
+                  >
+                    决斗
+                  </button>
+                  <button
+                    className="py-2 bg-purple-900/50 hover:bg-purple-800 text-purple-400 rounded transition-colors border border-purple-900 text-sm"
+                    onClick={() => { useGameStore.getState().robNPC(selectedNPC.id); setSelectedNPC(null); }}
+                    title="窃取灵石，有失败风险，会大幅降低声望"
+                  >
+                    掠夺
+                  </button>
+                </div>
                 </div>
               );
             })()}

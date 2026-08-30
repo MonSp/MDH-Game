@@ -723,6 +723,8 @@ export interface GameState {
   addWorldEvent: (event: Omit<WorldEvent, 'id'>) => void;
   movePlayer: (dx: number, dy: number) => void;
   interactWithNPC: (npcId: string, action: '交谈' | '交易' | '攻击') => void;
+  duelNPC: (npcId: string) => void;
+  robNPC: (npcId: string) => void;
   interactWithResource: (resourceId: string) => void;
   useItem: (itemName: string) => void;
   cultivate: () => void;
