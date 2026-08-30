@@ -128,6 +128,7 @@ interface PlayerSocket {
 
 const playerSockets: Map<string, PlayerSocket> = new Map();
 const prevNpcIds: Map<string, Set<string>> = new Map();
+const LLM_ENABLED = false; // Disabled until a working endpoint is configured
 
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
@@ -694,6 +695,7 @@ function initializeGame(): void {
   npcWorld.setClanIds(npcWorld.generateDefaultClanIds(9));
   npcWorld.initialize();
   npcWorld.start();
+  npcWorld.setLlmMode(false); // Disabled until a working LLM endpoint is configured
 
   // Bridge NPC world events to chronicle
   npcWorld.on('npc:event', (event: any) => {
@@ -709,22 +711,26 @@ function initializeGame(): void {
     });
   });
 
-  // Start LLM planning scheduler and register high-tier NPCs
-  const llmIntegration = LLMIntegrationManager.getInstance();
-  llmIntegration.initialize();
-  for (const [npcId, state] of npcWorld.getAllNPCs()) {
-    llmIntegration.registerHighTierNPC(npcId, {
-      id: npcId,
-      name: state.npc.name,
-      clan_id: state.npc.clanId,
-      nation: state.npc.nation,
-      role: state.npc.role,
-      realm: state.npc.realm,
-      power: state.npc.power,
-      personality: state.npc.personality,
-    });
+  // LLM planning — disabled until a working endpoint is configured
+  if (LLM_ENABLED) {
+    const llmIntegration = LLMIntegrationManager.getInstance();
+    llmIntegration.initialize();
+    for (const [npcId, state] of npcWorld.getAllNPCs()) {
+      llmIntegration.registerHighTierNPC(npcId, {
+        id: npcId,
+        name: state.npc.name,
+        clan_id: state.npc.clanId,
+        nation: state.npc.nation,
+        role: state.npc.role,
+        realm: state.npc.realm,
+        power: state.npc.power,
+        personality: state.npc.personality,
+      });
+    }
+    console.log(`[LLM] Registered ${npcWorld.getAllNPCs().size} NPCs with planning scheduler`);
+  } else {
+    console.log('[LLM] Planning disabled — no working endpoint configured');
   }
-  console.log(`[LLM] Registered ${npcWorld.getAllNPCs().size} NPCs with planning scheduler`);
 
   console.log('Game systems initialized.');
 }
@@ -737,12 +743,14 @@ function startGameLoop(): void {
     }
   }, 1000 / 60);
 
-  // Phase 1.1b: LLM planning tick every 5 seconds
-  setInterval(() => {
-    LLMIntegrationManager.getInstance().tick().catch(err =>
-      console.error('[NPC] LLM tick error:', err)
-    );
-  }, 5000);
+  // LLM planning tick — only runs when LLM_ENABLED
+  if (LLM_ENABLED) {
+    setInterval(() => {
+      LLMIntegrationManager.getInstance().tick().catch(err =>
+        console.error('[NPC] LLM tick error:', err)
+      );
+    }, 5000);
+  }
 
   // NPC behavior processing via C++ ECS engine (every 100ms = ~10 FPS simulation)
   // Falls back to TS-based processing if C++ addon is unavailable
