@@ -346,12 +346,25 @@ export const Game = () => {
     };
     socket.on('resource:tick', onResourceTick);
 
+    const onNpcWarResult = (data: { results: Array<{ winnerId: string; loserId: string; winnerClanId: string; loserClanId: string }>; timestamp: number }) => {
+      // NPC war results are informational — log for multiplayer awareness
+    };
+    socket.on('combat:npc-war-result', onNpcWarResult);
+
+    const onArmyResult = (data: { winnerName: string; loserName: string; casualties: number; timestamp: number }) => {
+      const store = useGameStore.getState();
+      store.addWorldEvent({ type: 'conflict', npcNameA: data.winnerName, npcNameB: data.loserName, description: `【军团战】${data.winnerName}击败了${data.loserName}，${data.loserName}损失${data.casualties}人。`, timestamp: data.timestamp });
+    };
+    socket.on('combat:army-result', onArmyResult);
+
     return () => {
       socket.off('diplomacy:truce-expired', onTruceExpired);
       socket.off('diplomacy:ai-decisions', onAIDecisions);
       socket.off('diplomacy:broadcast', onBroadcast);
       socket.off('siege:result', onSiegeResult);
       socket.off('resource:tick', onResourceTick);
+      socket.off('combat:npc-war-result', onNpcWarResult);
+      socket.off('combat:army-result', onArmyResult);
     };
   }, []);
 

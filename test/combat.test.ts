@@ -279,8 +279,9 @@ describe('updateNPCs() auto-combat', () => {
     store.updateNPCs();
 
     const state = useGameStore.getState();
-    // Monster should be dead and removed
-    expect(state.wildMonsters.length).toBe(0);
+    // Original monster should be dead (new ones may spawn randomly)
+    const originalMonster = state.wildMonsters.find(m => m.id === 'monster-1');
+    expect(originalMonster).toBeUndefined(); // dead monsters are filtered out
     // Player should gain exp and spirit stones
     expect(state.player!.stats.exp).toBeGreaterThan(0);
     expect(state.player!.inventory['灵石']).toBeGreaterThan(1000);

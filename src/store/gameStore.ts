@@ -1834,6 +1834,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     // NPCs from warring clans attack each other when adjacent
     // Uses state.clans for status (clan treasury updates handled via clanTreasuryUpdates map)
     const npcsAfterWar = [...npcs];
+    const npcCombatResults: Array<{ winnerId: string; loserId: string; winnerClanId: string; loserClanId: string; winnerPower: number }> = [];
     for (let i = 0; i < npcsAfterWar.length; i++) {
       const a = npcsAfterWar[i];
       if (a.retreatTicksRemaining || a.hp <= 0) continue;
@@ -1858,12 +1859,23 @@ export const useGameStore = create<GameState>((set, get) => ({
         npcsAfterWar[i] = { ...a, hp: a.hp - bDmg };
         npcsAfterWar[j] = { ...b, hp: b.hp - aDmg };
 
-        if (npcsAfterWar[i].hp <= 0) npcsAfterWar[i] = applyNpcDefeat(a, a.clanId, b.clanId, bPower);
-        if (npcsAfterWar[j].hp <= 0) npcsAfterWar[j] = applyNpcDefeat(b, b.clanId, a.clanId, aPower);
+        if (npcsAfterWar[i].hp <= 0) {
+          npcsAfterWar[i] = applyNpcDefeat(a, a.clanId, b.clanId, bPower);
+          npcCombatResults.push({ winnerId: b.id, loserId: a.id, winnerClanId: b.clanId, loserClanId: a.clanId, winnerPower: bPower });
+        }
+        if (npcsAfterWar[j].hp <= 0) {
+          npcsAfterWar[j] = applyNpcDefeat(b, b.clanId, a.clanId, aPower);
+          npcCombatResults.push({ winnerId: a.id, loserId: b.id, winnerClanId: a.clanId, loserClanId: b.clanId, winnerPower: aPower });
+        }
         break; // one fight per NPC per tick
       }
     }
     npcs = npcsAfterWar;
+
+    // Send NPC combat results to server
+    if (npcCombatResults.length > 0) {
+      try { getSocket().emit('combat:npc-vs-npc', { results: npcCombatResults }); } catch {}
+    }
 
     // === Phase 4: Clan army grouping and army-vs-army combat ===
     // Group NPCs into armies per clan (clans at war form armies)
@@ -1947,6 +1959,9 @@ export const useGameStore = create<GameState>((set, get) => ({
           return n;
         });
         state.addLog({ type: 'combat', message: `【军团战】${winner.name}击败了${loser.name}，${loser.name}损失${casualties}人。` });
+
+        try { getSocket().emit('combat:army-vs-army', { winnerClanId: winner.clanId, loserClanId: loser.clanId, winnerName: winner.name, loserName: loser.name, casualties, winnerPower: winner.totalPower, loserPower: loser.totalPower }); } catch {}
+
         break;
       }
     }

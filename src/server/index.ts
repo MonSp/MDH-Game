@@ -718,6 +718,41 @@ io.on('connection', (socket) => {
     console.log(`[Combat] ${ps.playerId}: killed ${data.monsterName}, +${data.expGain}exp, +${data.stonesGain} stones`);
   });
 
+  // NPC-vs-NPC combat results
+  socket.on('combat:npc-vs-npc', (data: { results: Array<{ winnerId: string; loserId: string; winnerClanId: string; loserClanId: string; winnerPower: number }> }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+    for (const r of data.results) {
+      console.log(`[Combat] NPC war: ${r.winnerId}(${r.winnerClanId}) defeated ${r.loserId}(${r.loserClanId})`);
+      // Update server clan treasury
+      const winnerClan = serverClans.get(r.winnerClanId);
+      const loserClan = serverClans.get(r.loserClanId);
+      if (winnerClan) winnerClan.treasury += Math.floor(r.winnerPower * 0.1);
+      if (loserClan) loserClan.treasury = Math.max(0, loserClan.treasury - Math.floor(r.winnerPower * 0.05));
+    }
+    // Broadcast NPC war results
+    if (data.results.length > 0) {
+      io.emit('combat:npc-war-result', { results: data.results, timestamp: Date.now() });
+    }
+  });
+
+  // Army-vs-army combat results
+  socket.on('combat:army-vs-army', (data: {
+    winnerClanId: string; loserClanId: string; winnerName: string; loserName: string;
+    casualties: number; winnerPower: number; loserPower: number;
+  }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+    console.log(`[Combat] Army war: ${data.winnerName} defeated ${data.loserName}, casualties: ${data.casualties}`);
+    // Update server clan state
+    const winnerClan = serverClans.get(data.winnerClanId);
+    const loserClan = serverClans.get(data.loserClanId);
+    if (winnerClan) winnerClan.treasury += data.casualties * 2;
+    if (loserClan) loserClan.treasury = Math.max(0, loserClan.treasury - data.casualties);
+    // Broadcast army combat result
+    io.emit('combat:army-result', { ...data, timestamp: Date.now() });
+  });
+
   // Siege warfare — server-authoritative resolution
   socket.on('siege:resolve', (data: {
     attackerClanId: string; targetClanId: string; attackPower: number;
