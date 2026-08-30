@@ -776,6 +776,47 @@ io.on('connection', (socket) => {
     socket.emit('siege:build-equipment-result', { ok: true });
   });
 
+  // Resource point operations
+  socket.on('resource:gather', (data: {
+    resourceId: string; resourceType: string; playerPosition: { x: number; y: number };
+    fortune: number; heavenLevel: number;
+  }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+
+    const { resourceId, resourceType, fortune } = data;
+    const fortuneProc = Math.random() < (fortune / 100);
+    const fortuneMult = fortuneProc ? 2 : 1;
+
+    let expGain = 0;
+    let stonesGain = 0;
+    let itemDrop = '';
+    let resultMsg = '';
+
+    if (resourceType === '灵田') {
+      expGain = Math.floor(30 * fortuneMult);
+      resultMsg = `你在灵田采摘了仙草，获得了 ${expGain} 点修为${fortuneProc ? '（双倍）' : ''}。`;
+    } else if (resourceType === '矿脉') {
+      stonesGain = Math.floor(50 * fortuneMult);
+      resultMsg = `你在矿脉开采了 ${stonesGain} 块灵石${fortuneProc ? '（双倍）' : ''}。`;
+    } else if (resourceType === '遗迹') {
+      stonesGain = Math.floor(100 * fortuneMult);
+      if (Math.random() < 0.3 * fortuneMult) itemDrop = '洗髓丹';
+      resultMsg = `你在遗迹中探索，发现了 ${stonesGain} 块灵石${fortuneProc ? '（双倍）' : ''}${itemDrop ? '，以及一枚珍贵的【洗髓丹】！' : '。'}`;
+    }
+
+    console.log(`[Resource] ${ps.playerId}: gather ${resourceType}, +${expGain}exp, +${stonesGain} stones${itemDrop ? ', got ' + itemDrop : ''}`);
+
+    socket.emit('resource:gather-result', {
+      ok: true, resourceId, expGain, stonesGain, itemDrop, message: resultMsg, fortuneProc,
+    });
+  });
+
+  // Resource point sync from client
+  socket.on('resource:sync-points', (data: { points: ServerResourcePoint[] }) => {
+    syncResourcePoints(data.points);
+  });
+
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
     const { buildingId, lx, ly, lz, damage, playerId } = data;
     
@@ -1103,6 +1144,57 @@ function runDiplomacyAI(): void {
   }
 }
 
+// ============================================================
+// Server-side resource point management
+// ============================================================
+
+interface ServerResourcePoint {
+  id: string;
+  type: '灵田' | '矿脉' | '遗迹';
+  amount: number;
+  position: { x: number; y: number };
+  ownerClanId?: string;
+  heavenLevel: number;
+}
+
+const serverResourcePoints: Map<string, ServerResourcePoint> = new Map();
+
+function runResourceTick(): void {
+  const now = Date.now();
+  const updates: Array<{ clanId: string; income: number; claimed: boolean; resourceType?: string }> = [];
+
+  // AI resource claiming + passive income
+  for (const clan of serverClans.values()) {
+    if (clan.playerFactionId) continue; // Skip player-controlled clans
+
+    // Passive income from owned resources
+    let totalIncome = 0;
+    for (const rp of serverResourcePoints.values()) {
+      if (rp.ownerClanId === clan.id) {
+        totalIncome += Math.max(1, Math.floor(rp.amount * 0.02));
+      }
+    }
+    if (totalIncome > 0) {
+      clan.treasury += totalIncome;
+      updates.push({ clanId: clan.id, income: totalIncome, claimed: false });
+    }
+  }
+
+  // Broadcast resource updates to all clients
+  if (updates.length > 0) {
+    io.emit('resource:tick', { updates, timestamp: now });
+  }
+}
+
+// Sync resource points from client
+function syncResourcePoints(points: ServerResourcePoint[]): void {
+  for (const p of points) {
+    if (!serverResourcePoints.has(p.id)) {
+      serverResourcePoints.set(p.id, { ...p });
+    }
+  }
+}
+
 function startGameLoop(): void {
   setInterval(() => {
     const players = PlayerService.getInstance().getOnlinePlayers();
@@ -1123,6 +1215,7 @@ function startGameLoop(): void {
   // Diplomacy AI tick: truce expiry + AI decisions every 30s
   setInterval(() => {
     runDiplomacyAI();
+    runResourceTick();
   }, 30000);
 
   // NPC behavior processing via C++ ECS engine (every 100ms = ~10 FPS simulation)

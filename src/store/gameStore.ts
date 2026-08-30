@@ -481,7 +481,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
     });
 
-    try { getSocket().emit('squad:action', { action: 'collect-resource', params: { resourceId } }); } catch {}
+    try { getSocket().emit('resource:gather', { resourceId, resourceType: resource.type, playerPosition: state.player.position, fortune: state.player.talent?.fortune ?? 20, heavenLevel: state.player.heavenLevel }); } catch {}
   },
 
   useItem: (itemName) => {

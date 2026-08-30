@@ -331,11 +331,27 @@ export const Game = () => {
     };
     socket.on('siege:result', onSiegeResult);
 
+    const onResourceTick = (data: { updates: Array<{ clanId: string; income: number; claimed: boolean }>; timestamp: number }) => {
+      // Apply passive income to local clan state
+      const store = useGameStore.getState();
+      for (const update of data.updates) {
+        const clan = store.clans.find(c => c.id === update.clanId);
+        if (clan && update.income > 0) {
+          // Income is tracked server-side; log for visibility
+          if (update.claimed) {
+            store.addWorldEvent({ type: 'system', npcNameA: clan.name, npcNameB: '', description: `【${clan.name}】占领了一处资源点。`, timestamp: data.timestamp });
+          }
+        }
+      }
+    };
+    socket.on('resource:tick', onResourceTick);
+
     return () => {
       socket.off('diplomacy:truce-expired', onTruceExpired);
       socket.off('diplomacy:ai-decisions', onAIDecisions);
       socket.off('diplomacy:broadcast', onBroadcast);
       socket.off('siege:result', onSiegeResult);
+      socket.off('resource:tick', onResourceTick);
     };
   }, []);
 
