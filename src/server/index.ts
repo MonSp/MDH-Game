@@ -676,7 +676,7 @@ function initializeGame(): void {
   ecsEngine.initialize(0);
 
   if (ecsEngine.isAvailable) {
-    const totalNPCs = 10000;
+    const totalNPCs = 3000;
     for (let layer = 9; layer >= 1; layer--) {
       const count = Math.floor(totalNPCs / 9);
       const result = ecsEngine.createNPCs(count, layer);
