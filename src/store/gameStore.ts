@@ -239,60 +239,70 @@ export const useGameStore = create<GameState>((set, get) => ({
     return { _factionLLMResults: rest };
   }),
 
-  movePlayer: (dx, dy) => set(state => {
-    if (!state.player) return state;
+  movePlayer: (dx, dy) => {
+    const result = set(state => {
+      if (!state.player) return state;
 
-    let moveMultiplier = 1;
-    if (state.player.country === '赵' && Math.random() < 0.2) {
-      moveMultiplier = 2;
-    }
+      let moveMultiplier = 1;
+      if (state.player.country === '赵' && Math.random() < 0.2) {
+        moveMultiplier = 2;
+      }
 
-    const finalDx = dx * moveMultiplier;
-    const finalDy = dy * moveMultiplier;
-    const newX = state.player.position.x + finalDx;
-    const newY = state.player.position.y + finalDy;
-    const gridX = Math.round(newX);
-    const gridY = Math.round(newY);
+      const finalDx = dx * moveMultiplier;
+      const finalDy = dy * moveMultiplier;
+      const newX = state.player.position.x + finalDx;
+      const newY = state.player.position.y + finalDy;
+      const gridX = Math.round(newX);
+      const gridY = Math.round(newY);
 
-    if (gridX < 0 || gridX >= GAME_CONFIG.MAP_WIDTH || gridY < 0 || gridY >= GAME_CONFIG.MAP_HEIGHT) {
-      return state;
-    }
+      if (gridX < 0 || gridX >= GAME_CONFIG.MAP_WIDTH || gridY < 0 || gridY >= GAME_CONFIG.MAP_HEIGHT) {
+        return state;
+      }
 
-    if (!isPositionPassable(gridX, gridY)) {
-      get().addLog({ type: 'system', message: '前方地形无法通行。' });
-      return state;
-    }
+      if (!isPositionPassable(gridX, gridY)) {
+        get().addLog({ type: 'system', message: '前方地形无法通行。' });
+        return state;
+      }
 
-    const cost = getMovementCost(gridX, gridY);
-    const canMove = Math.random() < (1 / cost);
+      const cost = getMovementCost(gridX, gridY);
+      const canMove = Math.random() < (1 / cost);
 
-    if (!canMove && cost > 1.0) {
-      get().addLog({ type: 'system', message: '地形崎岖，行进困难。' });
-    }
+      if (!canMove && cost > 1.0) {
+        get().addLog({ type: 'system', message: '地形崎岖，行进困难。' });
+      }
 
-    const visionRadius = 12;
-    const newExplored = [...state.exploredTiles];
-    for (let vx = -visionRadius; vx <= visionRadius; vx++) {
-      for (let vy = -visionRadius; vy <= visionRadius; vy++) {
-        const tileX = gridX + vx;
-        const tileY = gridY + vy;
-        if (tileX >= 0 && tileX < GAME_CONFIG.MAP_WIDTH && tileY >= 0 && tileY < GAME_CONFIG.MAP_HEIGHT) {
-          const key = `${tileX},${tileY}`;
-          if (!newExplored.includes(key)) {
-            newExplored.push(key);
+      const visionRadius = 12;
+      const newExplored = [...state.exploredTiles];
+      for (let vx = -visionRadius; vx <= visionRadius; vx++) {
+        for (let vy = -visionRadius; vy <= visionRadius; vy++) {
+          const tileX = gridX + vx;
+          const tileY = gridY + vy;
+          if (tileX >= 0 && tileX < GAME_CONFIG.MAP_WIDTH && tileY >= 0 && tileY < GAME_CONFIG.MAP_HEIGHT) {
+            const key = `${tileX},${tileY}`;
+            if (!newExplored.includes(key)) {
+              newExplored.push(key);
+            }
           }
         }
       }
+
+      return {
+        player: {
+          ...state.player,
+          position: { x: newX, y: newY },
+        },
+        exploredTiles: newExplored,
+      };
+    });
+
+    // Notify server of position change
+    const pos = get().player?.position;
+    if (pos) {
+      try { getSocket().emit('player:input', { command: 'move', x: pos.x, y: pos.y, dx, dy }); } catch {}
     }
 
-    return {
-      player: {
-        ...state.player,
-        position: { x: newX, y: newY },
-      },
-      exploredTiles: newExplored,
-    };
-  }),
+    return result;
+  },
 
   interactWithNPC: (npcId, action) => {
     const state = get();
