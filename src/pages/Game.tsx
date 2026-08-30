@@ -315,10 +315,27 @@ export const Game = () => {
     socket.on('diplomacy:truce-expired', onTruceExpired);
     socket.on('diplomacy:ai-decisions', onAIDecisions);
     socket.on('diplomacy:broadcast', onBroadcast);
+
+    const onSiegeResult = (data: {
+      attackerClanId: string; targetClanId: string; fortDmg: number; garrisonDmg: number;
+      counterDmg: number; loot: number; captured: boolean; timestamp: number;
+    }) => {
+      const store = useGameStore.getState();
+      const attackerName = store.clans.find(c => c.id === data.attackerClanId)?.name || data.attackerClanId;
+      const defenderName = store.clans.find(c => c.id === data.targetClanId)?.name || data.targetClanId;
+      if (data.captured) {
+        store.addWorldEvent({ type: 'conflict', npcNameA: attackerName, npcNameB: defenderName, description: `【攻城】${attackerName}攻陷了${defenderName}的山门！掠夺灵石${data.loot}。`, timestamp: data.timestamp });
+      }
+      // Apply siege damage to local clan state
+      store.setDiplomacy(data.attackerClanId, data.targetClanId, { status: '战争', conflictLevel: '局部冲突', declaredBy: data.attackerClanId });
+    };
+    socket.on('siege:result', onSiegeResult);
+
     return () => {
       socket.off('diplomacy:truce-expired', onTruceExpired);
       socket.off('diplomacy:ai-decisions', onAIDecisions);
       socket.off('diplomacy:broadcast', onBroadcast);
+      socket.off('siege:result', onSiegeResult);
     };
   }, []);
 

@@ -2492,6 +2492,19 @@ export const useGameStore = create<GameState>((set, get) => ({
           );
         }
 
+        // Emit siege intent to server for authoritative resolution
+        try {
+          getSocket().emit('siege:resolve', {
+            attackerClanId, targetClanId: targetClan.id, attackPower: effectiveAttackPower,
+            attackerFortification: attackerClan?.fortification ?? 0,
+            targetFortification: targetClan.fortification ?? 0,
+            targetGarrison: targetClan.garrison ?? 0,
+            targetTreasury: targetClan.treasury ?? 0,
+            targetMorale: targetClan.morale ?? 50,
+            targetTerritory: targetClan.territory ?? 1,
+          });
+        } catch {}
+
         if ((targetClan.fortification ?? 0) > 0) {
           const dmg = Math.max(1, Math.floor(effectiveAttackPower * 0.05));
           updatedClans = updatedClans.map(c =>
@@ -2790,6 +2803,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     const clan = get().clans.find(c => c.id === clanId);
     if (clan) get().addLog({ type: 'event', message: `【攻城器械】${(clanId === get().playerFactionId ? '你的' : '')}势力开始建造攻城器械，消耗 5000 灵石。` });
+
+    try { getSocket().emit('siege:build-equipment', { clanId }); } catch {}
   },
 
   // Phase 4.3b: Captive system

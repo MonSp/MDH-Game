@@ -718,6 +718,64 @@ io.on('connection', (socket) => {
     console.log(`[Combat] ${ps.playerId}: killed ${data.monsterName}, +${data.expGain}exp, +${data.stonesGain} stones`);
   });
 
+  // Siege warfare — server-authoritative resolution
+  socket.on('siege:resolve', (data: {
+    attackerClanId: string; targetClanId: string; attackPower: number;
+    targetFortification: number; targetGarrison: number; targetTreasury: number;
+    targetMorale: number; targetTerritory: number;
+  }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+
+    const { attackerClanId, targetClanId, attackPower, targetFortification, targetGarrison, targetTreasury } = data;
+
+    // Server-authoritative siege calculation
+    let fortDmg = 0, garrisonDmg = 0, counterDmg = 0, loot = 0;
+    let captured = false;
+
+    if (targetFortification > 0) {
+      fortDmg = Math.max(1, Math.floor(attackPower * 0.05));
+    } else if (targetGarrison > 0) {
+      garrisonDmg = Math.max(1, Math.floor(attackPower * 0.08));
+      counterDmg = Math.max(1, Math.floor(targetGarrison * 0.03));
+    }
+
+    const newFort = Math.max(0, targetFortification - fortDmg);
+    const newGarrison = Math.max(0, targetGarrison - garrisonDmg);
+
+    if (newFort <= 0 && newGarrison <= 0) {
+      captured = true;
+      loot = Math.floor(targetTreasury * 0.2);
+    }
+
+    // Update server clan state
+    const targetClan = serverClans.get(targetClanId);
+    if (targetClan) {
+      targetClan.treasury = Math.max(0, targetClan.treasury - loot);
+      if (captured) {
+        // Update server diplomacy
+        const attackerClan = serverClans.get(attackerClanId);
+        if (attackerClan) attackerClan.treasury += loot;
+      }
+    }
+
+    console.log(`[Siege] ${ps.playerId}: ${attackerClanId} vs ${targetClanId}, fortDmg=${fortDmg}, garrisonDmg=${garrisonDmg}, captured=${captured}, loot=${loot}`);
+
+    // Broadcast siege result to all clients
+    io.emit('siege:result', {
+      attackerClanId, targetClanId, fortDmg, garrisonDmg, counterDmg, loot, captured,
+      timestamp: Date.now(),
+    });
+  });
+
+  // Siege equipment building notification
+  socket.on('siege:build-equipment', (data: { clanId: string }) => {
+    const ps = playerSockets.get(socket.id);
+    if (!ps) return;
+    console.log(`[Siege] ${ps.playerId}: building siege equipment for ${data.clanId}`);
+    socket.emit('siege:build-equipment-result', { ok: true });
+  });
+
   socket.on('destruct:hit', (data: { buildingId: string; lx: number; ly: number; lz: number; damage: number; playerId: string }) => {
     const { buildingId, lx, ly, lz, damage, playerId } = data;
     
