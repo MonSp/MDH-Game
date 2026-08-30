@@ -376,6 +376,8 @@ export const Game = () => {
         playerId: string; monsterId: string; playerDmg: number; monsterDmg: number;
         monsterDead: boolean; playerDead: boolean; expGain: number; stonesGain: number; droppedItem: string;
       }>;
+      npcCombatResults?: Array<{ winnerId: string; loserId: string; winnerClanId: string; loserClanId: string; winnerPower: number }>;
+      armyCombatResults?: Array<{ winnerClanId: string; loserClanId: string; winnerName: string; loserName: string; casualties: number }>;
       timestamp: number;
     }) => {
       const store = useGameStore.getState();
@@ -431,6 +433,31 @@ export const Game = () => {
             }));
             s.addLog({ type: 'combat', message: `你不敌怪物，重伤逃遁至安全区域！` });
           }
+        }
+      }
+      // Apply NPC-vs-NPC combat results from server
+      if (data.npcCombatResults) {
+        for (const cr of data.npcCombatResults) {
+          const store = useGameStore.getState();
+          const winnerClan = store.clans.find(c => c.id === cr.winnerClanId);
+          const loserClan = store.clans.find(c => c.id === cr.loserClanId);
+          if (winnerClan || loserClan) {
+            useGameStore.setState(prev => ({
+              clans: prev.clans.map(c => {
+                if (c.id === cr.winnerClanId) return { ...c, treasury: (c.treasury || 0) + Math.floor(cr.winnerPower * 0.1) };
+                if (c.id === cr.loserClanId) return { ...c, treasury: Math.max(0, (c.treasury || 0) - Math.floor(cr.winnerPower * 0.05)) };
+                return c;
+              }),
+            }));
+          }
+        }
+      }
+      // Apply army combat results from server
+      if (data.armyCombatResults) {
+        for (const ac of data.armyCombatResults) {
+          const store = useGameStore.getState();
+          store.addLog({ type: 'combat', message: `【军团战】${ac.winnerName}击败了${ac.loserName}，${ac.loserName}损失${ac.casualties}人。` });
+          store.addWorldEvent({ type: 'conflict', npcNameA: ac.winnerName, npcNameB: ac.loserName, description: `【军团战】${ac.winnerName}击败了${ac.loserName}，${ac.loserName}损失${ac.casualties}人。`, timestamp: data.timestamp });
         }
       }
     };

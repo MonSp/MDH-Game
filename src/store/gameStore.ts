@@ -1977,8 +1977,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     // === Phase 1.4c: Inter-NPC war combat ===
     // NPCs from warring clans attack each other when adjacent
     // Uses state.clans for status (clan treasury updates handled via clanTreasuryUpdates map)
+    // Skip when server is connected — server handles NPC-vs-NPC combat via game:tick
     const npcsAfterWar = [...npcs];
     const npcCombatResults: Array<{ winnerId: string; loserId: string; winnerClanId: string; loserClanId: string; winnerPower: number }> = [];
+    if (!serverConnected) {
     for (let i = 0; i < npcsAfterWar.length; i++) {
       const a = npcsAfterWar[i];
       if (a.retreatTicksRemaining || a.hp <= 0) continue;
@@ -2016,12 +2018,16 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
     npcs = npcsAfterWar;
 
-    // Send NPC combat results to server
-    if (npcCombatResults.length > 0) {
+    // Send NPC combat results to server (only when running client-side)
+    if (!serverConnected && npcCombatResults.length > 0) {
       try { getSocket().emit('combat:npc-vs-npc', { results: npcCombatResults }); } catch {}
     }
+    } // end if (!serverConnected) for NPC-vs-NPC
 
     // === Phase 4: Clan army grouping and army-vs-army combat ===
+    // Skip when server is connected — server handles army combat via game:tick
+    let newArmies: ClanArmy[] = [];
+    if (!serverConnected) {
     // Group NPCs into armies per clan (clans at war form armies)
     const npcPool = [...npcs];
     const clanNpcMap = new Map<string, typeof npcPool>();
@@ -2030,7 +2036,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (!clanNpcMap.has(n.clanId)) clanNpcMap.set(n.clanId, []);
       clanNpcMap.get(n.clanId)!.push(n);
     }
-    const newArmies: ClanArmy[] = [];
+    newArmies = [];
     for (const [clanId, members] of clanNpcMap) {
       const clan = state.clans.find(c => c.id === clanId);
       if (!clan) continue;
@@ -2109,6 +2115,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         break;
       }
     }
+    } // end if (!serverConnected) for army combat
 
     // Player vs Monster — server handles combat when connected
     let updatedPlayer = state.player ? { ...state.player, inventory: { ...state.player.inventory }, skillCooldowns: { ...(state.player.skillCooldowns || {}) } } : null;
@@ -2625,8 +2632,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // === Phase 4: Siege warfare ===
-    // Every 5 ticks, resolve siege combat for player-led and army-led sieges
-    if ((state._factionTickCount || 0) % 5 === 0) {
+    // Skip when server is connected — server handles siege via siege:resolve
+    if (!serverConnected && (state._factionTickCount || 0) % 5 === 0) {
       // Helper to compute siege damage from a set of attackers
       const resolveSiege = (attackerClanId: string, basePos: { x: number; y: number }, attackPower: number) => {
         let targetClan: Clan | undefined;

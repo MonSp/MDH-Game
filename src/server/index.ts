@@ -1596,9 +1596,124 @@ function runGameTick(): void {
     expReward: m.expReward, position: m.position, isAlive: true,
   }));
 
-  // Collect NPC states for client rendering
+  // 7. NPC-vs-NPC combat (adjacent warring NPCs)
   const npcWorld = NPCWorldService.getInstance();
-  const npcStates = [...npcWorld.getAllNPCs()].map(([id, state]) => ({
+  const npcCombatResults: Array<{ winnerId: string; loserId: string; winnerClanId: string; loserClanId: string; winnerPower: number }> = [];
+  const allNpcs = [...npcWorld.getAllNPCs()];
+
+  for (let i = 0; i < allNpcs.length; i++) {
+    const [idA, stateA] = allNpcs[i];
+    if (stateA.npc.hp <= 0) continue;
+    for (let j = i + 1; j < allNpcs.length; j++) {
+      const [idB, stateB] = allNpcs[j];
+      if (stateB.npc.hp <= 0) continue;
+      if (stateA.npc.clanId === stateB.npc.clanId) continue;
+
+      // Check if clans are at war
+      const clanA = serverClans.get(stateA.npc.clanId);
+      const clanB = serverClans.get(stateB.npc.clanId);
+      if (!clanA || !clanB) continue;
+      const isAtWar = clanA.diplomacy[stateB.npc.clanId]?.status === '战争' ||
+                       clanB.diplomacy[stateA.npc.clanId]?.status === '战争';
+      if (!isAtWar) continue;
+
+      const dx = Math.abs(stateA.npc.position.x - stateB.npc.position.x);
+      const dy = Math.abs(stateA.npc.position.y - stateB.npc.position.y);
+      if (dx > 1 || dy > 1) continue;
+
+      // Resolve combat
+      const aPower = stateA.npc.power || 50;
+      const bPower = stateB.npc.power || 50;
+      const aDmg = Math.max(1, Math.floor(aPower * 0.3));
+      const bDmg = Math.max(1, Math.floor(bPower * 0.3));
+
+      stateA.npc.hp -= bDmg;
+      stateB.npc.hp -= aDmg;
+
+      if (stateA.npc.hp <= 0) {
+        stateA.npc.hp = 0;
+        npcCombatResults.push({ winnerId: idB, loserId: idA, winnerClanId: stateB.npc.clanId, loserClanId: stateA.npc.clanId, winnerPower: bPower });
+        // Winner clan gains treasury
+        if (clanB) clanB.treasury += Math.floor(bPower * 0.1);
+        if (clanA) clanA.treasury = Math.max(0, clanA.treasury - Math.floor(bPower * 0.05));
+      }
+      if (stateB.npc.hp <= 0) {
+        stateB.npc.hp = 0;
+        npcCombatResults.push({ winnerId: idA, loserId: idB, winnerClanId: stateA.npc.clanId, loserClanId: stateB.npc.clanId, winnerPower: aPower });
+        if (clanA) clanA.treasury += Math.floor(aPower * 0.1);
+        if (clanB) clanB.treasury = Math.max(0, clanB.treasury - Math.floor(aPower * 0.05));
+      }
+      break; // one fight per NPC per tick
+    }
+  }
+
+  // 8. Army formation and army-vs-army combat
+  const armyCombatResults: Array<{ winnerClanId: string; loserClanId: string; winnerName: string; loserName: string; casualties: number }> = [];
+  const aliveNpcs = allNpcs.filter(([, s]) => s.npc.hp > 0);
+  const clanNpcMap = new Map<string, typeof aliveNpcs>();
+  for (const entry of aliveNpcs) {
+    const clanId = entry[1].npc.clanId;
+    if (!clanNpcMap.has(clanId)) clanNpcMap.set(clanId, []);
+    clanNpcMap.get(clanId)!.push(entry);
+  }
+
+  const armies: Array<{ clanId: string; name: string; size: number; totalPower: number; position: { x: number; y: number }; siegeTarget?: string }> = [];
+  for (const [clanId, members] of clanNpcMap) {
+    const clan = serverClans.get(clanId);
+    if (!clan) continue;
+    const isAtWar = Object.values(clan.diplomacy).some(d => d.status === '战争');
+    if (!isAtWar) continue;
+    const avgX = Math.floor(members.reduce((s, [, m]) => s + m.npc.position.x, 0) / members.length);
+    const avgY = Math.floor(members.reduce((s, [, m]) => s + m.npc.position.y, 0) / members.length);
+    const totalPower = members.reduce((s, [, m]) => s + (m.npc.power || 50), 0);
+    let targetClanId: string | undefined;
+    for (const [tid, d] of Object.entries(clan.diplomacy)) {
+      if (d.status === '战争') { targetClanId = tid; break; }
+    }
+    armies.push({ clanId, name: `${clan.name}大军`, size: members.length, totalPower, position: { x: avgX, y: avgY }, siegeTarget: targetClanId });
+  }
+
+  // Army movement
+  for (const army of armies) {
+    if (!army.siegeTarget) continue;
+    const targetClan = serverClans.get(army.siegeTarget);
+    if (!targetClan) continue;
+    // Move toward target (simplified)
+    army.position.x += Math.random() > 0.5 ? 1 : -1;
+    army.position.y += Math.random() > 0.5 ? 1 : -1;
+  }
+
+  // Army-vs-army combat
+  for (let i = 0; i < armies.length; i++) {
+    for (let j = i + 1; j < armies.length; j++) {
+      const a = armies[i], b = armies[j];
+      if (a.size <= 0 || b.size <= 0) continue;
+      const aClan = serverClans.get(a.clanId);
+      const bClan = serverClans.get(b.clanId);
+      if (!aClan || !bClan) continue;
+      const isAtWar = aClan.diplomacy[b.clanId]?.status === '战争' || bClan.diplomacy[a.clanId]?.status === '战争';
+      if (!isAtWar) continue;
+      const dist = Math.abs(a.position.x - b.position.x) + Math.abs(a.position.y - b.position.y);
+      if (dist > 2) continue;
+
+      const aWins = a.totalPower > b.totalPower;
+      const winner = aWins ? a : b;
+      const loser = aWins ? b : a;
+      const casualties = Math.max(1, Math.floor(loser.size * 0.3));
+      loser.size -= casualties;
+
+      const winnerClan = serverClans.get(winner.clanId);
+      const loserClan = serverClans.get(loser.clanId);
+      if (winnerClan) winnerClan.treasury += casualties * 2;
+      if (loserClan) loserClan.treasury = Math.max(0, loserClan.treasury - casualties);
+
+      armyCombatResults.push({ winnerClanId: winner.clanId, loserClanId: loser.clanId, winnerName: winner.name, loserName: loser.name, casualties });
+      break;
+    }
+  }
+
+  // Collect NPC states for client rendering
+  const npcStates = allNpcs.map(([id, state]) => ({
     id, name: state.npc.name, clanId: state.npc.clanId,
     role: state.npc.role, realm: state.npc.realm,
     hp: state.npc.hp, maxHp: state.npc.maxHp, power: state.npc.power,
@@ -1610,6 +1725,8 @@ function runGameTick(): void {
     monsters: monsterData,
     combatResults,
     npcStates,
+    npcCombatResults,
+    armyCombatResults,
     timestamp: now,
   });
 }
