@@ -15,6 +15,10 @@
 #include "../economy/MarketRegistry.h"
 #include "../ecs/components/CultivationComponent.h"
 #include "../ecs/components/RelationshipComponent.h"
+#include "../ecs/components/SkillTreeComponent.h"
+#include "../ecs/components/CareerComponent.h"
+#include "../ecs/components/EvolutionComponent.h"
+#include "../skills/SkillMapper.h"
 #include "../world/WorldGenerator.h"
 #include <string>
 #include <vector>
@@ -61,6 +65,17 @@ public:
         registry.addComponent<LifecycleComponent>(entityId, *lifecycle);
         registry.addComponent<ResourcesComponent>(entityId, *resources);
         registry.addComponent<SocialComponent>(entityId, *social);
+
+        // Mount generic agent-kernel components
+        SkillTreeComponent skillTree;
+        SkillMapper::populateSkills(skillTree, role, realm);
+        registry.addComponent<SkillTreeComponent>(entityId, skillTree);
+
+        CareerComponent career;
+        SkillMapper::initializeCareer(career, realm);
+        registry.addComponent<CareerComponent>(entityId, career);
+
+        registry.addComponent<EvolutionComponent>(entityId, EvolutionComponent());
 
         delete identity;
         delete position;
@@ -308,6 +323,17 @@ private:
         registry.addComponent<ResourcesComponent>(entityId, *resources);
         registry.addComponent<SocialComponent>(entityId, *social);
         registry.addComponent<CultivationComponent>(entityId, *cultivation);
+
+        // Mount generic agent-kernel components
+        SkillTreeComponent skillTree;
+        SkillMapper::populateSkills(skillTree, role, realm);
+        registry.addComponent<SkillTreeComponent>(entityId, skillTree);
+
+        CareerComponent career;
+        SkillMapper::initializeCareer(career, realm);
+        registry.addComponent<CareerComponent>(entityId, career);
+
+        registry.addComponent<EvolutionComponent>(entityId, EvolutionComponent());
 
         delete identity;
         delete position;

@@ -19,6 +19,9 @@
 #include "components/CommandResponseComponent.h"
 #include "components/MemoryRingComponent.h"
 #include "components/CultivationComponent.h"
+#include "components/SkillTreeComponent.h"
+#include "components/CareerComponent.h"
+#include "components/EvolutionComponent.h"
 #include <vector>
 #include <unordered_map>
 #include <queue>
@@ -51,6 +54,9 @@ public:
             cmdResponse_.emplace_back();
             memoryRing_.emplace_back();
             cultivation_.emplace_back();
+            skillTree_.emplace_back();
+            career_.emplace_back();
+            evolution_.emplace_back();
             bt_.emplace_back();
             blackboard_.emplace_back();
             hasLLMPlan_.push_back(false);
@@ -74,6 +80,9 @@ public:
             cmdResponse_[slot] = CommandResponseComponent();
             memoryRing_[slot] = MemoryRingComponent();
             cultivation_[slot] = CultivationComponent();
+            skillTree_[slot] = SkillTreeComponent();
+            career_[slot] = CareerComponent();
+            evolution_[slot] = EvolutionComponent();
             bt_[slot] = BehaviorTreeComponent();
             blackboard_[slot] = BlackboardCache();
             hasLLMPlan_[slot] = false;
@@ -182,6 +191,9 @@ public:
         cmdResponse_.clear();
         memoryRing_.clear();
         cultivation_.clear();
+        skillTree_.clear();
+        career_.clear();
+        evolution_.clear();
         bt_.clear();
         blackboard_.clear();
         hasLLMPlan_.clear();
@@ -226,6 +238,9 @@ private:
         if constexpr (std::is_same_v<T, CommandResponseComponent>)  return cmdResponse_;
         if constexpr (std::is_same_v<T, MemoryRingComponent>)      return memoryRing_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
+        if constexpr (std::is_same_v<T, SkillTreeComponent>)      return skillTree_;
+        if constexpr (std::is_same_v<T, CareerComponent>)         return career_;
+        if constexpr (std::is_same_v<T, EvolutionComponent>)      return evolution_;
         if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
         if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
     }
@@ -246,6 +261,9 @@ private:
         if constexpr (std::is_same_v<T, CommandResponseComponent>)  return cmdResponse_;
         if constexpr (std::is_same_v<T, MemoryRingComponent>)      return memoryRing_;
         if constexpr (std::is_same_v<T, CultivationComponent>)     return cultivation_;
+        if constexpr (std::is_same_v<T, SkillTreeComponent>)      return skillTree_;
+        if constexpr (std::is_same_v<T, CareerComponent>)         return career_;
+        if constexpr (std::is_same_v<T, EvolutionComponent>)      return evolution_;
         if constexpr (std::is_same_v<T, BehaviorTreeComponent>)   return bt_;
         if constexpr (std::is_same_v<T, BlackboardCache>)         return blackboard_;
     }
@@ -265,6 +283,9 @@ private:
     std::vector<CommandResponseComponent> cmdResponse_;
     std::vector<MemoryRingComponent> memoryRing_;
     std::vector<CultivationComponent> cultivation_;
+    std::vector<SkillTreeComponent> skillTree_;
+    std::vector<CareerComponent> career_;
+    std::vector<EvolutionComponent> evolution_;
     std::vector<BehaviorTreeComponent> bt_;
     std::vector<BlackboardCache> blackboard_;
     std::vector<bool> hasLLMPlan_;
