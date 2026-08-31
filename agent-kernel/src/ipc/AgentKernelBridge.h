@@ -6,6 +6,8 @@
 #include "../ecs/Schema.h"
 #include "../ecs/SchemaValidator.h"
 #include "../ecs/ComponentSchemas.h"
+#include "../ecs/EntityArchetype.h"
+#include "../ecs/BuiltinArchetypes.h"
 #include "../ecs/components/IdentityComponent.h"
 #include "../ecs/components/StatsComponent.h"
 #include "../ecs/components/PersonalityComponent.h"
@@ -449,6 +451,8 @@ private:
         if (method == Method::getSchema)    return handleGetSchema(raw);
         if (method == Method::describeEntity) return handleDescribeEntity(raw);
         if (method == Method::validateEntity) return handleValidateEntity(raw);
+        if (method == Method::listArchetypes) return handleListArchetypes();
+        if (method == Method::createFromArchetype) return handleCreateFromArchetype(raw);
 
         return json::error("unknown method: " + method);
     }
@@ -838,6 +842,76 @@ private:
 
         ECS::ValidationResult vr = reg.validateEntity(entityId);
         return json::ok(vr.toJson());
+    }
+
+    // listArchetypes: { "method":"listArchetypes" }
+    // Returns all archetype names, descriptions, and component lists
+    std::string handleListArchetypes() {
+        // Ensure builtin archetypes are registered
+        registerBuiltinArchetypes();
+
+        auto& archReg = ECS::ArchetypeRegistry::instance();
+        auto names = archReg.getAllArchetypeNames();
+
+        std::string result = "{\"archetypes\":[";
+        bool first = true;
+        for (const auto& name : names) {
+            const ECS::EntityArchetype* arch = archReg.getArchetype(name);
+            if (!arch) continue;
+
+            if (!first) result += ",";
+            first = false;
+
+            result += "{\"name\":\"" + json::escape(arch->name) + "\"";
+            result += ",\"description\":\"" + json::escape(arch->description) + "\"";
+            result += ",\"components\":[";
+            for (size_t i = 0; i < arch->components.size(); ++i) {
+                if (i > 0) result += ",";
+                result += "\"" + json::escape(arch->components[i].componentName) + "\"";
+            }
+            result += "]}";
+        }
+        result += "]}";
+        return json::ok(result);
+    }
+
+    // createFromArchetype: { "method":"createFromArchetype", "params": { "archetype": "Engineer", "name": "小明", "department": "engineering" } }
+    // Creates an entity from an archetype template, applies identity overrides, returns full JSON
+    std::string handleCreateFromArchetype(const std::string& raw) {
+        // Ensure builtin archetypes are registered
+        registerBuiltinArchetypes();
+
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        std::string archetypeName = json::getString(params, "archetype");
+        if (archetypeName.empty()) return json::error("archetype is required");
+
+        auto& archReg = ECS::ArchetypeRegistry::instance();
+        const ECS::EntityArchetype* arch = archReg.getArchetype(archetypeName);
+        if (!arch) {
+            return json::error("unknown archetype: " + archetypeName);
+        }
+
+        auto& reg = ECS::Registry::getInstance();
+        ECS::EntityId eid;
+        try {
+            eid = archReg.createFromArchetype(archetypeName, reg);
+        } catch (const std::exception& e) {
+            return json::error(e.what());
+        }
+
+        // Apply identity overrides if provided
+        std::string name = json::getString(params, "name");
+        std::string department = json::getString(params, "department");
+
+        auto* identity = reg.getComponent<IdentityComponent>(eid);
+        if (identity) {
+            if (!name.empty()) identity->name = name;
+            if (!department.empty()) identity->department = department;
+        }
+
+        return json::ok(agentToJson(eid));
     }
 
     UnixSocketServer server_;
