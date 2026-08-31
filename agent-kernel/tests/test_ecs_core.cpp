@@ -90,6 +90,7 @@ static void testClear() {
 
 extern void runComponentTests();
 extern void runNewComponentTests();
+extern void runIpcTests();
 
 int main() {
     printf("Running agent-kernel ECS core tests...\n");
@@ -106,6 +107,9 @@ int main() {
 
     printf("\n");
     runNewComponentTests();
+
+    printf("\n");
+    runIpcTests();
 
     printf("\nAll tests PASSED.\n");
     return 0;
