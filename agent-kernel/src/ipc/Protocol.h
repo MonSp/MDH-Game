@@ -31,9 +31,11 @@ namespace Method {
     inline const std::string updateAgent = "updateAgent";
     inline const std::string deleteAgent = "deleteAgent";
     inline const std::string listAgents  = "listAgents";
-    inline const std::string addSkillXp  = "addSkillXp";
-    inline const std::string getSkills   = "getSkills";
-    inline const std::string syncState   = "syncState";
+    inline const std::string addSkill     = "addSkill";
+    inline const std::string addSkillXp   = "addSkillXp";
+    inline const std::string addCareerXp  = "addCareerXp";
+    inline const std::string getSkills    = "getSkills";
+    inline const std::string syncState    = "syncState";
 } // namespace Method
 
 } // namespace IPC

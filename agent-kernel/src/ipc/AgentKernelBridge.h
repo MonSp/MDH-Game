@@ -299,7 +299,9 @@ private:
         if (method == Method::updateAgent)  return handleUpdateAgent(raw);
         if (method == Method::deleteAgent)  return handleDeleteAgent(raw);
         if (method == Method::listAgents)   return handleListAgents(raw);
+        if (method == Method::addSkill)     return handleAddSkill(raw);
         if (method == Method::addSkillXp)   return handleAddSkillXp(raw);
+        if (method == Method::addCareerXp)  return handleAddCareerXp(raw);
         if (method == Method::getSkills)    return handleGetSkills(raw);
         if (method == Method::syncState)    return handleSyncState(raw);
 
@@ -409,6 +411,34 @@ private:
         return json::ok(result);
     }
 
+    // addSkill: { "method":"addSkill", "params": { "entityId": 0, "skillId":"...", "category":"Engineering" } }
+    std::string handleAddSkill(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t entityId = static_cast<uint64_t>(json::getInt(params, "entityId", -1));
+        std::string skillId = json::getString(params, "skillId");
+        std::string catStr = json::getString(params, "category");
+
+        if (skillId.empty()) return json::error("skillId is required");
+
+        auto& reg = ECS::Registry::getInstance();
+        if (!reg.isEntityValid(entityId)) {
+            return json::error("entity not found");
+        }
+
+        auto* tree = reg.getComponent<SkillTreeComponent>(entityId);
+        if (!tree) {
+            return json::error("entity has no skill tree");
+        }
+
+        SkillCategory cat = stringToSkillCategory(catStr);
+        tree->addSkill(skillId, cat);
+
+        SkillNode* node = tree->getSkill(skillId);
+        return json::ok(toJson(*node));
+    }
+
     // addSkillXp: { "method":"addSkillXp", "params": { "entityId": 0, "skillId":"...", "xp": 100 } }
     std::string handleAddSkillXp(const std::string& raw) {
         std::string params = json::getRawValue(raw, "params");
@@ -436,6 +466,28 @@ private:
 
         SkillNode* node = tree->getSkill(skillId);
         return json::ok(toJson(*node));
+    }
+
+    // addCareerXp: { "method":"addCareerXp", "params": { "entityId": 0, "xp": 600 } }
+    std::string handleAddCareerXp(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t entityId = static_cast<uint64_t>(json::getInt(params, "entityId", -1));
+        uint32_t xp = json::getUint(params, "xp", 0);
+
+        auto& reg = ECS::Registry::getInstance();
+        if (!reg.isEntityValid(entityId)) {
+            return json::error("entity not found");
+        }
+
+        auto* career = reg.getComponent<CareerComponent>(entityId);
+        if (!career) {
+            return json::error("entity has no career component");
+        }
+
+        career->addXp(xp);
+        return json::ok(toJson(*career));
     }
 
     // getSkills: { "method":"getSkills", "params": { "entityId": 0 } }
