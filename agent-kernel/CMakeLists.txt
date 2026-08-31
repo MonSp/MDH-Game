@@ -28,6 +28,7 @@ add_executable(kernel_tests
     tests/test_ipc.cpp
     tests/test_schema.cpp
     tests/test_component_schemas.cpp
+    tests/test_ipc_schema.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

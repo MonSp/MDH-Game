@@ -93,6 +93,7 @@ extern void runNewComponentTests();
 extern void runIpcTests();
 extern void runSchemaTests();
 extern void runComponentSchemaRegistrationTests();
+extern void runSchemaIpcTests();
 
 int main() {
     printf("Running agent-kernel ECS core tests...\n");
@@ -118,6 +119,9 @@ int main() {
 
     printf("\n");
     runComponentSchemaRegistrationTests();
+
+    printf("\n");
+    runSchemaIpcTests();
 
     printf("\nAll tests PASSED.\n");
     return 0;
