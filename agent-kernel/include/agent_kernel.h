@@ -16,6 +16,9 @@
 //   - MemoryRingComponent — 3-tier memory (short/mid/long + rumors)
 //   - LifecycleComponent  — lifecycle state machine
 //   - SocialComponent     — social needs + emotion system
+//   - SkillTreeComponent  — skill tree with XP/level-up/dependencies
+//   - CareerComponent     — career XP/stage/promotion path
+//   - EvolutionComponent  — evolution history/rule tracking/self-evolution
 
 #include "ecs/Component.h"
 #include "ecs/Entity.h"
@@ -29,3 +32,6 @@
 #include "ecs/components/MemoryRingComponent.h"
 #include "ecs/components/LifecycleComponent.h"
 #include "ecs/components/SocialComponent.h"
+#include "ecs/components/SkillTreeComponent.h"
+#include "ecs/components/CareerComponent.h"
+#include "ecs/components/EvolutionComponent.h"

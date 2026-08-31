@@ -8,6 +8,9 @@
 #include "components/MemoryRingComponent.h"
 #include "components/LifecycleComponent.h"
 #include "components/SocialComponent.h"
+#include "components/SkillTreeComponent.h"
+#include "components/CareerComponent.h"
+#include "components/EvolutionComponent.h"
 #include <vector>
 #include <unordered_map>
 #include <queue>
@@ -62,6 +65,9 @@ public:
         memoryComponents_[slot].reset();
         lifecycleComponents_[slot].reset();
         socialComponents_[slot].reset();
+        skillTreeComponents_[slot].reset();
+        careerComponents_[slot].reset();
+        evolutionComponents_[slot].reset();
 
         freeSlots_.push(slot);
         freeIds_.push(id);
@@ -103,6 +109,9 @@ public:
         memoryComponents_.clear();
         lifecycleComponents_.clear();
         socialComponents_.clear();
+        skillTreeComponents_.clear();
+        careerComponents_.clear();
+        evolutionComponents_.clear();
     }
 
     // --- Component CRUD via if constexpr dispatch ---
@@ -172,6 +181,9 @@ private:
     std::vector<std::optional<MemoryRingComponent>> memoryComponents_;
     std::vector<std::optional<LifecycleComponent>> lifecycleComponents_;
     std::vector<std::optional<SocialComponent>> socialComponents_;
+    std::vector<std::optional<SkillTreeComponent>> skillTreeComponents_;
+    std::vector<std::optional<CareerComponent>> careerComponents_;
+    std::vector<std::optional<EvolutionComponent>> evolutionComponents_;
 
     void growComponentArrays(size_t newSize) {
         if (identityComponents_.size() < newSize) identityComponents_.resize(newSize);
@@ -180,6 +192,9 @@ private:
         if (memoryComponents_.size() < newSize) memoryComponents_.resize(newSize);
         if (lifecycleComponents_.size() < newSize) lifecycleComponents_.resize(newSize);
         if (socialComponents_.size() < newSize) socialComponents_.resize(newSize);
+        if (skillTreeComponents_.size() < newSize) skillTreeComponents_.resize(newSize);
+        if (careerComponents_.size() < newSize) careerComponents_.resize(newSize);
+        if (evolutionComponents_.size() < newSize) evolutionComponents_.resize(newSize);
     }
 
     template<typename T>
@@ -196,6 +211,12 @@ private:
             return slot < lifecycleComponents_.size() && lifecycleComponents_[slot].has_value();
         } else if constexpr (std::is_same_v<T, SocialComponent>) {
             return slot < socialComponents_.size() && socialComponents_[slot].has_value();
+        } else if constexpr (std::is_same_v<T, SkillTreeComponent>) {
+            return slot < skillTreeComponents_.size() && skillTreeComponents_[slot].has_value();
+        } else if constexpr (std::is_same_v<T, CareerComponent>) {
+            return slot < careerComponents_.size() && careerComponents_[slot].has_value();
+        } else if constexpr (std::is_same_v<T, EvolutionComponent>) {
+            return slot < evolutionComponents_.size() && evolutionComponents_[slot].has_value();
         }
         return false;
     }
@@ -225,6 +246,18 @@ inline std::vector<std::optional<LifecycleComponent>>& Registry::getArray<Lifecy
 template<>
 inline std::vector<std::optional<SocialComponent>>& Registry::getArray<SocialComponent>() {
     return socialComponents_;
+}
+template<>
+inline std::vector<std::optional<SkillTreeComponent>>& Registry::getArray<SkillTreeComponent>() {
+    return skillTreeComponents_;
+}
+template<>
+inline std::vector<std::optional<CareerComponent>>& Registry::getArray<CareerComponent>() {
+    return careerComponents_;
+}
+template<>
+inline std::vector<std::optional<EvolutionComponent>>& Registry::getArray<EvolutionComponent>() {
+    return evolutionComponents_;
 }
 
 } // namespace ECS

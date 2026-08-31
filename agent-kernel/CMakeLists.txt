@@ -24,6 +24,7 @@ target_link_libraries(agent-kernel PUBLIC pthread)
 add_executable(kernel_tests
     tests/test_ecs_core.cpp
     tests/test_components.cpp
+    tests/test_new_components.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
