@@ -4,6 +4,7 @@
 #include "UnixSocketServer.h"
 #include "../ecs/Registry.h"
 #include "../ecs/Schema.h"
+#include "../ecs/SchemaValidator.h"
 #include "../ecs/ComponentSchemas.h"
 #include "../ecs/components/IdentityComponent.h"
 #include "../ecs/components/StatsComponent.h"
@@ -447,6 +448,7 @@ private:
         if (method == Method::getSchemas)   return handleGetSchemas();
         if (method == Method::getSchema)    return handleGetSchema(raw);
         if (method == Method::describeEntity) return handleDescribeEntity(raw);
+        if (method == Method::validateEntity) return handleValidateEntity(raw);
 
         return json::error("unknown method: " + method);
     }
@@ -819,6 +821,23 @@ private:
 
         result += "}}";
         return json::ok(result);
+    }
+
+    // validateEntity: { "method":"validateEntity", "params": { "entityId": 0 } }
+    // Validates all components on an entity against their schema constraints
+    std::string handleValidateEntity(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t entityId = static_cast<uint64_t>(json::getInt(params, "entityId", -1));
+
+        auto& reg = ECS::Registry::getInstance();
+        if (!reg.isEntityValid(entityId)) {
+            return json::error("entity not found");
+        }
+
+        ECS::ValidationResult vr = reg.validateEntity(entityId);
+        return json::ok(vr.toJson());
     }
 
     UnixSocketServer server_;

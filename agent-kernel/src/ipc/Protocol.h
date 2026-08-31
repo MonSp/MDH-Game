@@ -39,6 +39,7 @@ namespace Method {
     inline const std::string getSchemas    = "getSchemas";
     inline const std::string getSchema     = "getSchema";
     inline const std::string describeEntity = "describeEntity";
+    inline const std::string validateEntity = "validateEntity";
 } // namespace Method
 
 } // namespace IPC
