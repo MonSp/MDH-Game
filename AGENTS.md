@@ -9,6 +9,10 @@ Agent guidance for **太古纪元：霸业** — a 2.5D pixel-art cultivation (�
 - **License**: Private
 - **Author**: MonSp
 
+### MDH 大荒界 · 统一智能体架构
+
+本项目是 **MDH 大荒界** 智能体世界的玩家前端（[MDH-Company 管理后台](https://github.com/MonSp/MDH)）。NPC 由共享的 C++ ECS agent-kernel 驱动，与 Company 的数字员工共享身份、技能树、经验值和记忆数据。
+
 ## Dual-Runtime Architecture
 
 Two runtimes coexist and must stay in sync:

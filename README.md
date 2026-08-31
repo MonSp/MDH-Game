@@ -2,6 +2,15 @@
 
 **太古纪元：霸业** is a 2.5D pixel-art cultivation (修仙) MMORPG set in a Warring States-inspired world. The game combines national strategy, family/clan politics, individual cultivation progression, and AI-driven NPC behavior.
 
+## MDH 大荒界 · 智能体世界
+
+本项目是 **MDH 大荒界** 智能体世界的玩家前端。
+
+- **MDH-Company** ([数字员工操作系统](https://github.com/MonSp/MDH)) — 管理后台，AI agent 团队协作执行任务
+- **MDH-Game** (本项目) — 太古纪元：霸业，2.5D 修仙 MMORPG
+
+NPC 由 C++ ECS agent-kernel 驱动，拥有与 Company 数字员工相同的技能、记忆和经验值。
+
 **Two runtimes coexist:**
 - **TypeScript (Node.js)**: Game server (Express + Socket.IO) + React client (Vite + Three.js)
 - **C++**: High-performance ECS engine for NPC simulation (100K+ entities), connected via IPC/Unix sockets for LLM-powered NPC planning
