@@ -13,6 +13,7 @@ add_library(agent-kernel STATIC
     src/ecs/stub.cpp
     src/llm/HttpClient.cpp
     src/llm/LLMClient.cpp
+    src/llm/DecisionEngine.cpp
 )
 
 target_include_directories(agent-kernel PUBLIC
@@ -48,6 +49,7 @@ add_executable(kernel_tests
     tests/test_ipc_archetype.cpp
     tests/test_llm.cpp
     tests/test_prompt_builder.cpp
+    tests/test_decision_engine.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

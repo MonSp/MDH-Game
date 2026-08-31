@@ -17,6 +17,7 @@
 #include "../ecs/components/SkillTreeComponent.h"
 #include "../ecs/components/CareerComponent.h"
 #include "../ecs/components/EvolutionComponent.h"
+#include "../llm/DecisionEngine.h"
 #include <string>
 #include <functional>
 #include <cstdio>
@@ -453,6 +454,7 @@ private:
         if (method == Method::validateEntity) return handleValidateEntity(raw);
         if (method == Method::listArchetypes) return handleListArchetypes();
         if (method == Method::createFromArchetype) return handleCreateFromArchetype(raw);
+        if (method == Method::agentDecide)        return handleAgentDecide(raw);
 
         return json::error("unknown method: " + method);
     }
@@ -912,6 +914,33 @@ private:
         }
 
         return json::ok(agentToJson(eid));
+    }
+
+    // agentDecide: { "method":"agentDecide", "params": { "entityId": 0, "task": "review this code" } }
+    std::string handleAgentDecide(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t entityId = static_cast<uint64_t>(json::getInt(params, "entityId", -1));
+        std::string task = json::getString(params, "task");
+        if (task.empty()) return json::error("task is required");
+
+        auto& reg = ECS::Registry::getInstance();
+        if (!reg.isEntityValid(entityId)) {
+            return json::error("entity not found");
+        }
+
+        // Create LLM client (stub mode if no API key in environment)
+        LLM::LLMConfig cfg;
+        cfg.provider  = LLM::Provider::Custom;
+        cfg.baseUrl   = "http://localhost:8080/v1";
+        cfg.model     = "stub-model";
+        cfg.maxTokens = 512;
+        LLM::LLMClient llmClient(cfg);
+        LLM::DecisionEngine engine(&llmClient);
+
+        LLM::Decision decision = engine.decide(reg, entityId, task);
+        return json::ok(json::compact(decision.toJson()));
     }
 
     UnixSocketServer server_;

@@ -42,6 +42,7 @@ namespace Method {
     inline const std::string validateEntity = "validateEntity";
     inline const std::string listArchetypes = "listArchetypes";
     inline const std::string createFromArchetype = "createFromArchetype";
+    inline const std::string agentDecide         = "agentDecide";
 } // namespace Method
 
 } // namespace IPC
