@@ -11,6 +11,8 @@ add_library(agent-kernel STATIC
     # For now, the library is header-only; we add a stub source so CMake
     # doesn't complain about an empty target.
     src/ecs/stub.cpp
+    src/llm/HttpClient.cpp
+    src/llm/LLMClient.cpp
 )
 
 target_include_directories(agent-kernel PUBLIC
@@ -19,6 +21,16 @@ target_include_directories(agent-kernel PUBLIC
 )
 
 target_link_libraries(agent-kernel PUBLIC pthread)
+
+# ── libcurl detection (optional) ──────────────────────────────────────────────
+find_package(CURL)
+if(CURL_FOUND)
+    target_link_libraries(agent-kernel PUBLIC CURL::libcurl)
+    target_compile_definitions(agent-kernel PUBLIC HAS_CURL=1)
+    message(STATUS "libcurl found — LLM HTTP client will use real HTTP")
+else()
+    message(WARNING "libcurl not found — LLM HTTP client will use stub")
+endif()
 
 # Tests
 add_executable(kernel_tests
@@ -34,6 +46,7 @@ add_executable(kernel_tests
     tests/test_archetype.cpp
     tests/test_validation.cpp
     tests/test_ipc_archetype.cpp
+    tests/test_llm.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
