@@ -47,6 +47,7 @@ add_executable(kernel_tests
     tests/test_validation.cpp
     tests/test_ipc_archetype.cpp
     tests/test_llm.cpp
+    tests/test_prompt_builder.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
