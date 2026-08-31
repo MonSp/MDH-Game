@@ -31,6 +31,7 @@ add_executable(kernel_tests
     tests/test_ipc_schema.cpp
     tests/test_dynamic_store.cpp
     tests/test_hybrid_registry.cpp
+    tests/test_archetype.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src

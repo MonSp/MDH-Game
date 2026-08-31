@@ -96,6 +96,7 @@ extern void runComponentSchemaRegistrationTests();
 extern void runSchemaIpcTests();
 extern void runDynamicStoreTests();
 extern void runHybridRegistryTests();
+extern void runArchetypeTests();
 
 int main() {
     printf("Running agent-kernel ECS core tests...\n");
@@ -130,6 +131,9 @@ int main() {
 
     printf("\n");
     runHybridRegistryTests();
+
+    printf("\n");
+    runArchetypeTests();
 
     printf("\nAll tests PASSED.\n");
     return 0;
