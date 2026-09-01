@@ -41,11 +41,11 @@ Perceive (entity state) → Decide (LLM) → Map (Decision → ActionType)
 | ActionType | L4 Action | Primary Effects |
 |---|---|---|
 | `ExecuteTask` | Execute | SkillTree XP +50~200, Career XP +10~50, Memory entry |
-| `PracticeSkill` | Execute (skill focus) | SkillTree XP +100 for specific skill, Stats.energy -10 |
+| `PracticeSkill` | Execute (skill focus) | SkillTree XP +100 for specific skill, Social.energy -10 |
 | `Delegate` | Delegate | Memory entry (subtask), no direct state change |
-| `Rest` | Execute (low energy) | Stats.energy +30, Stats.mood +10 |
-| `Socialize` | Execute (social) | Social affinity changes, Personality.sociability drift |
-| `Study` | Reflect | SkillTree XP +80, Stats.energy -15 |
+| `Rest` | Execute (low energy) | Social.energy +30, Social.mood +10 |
+| `Socialize` | Execute (social) | Social.socialDesire -25, Social.mood +15, Personality.sociability drift |
+| `Study` | Reflect | SkillTree XP +80, Social.energy -15 |
 | `Reflect` | Reflect | Memory entry + Personality trait drift (±3 on random trait) |
 
 ActionType selection logic:
@@ -60,12 +60,11 @@ ActionType selection logic:
 
 ```cpp
 enum class TargetComponent : uint8_t {
-    Stats,       // energy, mood
+    Social,      // energy, mood, socialDesire (SocialComponent)
     SkillTree,   // skill XP (by skill name)
     Career,      // career XP, success rate
     Personality, // trait drift (6 dimensions)
-    Memory,      // add entry
-    Social       // affinity change
+    Memory,      // add milestone/interaction entry
 };
 
 struct ActionEffect {
@@ -86,22 +85,23 @@ struct ActionEffect {
 
 **PracticeSkill**:
 - `{SkillTree, <skill_name>, 100, "", "focused practice"}`
-- `{Stats, "energy", -10, "", "practice fatigue"}`
+- `{Social, "energy", -10, "", "practice fatigue"}`
 
 **Delegate**:
 - `{Memory, "interaction", 0, "Delegated task to: <delegateTo>", "delegation"}`
 
 **Rest**:
-- `{Stats, "energy", 30, "", "rest recovery"}`
-- `{Stats, "mood", 10, "", "rest relaxation"}`
+- `{Social, "energy", 30, "", "rest recovery"}`
+- `{Social, "mood", 10, "", "rest relaxation"}`
 
 **Socialize**:
-- `{Personality, "sociability", 2, "", "social interaction"}` (clamped 0-100)
-- `{Memory, "interaction", 0, "Socialized with team", "social bonding"}`
+- `{Social, "socialDesire", -25, "", "social interaction"}`
+- `{Social, "mood", 15, "", "social bonding"}`
+- `{Personality, "sociability", 2, "", "social growth"}` (clamped 0-100)
 
 **Study**:
 - `{SkillTree, <random_skill>, 80, "", "study session"}`
-- `{Stats, "energy", -15, "", "study fatigue"}`
+- `{Social, "energy", -15, "", "study fatigue"}`
 
 **Reflect**:
 - `{Personality, <random_trait>, ±3, "", "self-reflection"}` (random direction)
@@ -121,7 +121,7 @@ src/ecs/systems/
 ### ActionTypes.h
 - `enum class ActionType` (7 values)
 - `ActionType actionTypeToString(ActionType)` / `fromString()`
-- `ActionType mapDecisionToAction(const LLM::Decision& d, const ECS::Registry& reg, ECS::EntityId id)` — the selection logic from S3, reads entity Stats to check energy threshold
+- `ActionType mapDecisionToAction(const LLM::Decision& d, const ECS::Registry& reg, ECS::EntityId id)` — the selection logic from S3, reads SocialComponent to check energy threshold
 
 ### ActionEffect.h
 - `TargetComponent` enum
@@ -132,12 +132,11 @@ src/ecs/systems/
 - `class ActionExecutor` — holds no state, pure function-like
 - `void apply(ECS::Registry& reg, ECS::EntityId id, const std::vector<ActionEffect>& effects)`
 - Dispatches by `TargetComponent`:
-  - Stats: modifies `StatsComponent` fields (energy, mood) by delta
-  - SkillTree: calls `addSkillXp()` for named skill (auto-creates if new)
-  - Career: adds XP to `CareerComponent`
+  - Social: modifies `SocialComponent` fields (energy, mood, socialDesire) by delta (clamped 0-100)
+  - SkillTree: calls `addXp()` for named skill (auto-creates if new)
+  - Career: calls `CareerComponent::addXp()` (auto-promotion built-in)
   - Personality: drifts named trait by delta (clamped 0-100)
-  - Memory: appends to `MemoryRingComponent`
-  - Social: modifies `SocialComponent` affinity (by name)
+  - Memory: appends to `MemoryRingComponent` via `recordMilestone()`
 
 ### TickEngine.h/.cpp
 - `class TickEngine(LLM::LLMClient* client)`
