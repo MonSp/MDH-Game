@@ -28,7 +28,7 @@ import { NPCMemoryStore } from '../llm/NPCMemory';
 import { CommandStatus } from '../../shared/types/LLMPlanning';
 import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
 import { wasmConsumeInteractionEvents, isECSWasmReady } from '../../ecs/ECSWasmLoader';
-import { AgentKernelClient } from '../../agent-kernel/ts-client/src/AgentKernelClient';
+import { AgentKernelClient } from '../../../agent-kernel/ts-client/src/AgentKernelClient';
 
 export interface RecruitCandidate {
   id: string;
@@ -259,6 +259,10 @@ export class NPCWorldService extends EventEmitter {
     if (this.ambientInterval) clearInterval(this.ambientInterval);
     this.tickInterval = null;
     this.ambientInterval = null;
+    if (this.kernelClient) {
+      this.kernelClient.disconnect();
+      this.kernelConnected = false;
+    }
   }
 
   /**
