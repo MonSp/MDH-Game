@@ -221,4 +221,62 @@ describe('AgentKernelClient IPC', () => {
       expect((err as Error).message).toContain('entity not found');
     }
   });
+
+  // ── L4: LLM Decision ────────────────────────────────────────
+
+  it('should get a decision from agentDecide', async () => {
+    const decision = await client.agentDecide(0, 'Implement a REST API');
+    expect(decision).toBeDefined();
+    expect(typeof decision.action).toBe('string');
+    expect(typeof decision.reasoning).toBe('string');
+    expect(typeof decision.confidence).toBe('number');
+  });
+
+  it('should error on agentDecide with invalid entity', async () => {
+    try {
+      await client.agentDecide(99999, 'some task');
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('entity not found');
+    }
+  });
+
+  // ── L5: Agent Tick ───────────────────────────────────────────
+
+  it('should run an agent tick', async () => {
+    const result = await client.agentTick(0, 'Write unit tests');
+    expect(result).toBeDefined();
+    expect(typeof result.action).toBe('string');
+    expect(typeof result.tickNumber).toBe('number');
+    expect(typeof result.timestamp).toBe('number');
+    expect(result.decision).toBeDefined();
+    expect(Array.isArray(result.effects)).toBe(true);
+  });
+
+  it('should error on agentTick with invalid entity', async () => {
+    try {
+      await client.agentTick(99999, 'some task');
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toContain('entity not found');
+    }
+  });
+
+  // ── L5: Simulation ──────────────────────────────────────────
+
+  it('should run a simulation', async () => {
+    const result = await client.runSimulation([0], 2, ['task A']);
+    expect(result).toBeDefined();
+    expect(Array.isArray(result.results)).toBe(true);
+    expect(result.results.length).toBe(2);
+    expect(result.summary).toBeDefined();
+    expect(result.summary.totalTicks).toBe(2);
+    expect(typeof result.summary.averageConfidence).toBe('number');
+    expect(typeof result.summary.actionCounts).toBe('object');
+  });
+
+  it('should run a simulation with default task', async () => {
+    const result = await client.runSimulation([0], 1);
+    expect(result.results.length).toBe(1);
+  });
 });

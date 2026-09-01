@@ -86,6 +86,45 @@ export interface KernelResponse<T = unknown> {
   error?: string;
 }
 
+/** L4 Decision returned by agentDecide. */
+export interface Decision {
+  action: 'execute' | 'delegate' | 'requestInfo' | 'decline' | 'reflect';
+  reasoning: string;
+  confidence: number;
+  delegateTo?: string;
+  details?: string;
+}
+
+/** A single effect applied during a tick. */
+export interface ActionEffect {
+  target: number;   // TargetComponent enum
+  fieldName: string;
+  delta: number;
+  description: string;
+}
+
+/** L5 TickResult returned by agentTick. */
+export interface TickResult {
+  action: string;       // ActionType string
+  tickNumber: number;
+  timestamp: number;
+  decision: Decision;
+  effects: ActionEffect[];
+}
+
+/** L5 SimulationSummary returned by runSimulation. */
+export interface SimulationSummary {
+  totalTicks: number;
+  averageConfidence: number;
+  actionCounts: Record<string, number>;
+}
+
+/** L5 runSimulation response. */
+export interface SimulationResult {
+  results: TickResult[];
+  summary: SimulationSummary;
+}
+
 /** Internal: a pending request waiting for its response. */
 export interface PendingRequest {
   resolve: (value: unknown) => void;

@@ -2,10 +2,13 @@ import * as net from 'net';
 import {
   AgentProfile,
   CreateAgentParams,
+  Decision,
   KernelRequest,
   KernelResponse,
   PendingRequest,
+  SimulationResult,
   SkillNode,
+  TickResult,
 } from './types';
 
 const DEFAULT_SOCKET_PATH = '/tmp/agent-kernel.sock';
@@ -143,6 +146,40 @@ export class AgentKernelClient {
    */
   async getSkills(entityId: number): Promise<Record<string, SkillNode>> {
     const resp = await this.request<Record<string, SkillNode>>('getSkills', { entityId });
+    return resp;
+  }
+
+  // ─── L4: LLM Decision ─────────────────────────────────────────
+
+  /**
+   * Ask the kernel's LLM to make a decision for an agent on a task.
+   */
+  async agentDecide(entityId: number, task: string): Promise<Decision> {
+    const resp = await this.request<Decision>('agentDecide', { entityId, task });
+    return resp;
+  }
+
+  // ─── L5: Agent Tick & Simulation ─────────────────────────────
+
+  /**
+   * Run a single agent tick: perceive → LLM decide → execute → apply effects.
+   */
+  async agentTick(entityId: number, task: string): Promise<TickResult> {
+    const resp = await this.request<TickResult>('agentTick', { entityId, task });
+    return resp;
+  }
+
+  /**
+   * Run a multi-agent batch simulation for N ticks.
+   */
+  async runSimulation(
+    entityIds: number[],
+    ticks: number = 1,
+    tasks?: string[],
+  ): Promise<SimulationResult> {
+    const params: Record<string, unknown> = { entityIds, ticks };
+    if (tasks) params.tasks = tasks;
+    const resp = await this.request<SimulationResult>('runSimulation', params);
     return resp;
   }
 
