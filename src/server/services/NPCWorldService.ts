@@ -28,6 +28,7 @@ import { NPCMemoryStore } from '../llm/NPCMemory';
 import { CommandStatus } from '../../shared/types/LLMPlanning';
 import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
 import { wasmConsumeInteractionEvents, isECSWasmReady } from '../../ecs/ECSWasmLoader';
+import { AgentKernelClient } from '../../agent-kernel/ts-client/src/AgentKernelClient';
 
 export interface RecruitCandidate {
   id: string;
@@ -158,10 +159,29 @@ export class NPCWorldService extends EventEmitter {
   private maxRumorSpreadsPerFrame: number = 50;
   private rumorSpreadsThisFrame: number = 0;
 
+  /** Optional kernel client for agent tick integration */
+  private kernelClient: AgentKernelClient | null = null;
+  private kernelConnected: boolean = false;
+
   private constructor() {
     super();
     this.nextNPCId = 1;
     this.memory = new NPCMemoryStore();
+    this.initKernelClient();
+  }
+
+  /** Try to connect to the agent-kernel daemon (non-fatal if unavailable). */
+  private async initKernelClient(): Promise<void> {
+    try {
+      const socketPath = process.env.AGENT_KERNEL_SOCKET || '/tmp/agent-kernel.sock';
+      this.kernelClient = new AgentKernelClient(socketPath);
+      await this.kernelClient.connect();
+      this.kernelConnected = true;
+      console.log('[NPCWorldService] agent-kernel connected at', socketPath);
+    } catch {
+      this.kernelConnected = false;
+      // Kernel not available — TS fallback pipeline continues as before
+    }
   }
 
   /**
@@ -596,6 +616,31 @@ export class NPCWorldService extends EventEmitter {
       return;
     }
 
+    // Try kernel agentTick first (if connected)
+    if (this.kernelConnected && this.kernelClient) {
+      try {
+        const task = state.goal || `${state.npc.name}的日常活动`;
+        const tickResult = await this.kernelClient.agentTick(0, task);
+        if (tickResult && tickResult.action) {
+          // Map kernel action to PlanAction
+          const kernelAction: PlanAction = {
+            targetId: 'self',
+            actionType: this.mapKernelAction(tickResult.action),
+            priority: 8,
+            duration: 30,
+            reason: tickResult.decision?.reasoning || `内核决策: ${tickResult.action}`,
+          };
+          state.planQueue = [kernelAction];
+          state.goal = `内核决策: ${tickResult.action}`;
+          this.advanceQueue(state);
+          return;
+        }
+      } catch (err) {
+        // Kernel call failed — fall through to LLM pipeline
+        console.debug(`[NPCWorldService] kernel tick failed for ${id}:`, (err as Error).message);
+      }
+    }
+
     // Build memory context from NPCMemoryStore (relationships, interactions, witnessed events)
     const nameResolver = (npcId: string) => {
       const s = this.npcs.get(npcId);
@@ -623,6 +668,20 @@ export class NPCWorldService extends EventEmitter {
         this.advanceQueue(state);
       }
     }
+  }
+
+  /** Map kernel ActionType string to Game PlanAction type. */
+  private mapKernelAction(action: string): PlanAction['actionType'] {
+    const mapping: Record<string, PlanAction['actionType']> = {
+      'executeTask': 'patrol',
+      'practiceSkill': 'train',
+      'delegate': 'patrol',
+      'rest': 'rest',
+      'socialize': 'patrol',
+      'study': 'train',
+      'reflect': 'cultivate',
+    };
+    return mapping[action] || 'cultivate';
   }
 
   /** Generate a fallback multi-step plan when LLM fails. */
