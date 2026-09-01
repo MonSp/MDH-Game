@@ -51,6 +51,7 @@ add_executable(kernel_tests
     tests/test_prompt_builder.cpp
     tests/test_decision_engine.cpp
     tests/test_action_types.cpp
+    tests/test_action_effects.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
