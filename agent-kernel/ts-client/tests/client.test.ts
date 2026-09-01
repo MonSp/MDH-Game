@@ -63,9 +63,9 @@ describe('Skill Mapping', () => {
     expect(categories['Management']).toBe(5);
   });
 
-  it('should map backend_dev to 阵法造诣', () => {
+  it('should map backend_dev to 阵法', () => {
     const ability = getGameAbility('backend_dev', MAPPING_PATH);
-    expect(ability).toBe('阵法造诣');
+    expect(ability).toBe('阵法');
   });
 
   it('should return undefined for unknown skill', () => {
