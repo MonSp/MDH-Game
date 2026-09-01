@@ -962,17 +962,16 @@ private:
             return json::error("entity not found");
         }
 
+        // Create fresh LLM client + engine per request (thread-safe, no shared state)
         LLM::LLMConfig cfg;
         cfg.provider  = LLM::Provider::Custom;
         cfg.baseUrl   = "http://localhost:8080/v1";
         cfg.model     = "stub-model";
         cfg.maxTokens = 512;
-        if (!tickLlmClient_) {
-            tickLlmClient_ = std::make_unique<LLM::LLMClient>(cfg);
-            tickEngine_ = std::make_unique<Systems::TickEngine>(tickLlmClient_.get());
-        }
+        LLM::LLMClient llmClient(cfg);
+        Systems::TickEngine engine(&llmClient);
 
-        Systems::TickResult result = tickEngine_->tick(reg, entityId, task);
+        Systems::TickResult result = engine.tick(reg, entityId, task);
         return json::ok(json::compact(result.toJson()));
     }
 
@@ -1017,17 +1016,16 @@ private:
             }
         }
 
-        if (!tickLlmClient_) {
-            LLM::LLMConfig cfg;
-            cfg.provider  = LLM::Provider::Custom;
-            cfg.baseUrl   = "http://localhost:8080/v1";
-            cfg.model     = "stub-model";
-            cfg.maxTokens = 512;
-            tickLlmClient_ = std::make_unique<LLM::LLMClient>(cfg);
-            tickEngine_ = std::make_unique<Systems::TickEngine>(tickLlmClient_.get());
-        }
+        // Create fresh LLM client + engine per request (thread-safe)
+        LLM::LLMConfig cfg;
+        cfg.provider  = LLM::Provider::Custom;
+        cfg.baseUrl   = "http://localhost:8080/v1";
+        cfg.model     = "stub-model";
+        cfg.maxTokens = 512;
+        LLM::LLMClient llmClient(cfg);
+        Systems::TickEngine engine(&llmClient);
 
-        Systems::SimulationRunner runner(tickEngine_.get());
+        Systems::SimulationRunner runner(&engine);
         auto results = runner.run(reg, entityIds, ticks, tasks);
         auto summary = Systems::SimulationRunner::summarize(results);
 
@@ -1040,9 +1038,6 @@ private:
         resp += "],\"summary\":" + json::compact(summary.toJson()) + "}";
         return json::ok(resp);
     }
-
-    std::unique_ptr<LLM::LLMClient> tickLlmClient_;
-    std::unique_ptr<Systems::TickEngine> tickEngine_;
 
     UnixSocketServer server_;
 };
