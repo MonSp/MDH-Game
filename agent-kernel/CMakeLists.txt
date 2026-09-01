@@ -14,6 +14,7 @@ add_library(agent-kernel STATIC
     src/llm/HttpClient.cpp
     src/llm/LLMClient.cpp
     src/llm/DecisionEngine.cpp
+    src/ecs/systems/ActionExecutor.cpp
 )
 
 target_include_directories(agent-kernel PUBLIC
@@ -52,6 +53,7 @@ add_executable(kernel_tests
     tests/test_decision_engine.cpp
     tests/test_action_types.cpp
     tests/test_action_effects.cpp
+    tests/test_action_executor.cpp
 )
 target_include_directories(kernel_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
