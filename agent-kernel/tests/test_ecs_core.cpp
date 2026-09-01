@@ -102,6 +102,7 @@ extern void runArchetypeIpcTests();
 extern void runLlmTests();
 extern void runPromptBuilderTests();
 extern void runDecisionEngineTests();
+extern void runActionTypesTests();
 
 int main() {
     printf("Running agent-kernel ECS core tests...\n");
@@ -154,6 +155,9 @@ int main() {
 
     printf("\n");
     runDecisionEngineTests();
+
+    printf("\n");
+    runActionTypesTests();
 
     printf("\nAll tests PASSED.\n");
     return 0;
