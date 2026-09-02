@@ -1,7 +1,6 @@
 #pragma once
 // EventJournal — append-only event log with ring buffer storage.
-// Records agent lifecycle events (decisions, effects, messages) for
-// query and persistence by application layers.
+// Thread-safe: all public methods are mutex-protected.
 
 #include "../Entity.h"
 #include <string>
@@ -10,6 +9,7 @@
 #include <cstdint>
 #include <chrono>
 #include <algorithm>
+#include <mutex>
 
 namespace Systems {
 
@@ -18,7 +18,7 @@ struct JournalEvent {
     uint64_t timestamp = 0;
     ECS::EntityId entity_id = 0;
     std::string event_type;
-    std::string payload;  // JSON string
+    std::string payload;
 
     JournalEvent() = default;
     JournalEvent(uint64_t id, uint64_t ts, ECS::EntityId eid,
@@ -36,12 +36,13 @@ public:
     }
 
     void addListener(Listener listener) {
+        std::lock_guard<std::mutex> lock(mutex_);
         listeners_.push_back(std::move(listener));
     }
 
-    // Append an event. Returns the assigned event ID.
     uint64_t append(ECS::EntityId entity_id, const std::string& event_type,
                     const std::string& payload) {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 
@@ -57,8 +58,8 @@ public:
         return id;
     }
 
-    // Query events for a specific entity, filtered by minimum event ID.
     std::vector<JournalEvent> query(ECS::EntityId entity_id, uint64_t since_id = 0) const {
+        std::lock_guard<std::mutex> lock(mutex_);
         std::vector<JournalEvent> result;
         forEach([&](const JournalEvent& e) {
             if (e.entity_id == entity_id && e.id >= since_id) {
@@ -68,8 +69,8 @@ public:
         return result;
     }
 
-    // Query all events, filtered by minimum event ID.
     std::vector<JournalEvent> queryAll(uint64_t since_id = 0) const {
+        std::lock_guard<std::mutex> lock(mutex_);
         std::vector<JournalEvent> result;
         forEach([&](const JournalEvent& e) {
             if (e.id >= since_id) {
@@ -79,26 +80,25 @@ public:
         return result;
     }
 
-    // Get the latest event ID (0 if no events).
     uint64_t latestId() const {
+        std::lock_guard<std::mutex> lock(mutex_);
         return next_id_ - 1;
     }
 
-    size_t size() const { return count_; }
+    size_t size() const { std::lock_guard<std::mutex> lock(mutex_); return count_; }
     size_t capacity() const { return capacity_; }
-    bool empty() const { return count_ == 0; }
+    bool empty() const { std::lock_guard<std::mutex> lock(mutex_); return count_ == 0; }
 
     void clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
         head_ = 0;
         count_ = 0;
-        // Don't reset next_id_ — IDs are monotonic across clears
     }
 
 private:
     template<typename Fn>
     void forEach(Fn&& fn) const {
         if (count_ == 0) return;
-        // Iterate from oldest to newest
         size_t start = (count_ < capacity_) ? 0 : head_;
         for (size_t i = 0; i < count_; ++i) {
             size_t idx = (start + i) % capacity_;
@@ -112,6 +112,7 @@ private:
     size_t count_;
     std::vector<JournalEvent> buffer_;
     std::vector<Listener> listeners_;
+    mutable std::mutex mutex_;
 };
 
 } // namespace Systems

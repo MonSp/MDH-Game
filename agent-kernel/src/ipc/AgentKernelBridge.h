@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <vector>
 #include <cstdlib>
+#include <mutex>
 
 namespace IPC {
 
@@ -463,7 +464,10 @@ public:
     Systems::AgentMailbox& mailbox() { return mailbox_; }
 
 private:
+    std::mutex handlerMutex_;  // C1 fix: serialize all IPC handler calls
+
     std::string handleRequest(const std::string& raw) {
+        std::lock_guard<std::mutex> lock(handlerMutex_);
         std::string method = json::getString(raw, "method");
         if (method.empty()) {
             return json::error("missing method");

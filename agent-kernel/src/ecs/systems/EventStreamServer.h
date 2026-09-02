@@ -1,7 +1,6 @@
 #pragma once
 // EventStreamServer — Unix socket server that pushes kernel events to subscribers.
-// Clients connect to the event socket and receive newline-delimited JSON events.
-// Events are pushed from EventJournal and AgentMailbox listeners.
+// Thread-safe: tracks all client threads, joins on stop.
 
 #include "EventJournal.h"
 #include "AgentMailbox.h"
@@ -11,6 +10,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <algorithm>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -26,7 +26,6 @@ public:
                                 AgentMailbox& mailbox)
         : socketPath_(socketPath), serverFd_(-1), running_(false) {
 
-        // Register listeners on journal and mailbox
         journal.addListener([this](const JournalEvent& e) {
             pushEvent(journalEventToJson(e));
         });
@@ -69,15 +68,20 @@ public:
 
     void stop() {
         running_ = false;
+
+        // Close server socket to unblock accept()
         if (serverFd_ >= 0) {
             ::shutdown(serverFd_, SHUT_RDWR);
             close(serverFd_);
             serverFd_ = -1;
         }
+
+        // Join accept thread
         if (acceptThread_ && acceptThread_->joinable()) {
             acceptThread_->join();
         }
-        // Close all subscriber connections
+
+        // Close all subscriber sockets (unblocks recv in client threads)
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (int fd : subscribers_) {
@@ -86,6 +90,18 @@ public:
             }
             subscribers_.clear();
         }
+
+        // Join all client threads (C3 fix: no more detached threads)
+        {
+            std::lock_guard<std::mutex> lock(threadsMutex_);
+            for (auto& t : clientThreads_) {
+                if (t.joinable()) {
+                    t.join();
+                }
+            }
+            clientThreads_.clear();
+        }
+
         unlink(socketPath_.c_str());
     }
 
@@ -106,19 +122,25 @@ private:
                 std::lock_guard<std::mutex> lock(mutex_);
                 subscribers_.push_back(clientFd);
             }
-            // Detached thread to handle client disconnect detection
-            std::thread([this, clientFd]() { handleClient(clientFd); }).detach();
+            // Track client thread instead of detaching (C3 fix)
+            {
+                std::lock_guard<std::mutex> lock(threadsMutex_);
+                // Clean up finished threads before adding new ones
+                clientThreads_.erase(
+                    std::remove_if(clientThreads_.begin(), clientThreads_.end(),
+                        [](const std::thread& t) { return !t.joinable(); }),
+                    clientThreads_.end());
+                clientThreads_.emplace_back([this, clientFd]() { handleClient(clientFd); });
+            }
         }
     }
 
     void handleClient(int clientFd) {
-        // Read from client — we only care about detecting disconnect
         char buf[64];
         while (running_) {
             ssize_t n = recv(clientFd, buf, sizeof(buf), 0);
-            if (n <= 0) break; // client disconnected
+            if (n <= 0) break;
         }
-        // Remove from subscribers
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = std::find(subscribers_.begin(), subscribers_.end(), clientFd);
@@ -139,7 +161,6 @@ private:
                 dead.push_back(fd);
             }
         }
-        // Clean up dead connections
         for (int fd : dead) {
             auto it = std::find(subscribers_.begin(), subscribers_.end(), fd);
             if (it != subscribers_.end()) {
@@ -169,14 +190,9 @@ private:
         return json;
     }
 
-    // Embed payload: if it looks like JSON, try to parse and re-serialize cleanly.
-    // Otherwise, escape as a string value.
     static std::string embedPayload(const std::string& payload) {
         if (payload.empty()) return "\"\"";
-        // If it starts with { or [, it's supposed to be JSON
         if (payload[0] == '{' || payload[0] == '[') {
-            // Check if it's already valid (no backslash-escaped quotes)
-            // If it contains \" it's an escaped string — strip the backslashes for embedding
             std::string cleaned;
             bool escaped = false;
             for (char c : payload) {
@@ -210,6 +226,7 @@ private:
                 case '\\': out += "\\\\"; break;
                 case '\n': out += "\\n";  break;
                 case '\r': out += "\\r";  break;
+                case '\t': out += "\\t";  break;  // I6 fix
                 default:   out += c;      break;
             }
         }
@@ -222,6 +239,8 @@ private:
     std::unique_ptr<std::thread> acceptThread_;
     std::vector<int> subscribers_;
     mutable std::mutex mutex_;
+    std::vector<std::thread> clientThreads_;  // C3 fix: track instead of detach
+    std::mutex threadsMutex_;
 };
 
 } // namespace Systems
