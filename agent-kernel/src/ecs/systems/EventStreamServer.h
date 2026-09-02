@@ -155,7 +155,7 @@ private:
         json += ",\"timestamp\":" + std::to_string(e.timestamp);
         json += ",\"entityId\":" + std::to_string(e.entity_id);
         json += ",\"eventType\":\"" + escapeStr(e.event_type) + "\"";
-        json += ",\"payload\":\"" + escapeStr(e.payload) + "\"}";
+        json += ",\"payload\":" + embedPayload(e.payload) + "}";
         return json;
     }
 
@@ -164,9 +164,42 @@ private:
         json += ",\"id\":" + std::to_string(m.id);
         json += ",\"from\":" + std::to_string(m.from);
         json += ",\"to\":" + std::to_string(m.to);
-        json += ",\"payload\":\"" + escapeStr(m.payload) + "\"";
+        json += ",\"payload\":" + embedPayload(m.payload);
         json += ",\"timestamp\":" + std::to_string(m.timestamp) + "}";
         return json;
+    }
+
+    // Embed payload: if it looks like JSON, try to parse and re-serialize cleanly.
+    // Otherwise, escape as a string value.
+    static std::string embedPayload(const std::string& payload) {
+        if (payload.empty()) return "\"\"";
+        // If it starts with { or [, it's supposed to be JSON
+        if (payload[0] == '{' || payload[0] == '[') {
+            // Check if it's already valid (no backslash-escaped quotes)
+            // If it contains \" it's an escaped string — strip the backslashes for embedding
+            std::string cleaned;
+            bool escaped = false;
+            for (char c : payload) {
+                if (c == '\\' && !escaped) {
+                    escaped = true;
+                    continue;
+                }
+                if (escaped) {
+                    escaped = false;
+                    if (c == '"') { cleaned += '"'; continue; }
+                    if (c == '\\') { cleaned += '\\'; continue; }
+                    if (c == 'n') { cleaned += '\n'; continue; }
+                    if (c == 'r') { cleaned += '\r'; continue; }
+                    if (c == 't') { cleaned += '\t'; continue; }
+                    cleaned += '\\';
+                    cleaned += c;
+                    continue;
+                }
+                cleaned += c;
+            }
+            return cleaned;
+        }
+        return "\"" + escapeStr(payload) + "\"";
     }
 
     static std::string escapeStr(const std::string& s) {
