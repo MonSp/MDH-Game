@@ -161,6 +161,8 @@ export class NPCWorldService extends EventEmitter {
 
   /** Optional kernel daemon service for agent tick integration */
   private kernelDaemon: KernelDaemonService | null = null;
+  /** Maps NPC string IDs → kernel entity IDs */
+  private kernelEntityMap: Map<string, number> = new Map();
 
   private constructor() {
     super();
@@ -186,10 +188,32 @@ export class NPCWorldService extends EventEmitter {
       this.kernelDaemon.on('journal', (event) => {
         this.handleKernelJournalEvent(event);
       });
+
+      // Sync existing NPCs to kernel (deferred — NPCs may not be initialized yet)
+      setTimeout(() => this.syncNPCsToKernel(), 2000);
     } catch (err) {
       this.kernelDaemon = null;
       console.warn('[NPCWorldService] kernel daemon not available:', (err as Error).message);
     }
+  }
+
+  /** Sync all NPCs to the kernel and cache entity ID mappings. */
+  private async syncNPCsToKernel(): Promise<void> {
+    if (!this.kernelDaemon?.client) return;
+    for (const [npcId, state] of this.npcs) {
+      try {
+        const profile = await this.kernelDaemon.client.createAgent({
+          id: npcId,
+          name: state.npc.name,
+          department: state.npc.clanId || 'default',
+          companyRole: state.npc.role || 'member',
+        });
+        this.kernelEntityMap.set(npcId, profile.entityId);
+      } catch {
+        // NPC may already exist in kernel — that's OK
+      }
+    }
+    console.log(`[NPCWorldService] synced ${this.kernelEntityMap.size} NPCs to kernel`);
   }
 
   /** Convert a kernel mailbox message into an NPC world event + interaction. */
@@ -696,8 +720,13 @@ export class NPCWorldService extends EventEmitter {
     // Try kernel agentTick first (if connected)
     if (this.kernelDaemon?.running && this.kernelDaemon?.client) {
       try {
+        const entityId = this.kernelEntityMap.get(id);
+        if (entityId === undefined) {
+          // NPC not synced to kernel — fall through to LLM
+          throw new Error('NPC not in kernel');
+        }
         const task = state.goal || `${state.npc.name}的日常活动`;
-        const tickResult = await this.kernelDaemon.client.agentTick(0, task);
+        const tickResult = await this.kernelDaemon.client.agentTick(entityId, task);
         if (tickResult && tickResult.action) {
           // Map kernel action to PlanAction
           const kernelAction: PlanAction = {

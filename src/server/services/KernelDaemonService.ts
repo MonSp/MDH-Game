@@ -76,14 +76,12 @@ export class KernelDaemonService extends EventEmitter {
    * If the daemon is already running (e.g., started externally), just connect.
    */
   async start(): Promise<void> {
-    // Clean up stale sockets
-    this.cleanStaleSocket(this.socketPath);
-    this.cleanStaleSocket(this.eventsSocketPath);
-
-    // Try to connect to existing daemon first
+    // C4 fix: Try connecting to existing daemon FIRST (before cleaning sockets)
     const connected = await this.tryConnect();
     if (!connected) {
-      // Start daemon process
+      // Only clean stale sockets if no daemon is running
+      this.cleanStaleSocket(this.socketPath);
+      this.cleanStaleSocket(this.eventsSocketPath);
       await this.spawnDaemon();
     }
 
@@ -123,10 +121,16 @@ export class KernelDaemonService extends EventEmitter {
       this._client = null;
     }
 
-    // Kill daemon process if we started it
+    // Kill daemon process if we started it (C5 fix: SIGKILL fallback)
     if (this.daemonProcess) {
-      this.daemonProcess.kill('SIGTERM');
+      const proc = this.daemonProcess;
       this.daemonProcess = null;
+      proc.kill('SIGTERM');
+      // Fallback: SIGKILL after 5s if process doesn't exit
+      const killTimer = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+      }, 5000);
+      proc.on('exit', () => clearTimeout(killTimer));
     }
   }
 
