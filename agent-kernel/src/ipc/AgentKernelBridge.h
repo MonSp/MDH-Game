@@ -24,8 +24,31 @@
 #include <functional>
 #include <cstdio>
 #include <vector>
+#include <cstdlib>
 
 namespace IPC {
+
+// --- LLM config from environment variables ---
+inline LLM::LLMConfig makeLLMConfig() {
+    LLM::LLMConfig cfg;
+    const char* apiKey = std::getenv("LLM_API_KEY");
+    const char* baseUrl = std::getenv("LLM_BASE_URL");
+    const char* model = std::getenv("LLM_MODEL");
+
+    if (apiKey && apiKey[0]) {
+        cfg.apiKey = apiKey;
+        cfg.provider = LLM::Provider::DeepSeek;
+        cfg.baseUrl = baseUrl ? baseUrl : "https://api.deepseek.com";
+        cfg.model = model ? model : "deepseek-chat";
+    } else {
+        cfg.provider = LLM::Provider::Custom;
+        cfg.baseUrl = "http://localhost:8080/v1";
+        cfg.model = "stub-model";
+    }
+    cfg.maxTokens = 1024;
+    cfg.temperature = 0.7f;
+    return cfg;
+}
 
 // --- Minimal JSON helpers (no external dependency) ---
 
@@ -935,12 +958,8 @@ private:
             return json::error("entity not found");
         }
 
-        // Create LLM client (stub mode if no API key in environment)
-        LLM::LLMConfig cfg;
-        cfg.provider  = LLM::Provider::Custom;
-        cfg.baseUrl   = "http://localhost:8080/v1";
-        cfg.model     = "stub-model";
-        cfg.maxTokens = 512;
+        // Create LLM client from environment (LLM_API_KEY, LLM_BASE_URL, LLM_MODEL)
+        LLM::LLMConfig cfg = makeLLMConfig();
         LLM::LLMClient llmClient(cfg);
         LLM::DecisionEngine engine(&llmClient);
 
@@ -962,12 +981,8 @@ private:
             return json::error("entity not found");
         }
 
-        // Create fresh LLM client + engine per request (thread-safe, no shared state)
-        LLM::LLMConfig cfg;
-        cfg.provider  = LLM::Provider::Custom;
-        cfg.baseUrl   = "http://localhost:8080/v1";
-        cfg.model     = "stub-model";
-        cfg.maxTokens = 512;
+        // Create fresh LLM client + engine per request (thread-safe)
+        LLM::LLMConfig cfg = makeLLMConfig();
         LLM::LLMClient llmClient(cfg);
         Systems::TickEngine engine(&llmClient);
 
@@ -1017,11 +1032,7 @@ private:
         }
 
         // Create fresh LLM client + engine per request (thread-safe)
-        LLM::LLMConfig cfg;
-        cfg.provider  = LLM::Provider::Custom;
-        cfg.baseUrl   = "http://localhost:8080/v1";
-        cfg.model     = "stub-model";
-        cfg.maxTokens = 512;
+        LLM::LLMConfig cfg = makeLLMConfig();
         LLM::LLMClient llmClient(cfg);
         Systems::TickEngine engine(&llmClient);
 
