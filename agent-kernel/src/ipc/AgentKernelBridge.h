@@ -20,6 +20,8 @@
 #include "../llm/DecisionEngine.h"
 #include "../ecs/systems/TickEngine.h"
 #include "../ecs/systems/SimulationRunner.h"
+#include "../ecs/systems/EventJournal.h"
+#include "../ecs/systems/AgentMailbox.h"
 #include <string>
 #include <functional>
 #include <cstdio>
@@ -483,6 +485,10 @@ private:
         if (method == Method::agentDecide)        return handleAgentDecide(raw);
         if (method == Method::agentTick)          return handleAgentTick(raw);
         if (method == Method::runSimulation)      return handleRunSimulation(raw);
+        if (method == Method::appendEvent)        return handleAppendEvent(raw);
+        if (method == Method::getEvents)          return handleGetEvents(raw);
+        if (method == Method::sendMessage)        return handleSendMessage(raw);
+        if (method == Method::getMessages)        return handleGetMessages(raw);
 
         return json::error("unknown method: " + method);
     }
@@ -1047,6 +1053,102 @@ private:
             resp += json::compact(results[i].toJson());
         }
         resp += "],\"summary\":" + json::compact(summary.toJson()) + "}";
+        return json::ok(resp);
+    }
+
+    // ── EventJournal + AgentMailbox ──────────────────────────────
+
+    Systems::EventJournal journal_;
+    Systems::AgentMailbox mailbox_;
+
+    // appendEvent: { "method":"appendEvent", "params": { "entityId": 0, "eventType": "xp_granted", "payload": "{\"amount\":100}" } }
+    std::string handleAppendEvent(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t entityId = static_cast<uint64_t>(json::getInt(params, "entityId", 0));
+        std::string eventType = json::getString(params, "eventType");
+        std::string payload = json::getString(params, "payload");
+        if (eventType.empty()) return json::error("eventType is required");
+
+        uint64_t eventId = journal_.append(entityId, eventType, payload);
+        return json::ok("{\"eventId\":" + std::to_string(eventId) + "}");
+    }
+
+    // getEvents: { "method":"getEvents", "params": { "entityId": 0, "sinceId": 0 } }
+    std::string handleGetEvents(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        int entityId = json::getInt(params, "entityId", -1);
+        uint64_t sinceId = static_cast<uint64_t>(json::getInt(params, "sinceId", 0));
+
+        std::vector<Systems::JournalEvent> events;
+        if (entityId >= 0) {
+            events = journal_.query(static_cast<ECS::EntityId>(entityId), sinceId);
+        } else {
+            events = journal_.queryAll(sinceId);
+        }
+
+        std::string resp = "{\"events\":[";
+        for (size_t i = 0; i < events.size(); ++i) {
+            if (i > 0) resp += ",";
+            resp += "{\"id\":" + std::to_string(events[i].id);
+            resp += ",\"timestamp\":" + std::to_string(events[i].timestamp);
+            resp += ",\"entityId\":" + std::to_string(events[i].entity_id);
+            resp += ",\"eventType\":\"" + json::escape(events[i].event_type) + "\"";
+            resp += ",\"payload\":\"" + json::escape(events[i].payload) + "\"}";
+        }
+        resp += "]}";
+        return json::ok(resp);
+    }
+
+    // sendMessage: { "method":"sendMessage", "params": { "from": 0, "to": 1, "payload": "{\"text\":\"hello\"}" } }
+    std::string handleSendMessage(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t from = static_cast<uint64_t>(json::getInt(params, "from", -1));
+        uint64_t to = static_cast<uint64_t>(json::getInt(params, "to", -1));
+        std::string payload = json::getString(params, "payload");
+        if (from == static_cast<uint64_t>(-1) || to == static_cast<uint64_t>(-1)) {
+            return json::error("from and to are required");
+        }
+
+        auto& reg = ECS::Registry::getInstance();
+        if (!reg.isEntityValid(from)) return json::error("sender not found");
+        if (!reg.isEntityValid(to)) return json::error("recipient not found");
+
+        uint64_t msgId = mailbox_.send(from, to, payload);
+        // Auto-record event
+        journal_.append(from, "message_sent", "{\"to\":" + std::to_string(to) + ",\"messageId\":" + std::to_string(msgId) + "}");
+
+        return json::ok("{\"messageId\":" + std::to_string(msgId) + "}");
+    }
+
+    // getMessages: { "method":"getMessages", "params": { "entityId": 0, "limit": 10 } }
+    std::string handleGetMessages(const std::string& raw) {
+        std::string params = json::getRawValue(raw, "params");
+        if (params.empty()) return json::error("missing params");
+
+        uint64_t entityId = static_cast<uint64_t>(json::getInt(params, "entityId", -1));
+        int limit = json::getInt(params, "limit", 10);
+        if (entityId == static_cast<uint64_t>(-1)) return json::error("entityId is required");
+
+        auto messages = mailbox_.receive(entityId, limit);
+
+        std::string resp = "{\"messages\":[";
+        for (size_t i = 0; i < messages.size(); ++i) {
+            if (i > 0) resp += ",";
+            resp += "{\"id\":" + std::to_string(messages[i].id);
+            resp += ",\"from\":" + std::to_string(messages[i].from);
+            resp += ",\"to\":" + std::to_string(messages[i].to);
+            resp += ",\"payload\":\"" + json::escape(messages[i].payload) + "\"";
+            resp += ",\"timestamp\":" + std::to_string(messages[i].timestamp);
+            resp += ",\"delivered\":" + std::string(messages[i].delivered ? "true" : "false");
+            resp += ",\"acked\":" + std::string(messages[i].acked ? "true" : "false") + "}";
+        }
+        resp += "],\"pending\":" + std::to_string(mailbox_.pendingCount(entityId)) + "}";
         return json::ok(resp);
     }
 

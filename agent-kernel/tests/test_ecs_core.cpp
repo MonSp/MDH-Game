@@ -107,6 +107,8 @@ extern void runActionEffectTests();
 extern void runActionExecutorTests();
 extern void runTickEngineTests();
 extern void runSimulationRunnerTests();
+extern void runEventJournalTests();
+extern void runAgentMailboxTests();
 extern void runIpcTickTests();
 
 int main() {
@@ -178,6 +180,12 @@ int main() {
 
     printf("\n");
     runIpcTickTests();
+
+    printf("\n");
+    runEventJournalTests();
+
+    printf("\n");
+    runAgentMailboxTests();
 
     printf("\nAll tests PASSED.\n");
     return 0;
