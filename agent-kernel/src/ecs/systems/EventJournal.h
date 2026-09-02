@@ -6,6 +6,7 @@
 #include "../Entity.h"
 #include <string>
 #include <vector>
+#include <functional>
 #include <cstdint>
 #include <chrono>
 #include <algorithm>
@@ -27,9 +28,15 @@ struct JournalEvent {
 
 class EventJournal {
 public:
+    using Listener = std::function<void(const JournalEvent&)>;
+
     explicit EventJournal(size_t max_capacity = 10000)
         : capacity_(max_capacity), next_id_(1), head_(0), count_(0) {
         buffer_.resize(capacity_);
+    }
+
+    void addListener(Listener listener) {
+        listeners_.push_back(std::move(listener));
     }
 
     // Append an event. Returns the assigned event ID.
@@ -43,6 +50,10 @@ public:
                                        entity_id, event_type, payload);
         head_ = (head_ + 1) % capacity_;
         if (count_ < capacity_) count_++;
+
+        for (auto& listener : listeners_) {
+            listener(buffer_[(head_ + capacity_ - 1) % capacity_]);
+        }
         return id;
     }
 
@@ -100,6 +111,7 @@ private:
     size_t head_;
     size_t count_;
     std::vector<JournalEvent> buffer_;
+    std::vector<Listener> listeners_;
 };
 
 } // namespace Systems

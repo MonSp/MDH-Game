@@ -459,6 +459,9 @@ public:
     void stop()  { server_.stop(); }
     bool isRunning() const { return server_.isRunning(); }
 
+    Systems::EventJournal& journal() { return journal_; }
+    Systems::AgentMailbox& mailbox() { return mailbox_; }
+
 private:
     std::string handleRequest(const std::string& raw) {
         std::string method = json::getString(raw, "method");

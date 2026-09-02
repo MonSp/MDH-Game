@@ -5,6 +5,7 @@
 #include "../Entity.h"
 #include <string>
 #include <vector>
+#include <functional>
 #include <unordered_map>
 #include <cstdint>
 #include <chrono>
@@ -30,8 +31,14 @@ struct MailboxMessage {
 
 class AgentMailbox {
 public:
+    using Listener = std::function<void(const MailboxMessage&)>;
+
     explicit AgentMailbox(size_t max_per_entity = 1000)
         : max_per_entity_(max_per_entity), next_id_(1) {}
+
+    void addListener(Listener listener) {
+        listeners_.push_back(std::move(listener));
+    }
 
     // Send a message from one entity to another. Returns the message ID.
     uint64_t send(ECS::EntityId from, ECS::EntityId to, const std::string& payload) {
@@ -46,7 +53,10 @@ public:
             // Drop oldest message
             queue.erase(queue.begin());
         }
-        queue.push_back(std::move(msg));
+        queue.push_back(msg);
+        for (auto& listener : listeners_) {
+            listener(msg);
+        }
         return id;
     }
 
@@ -114,6 +124,7 @@ private:
     size_t max_per_entity_;
     uint64_t next_id_;
     std::unordered_map<ECS::EntityId, std::vector<MailboxMessage>> queues_;
+    std::vector<Listener> listeners_;
 };
 
 } // namespace Systems
