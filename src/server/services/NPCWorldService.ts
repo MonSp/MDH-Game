@@ -166,6 +166,7 @@ export class NPCWorldService extends EventEmitter {
     super();
     this.nextNPCId = 1;
     this.memory = new NPCMemoryStore();
+    console.log('[NPCWorldService] constructor called, initializing kernel daemon...');
     this.initKernelDaemon();
   }
 
@@ -185,9 +186,9 @@ export class NPCWorldService extends EventEmitter {
       this.kernelDaemon.on('journal', (event) => {
         this.handleKernelJournalEvent(event);
       });
-    } catch {
+    } catch (err) {
       this.kernelDaemon = null;
-      // Kernel not available — TS fallback pipeline continues as before
+      console.warn('[NPCWorldService] kernel daemon not available:', (err as Error).message);
     }
   }
 

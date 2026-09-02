@@ -3,12 +3,12 @@ import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ChildProcess, spawn } from 'child_process';
-import { AgentKernelClient } from '@agent-kernel/AgentKernelClient';
-import type { StreamEvent } from '@agent-kernel/types';
+import { AgentKernelClient } from '../../../agent-kernel/ts-client/src/AgentKernelClient';
+import type { StreamEvent } from '../../../agent-kernel/ts-client/src/types';
 
 const DEFAULT_SOCKET = '/tmp/agent-kernel.sock';
 const DEFAULT_EVENTS_SOCKET = '/tmp/agent-kernel.sock.events';
-const DAEMON_BIN = path.resolve(__dirname, '..', '..', '..', 'agent-kernel', 'build', 'agent-kernel-daemon');
+const DAEMON_BIN = path.resolve(__dirname, '..', '..', '..', '..', 'agent-kernel', 'build', 'agent-kernel-daemon');
 
 /**
  * KernelDaemonService — manages the C++ agent-kernel daemon lifecycle,
@@ -93,8 +93,15 @@ export class KernelDaemonService extends EventEmitter {
     this._running = true;
     console.log('[KernelDaemon] IPC client connected at', this.socketPath);
 
-    // Connect event stream
-    this.connectEventStream();
+    // Wait for events socket to appear, then connect
+    try {
+      await this.waitForSocket(this.eventsSocketPath, 5000);
+      // Small delay to let the event stream server finish setup
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      this.connectEventStream();
+    } catch {
+      console.warn('[KernelDaemon] Events socket not available — event streaming disabled');
+    }
   }
 
   /**
@@ -138,7 +145,7 @@ export class KernelDaemonService extends EventEmitter {
       env: {
         ...process.env,
         LD_LIBRARY_PATH: [
-          path.resolve(__dirname, '..', '..', '..', 'miniconda3', 'lib'),
+          '/home/test/miniconda3/lib',
           process.env.LD_LIBRARY_PATH ?? '',
         ].join(':'),
       },
