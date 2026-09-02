@@ -5,6 +5,7 @@ import { HUD } from '../components/HUD';
 import { Map2D } from '../components/Map2D';
 import { LogBox } from '../components/LogBox';
 import { ChroniclePanel } from '../components/ChroniclePanel';
+import { RumorPanel } from '../components/RumorPanel';
 import { ScenePanel } from '../components/ScenePanel';
 import { EventLog } from '../components/EventLog';
 import { SurveyPopup } from '../components/SurveyPopup';
@@ -72,6 +73,7 @@ export const Game = () => {
   const location = useLocation();
   const { player, updateNPCs, modifyTalent, markNpcMet, setNpcMemory, addLog, saveToSlot, npcMemory, tickGameTime } = useGameStore();
   const [showChronicle, setShowChronicle] = useState(false);
+  const [showRumor, setShowRumor] = useState(true);  // 江湖传闻默认开启
   const [showEventLog, setShowEventLog] = useState(false);
   const [blockWorldMode, setBlockWorldMode] = useState(false);
 
@@ -900,6 +902,7 @@ export const Game = () => {
         {!blockWorldMode ? <HUD onOpenChronicle={() => setShowChronicle(true)} /> : <BlockWorldGameHUD />}
         <LogBox />
         {showChronicle && <ChroniclePanel onClose={() => setShowChronicle(false)} />}
+        {showRumor && <RumorPanel onClose={() => setShowRumor(false)} />}
         <EventLog isOpen={showEventLog} onToggle={() => setShowEventLog(v => !v)} />
 
         {/* Phase 1.2: NPC initiative notification banners */}
