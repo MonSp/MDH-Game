@@ -192,7 +192,7 @@ export class NPCWorldService extends EventEmitter {
   }
 
   /** Convert a kernel mailbox message into an NPC world event + interaction. */
-  private handleKernelMessage(event: { id: number; from: number; to: number; payload: string; timestamp: number }): void {
+  private handleKernelMessage(event: { id: number; from: number; to: number; payload: string | Record<string, unknown>; timestamp: number }): void {
     const fromId = `npc-${event.from}`;
     const toId = `npc-${event.to}`;
     const fromState = this.npcs.get(fromId);
@@ -203,10 +203,11 @@ export class NPCWorldService extends EventEmitter {
 
     let messageText = '';
     try {
-      const parsed = JSON.parse(event.payload);
-      messageText = parsed.text || parsed.content || parsed.message || event.payload;
+      // payload may be an object (from event stream) or string (from IPC)
+      const parsed = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+      messageText = (parsed as any).text || (parsed as any).content || (parsed as any).message || String(event.payload);
     } catch {
-      messageText = event.payload;
+      messageText = String(event.payload);
     }
 
     // Emit as NPC world event (flows to chronicle → WebSocket)
@@ -239,7 +240,7 @@ export class NPCWorldService extends EventEmitter {
   }
 
   /** Convert relevant kernel journal events into NPC activity events. */
-  private handleKernelJournalEvent(event: { entityId: number; eventType: string; payload: string }): void {
+  private handleKernelJournalEvent(event: { entityId: number; eventType: string; payload: string | Record<string, unknown> }): void {
     const npcId = `npc-${event.entityId}`;
     const state = this.npcs.get(npcId);
     if (!state) return;
@@ -248,8 +249,8 @@ export class NPCWorldService extends EventEmitter {
     if (event.eventType === 'tick_completed') {
       let action = '修炼';
       try {
-        const parsed = JSON.parse(event.payload);
-        action = parsed.action || '修炼';
+        const parsed = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+        action = (parsed as any).action || '修炼';
       } catch { /* ignore */ }
       this.emitEvent(npcId, `完成了一次行动：${action}`, 'kernel_tick');
     } else if (event.eventType === 'action_effect') {
