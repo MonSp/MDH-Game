@@ -28,7 +28,7 @@ import { NPCMemoryStore } from '../llm/NPCMemory';
 import { CommandStatus } from '../../shared/types/LLMPlanning';
 import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
 import { wasmConsumeInteractionEvents, isECSWasmReady } from '../../ecs/ECSWasmLoader';
-import { AgentKernelClient } from '../../../agent-kernel/ts-client/src/AgentKernelClient';
+import { KernelDaemonService } from './KernelDaemonService';
 
 export interface RecruitCandidate {
   id: string;
@@ -159,27 +159,31 @@ export class NPCWorldService extends EventEmitter {
   private maxRumorSpreadsPerFrame: number = 50;
   private rumorSpreadsThisFrame: number = 0;
 
-  /** Optional kernel client for agent tick integration */
-  private kernelClient: AgentKernelClient | null = null;
-  private kernelConnected: boolean = false;
+  /** Optional kernel daemon service for agent tick integration */
+  private kernelDaemon: KernelDaemonService | null = null;
 
   private constructor() {
     super();
     this.nextNPCId = 1;
     this.memory = new NPCMemoryStore();
-    this.initKernelClient();
+    this.initKernelDaemon();
   }
 
-  /** Try to connect to the agent-kernel daemon (non-fatal if unavailable). */
-  private async initKernelClient(): Promise<void> {
+  /** Try to connect to the agent-kernel daemon via KernelDaemonService. */
+  private async initKernelDaemon(): Promise<void> {
     try {
-      const socketPath = process.env.AGENT_KERNEL_SOCKET || '/tmp/agent-kernel.sock';
-      this.kernelClient = new AgentKernelClient(socketPath);
-      await this.kernelClient.connect();
-      this.kernelConnected = true;
-      console.log('[NPCWorldService] agent-kernel connected at', socketPath);
+      this.kernelDaemon = KernelDaemonService.getInstance();
+      await this.kernelDaemon.start();
+      console.log('[NPCWorldService] kernel daemon connected');
+
+      // Listen for real-time events
+      this.kernelDaemon.on('event', (event) => {
+        if (event.type === 'message_received') {
+          this.emit('kernelMessage', event);
+        }
+      });
     } catch {
-      this.kernelConnected = false;
+      this.kernelDaemon = null;
       // Kernel not available — TS fallback pipeline continues as before
     }
   }
@@ -259,10 +263,8 @@ export class NPCWorldService extends EventEmitter {
     if (this.ambientInterval) clearInterval(this.ambientInterval);
     this.tickInterval = null;
     this.ambientInterval = null;
-    if (this.kernelClient) {
-      this.kernelClient.disconnect();
-      this.kernelConnected = false;
-    }
+    // Kernel daemon is shared — don't stop it here (other services may use it)
+    this.kernelDaemon = null;
   }
 
   /**
@@ -621,10 +623,10 @@ export class NPCWorldService extends EventEmitter {
     }
 
     // Try kernel agentTick first (if connected)
-    if (this.kernelConnected && this.kernelClient) {
+    if (this.kernelDaemon?.running && this.kernelDaemon?.client) {
       try {
         const task = state.goal || `${state.npc.name}的日常活动`;
-        const tickResult = await this.kernelClient.agentTick(0, task);
+        const tickResult = await this.kernelDaemon.client.agentTick(0, task);
         if (tickResult && tickResult.action) {
           // Map kernel action to PlanAction
           const kernelAction: PlanAction = {

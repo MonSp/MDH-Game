@@ -3,8 +3,10 @@ import {
   AgentProfile,
   CreateAgentParams,
   Decision,
+  JournalEvent,
   KernelRequest,
   KernelResponse,
+  MailboxMessage,
   PendingRequest,
   SimulationResult,
   SkillNode,
@@ -180,6 +182,47 @@ export class AgentKernelClient {
     const params: Record<string, unknown> = { entityIds, ticks };
     if (tasks) params.tasks = tasks;
     const resp = await this.request<SimulationResult>('runSimulation', params);
+    return resp;
+  }
+
+  // ─── L6: EventJournal ────────────────────────────────────────
+
+  /**
+   * Append an event to the kernel's EventJournal.
+   */
+  async appendEvent(entityId: number, eventType: string, payload: string): Promise<number> {
+    const resp = await this.request<{ eventId: number }>('appendEvent', { entityId, eventType, payload });
+    return resp.eventId;
+  }
+
+  /**
+   * Query events from the EventJournal.
+   */
+  async getEvents(options?: { entityId?: number; sinceId?: number }): Promise<JournalEvent[]> {
+    const params: Record<string, unknown> = {};
+    if (options?.entityId !== undefined) params.entityId = options.entityId;
+    if (options?.sinceId !== undefined) params.sinceId = options.sinceId;
+    const resp = await this.request<{ events: JournalEvent[] }>('getEvents', params);
+    return resp.events;
+  }
+
+  // ─── L6: AgentMailbox ───────────────────────────────────────
+
+  /**
+   * Send a message from one entity to another via the kernel mailbox.
+   */
+  async sendMessage(from: number, to: number, payload: string): Promise<number> {
+    const resp = await this.request<{ messageId: number }>('sendMessage', { from, to, payload });
+    return resp.messageId;
+  }
+
+  /**
+   * Receive undelivered messages for an entity.
+   */
+  async getMessages(entityId: number, limit?: number): Promise<{ messages: MailboxMessage[]; pending: number }> {
+    const params: Record<string, unknown> = { entityId };
+    if (limit !== undefined) params.limit = limit;
+    const resp = await this.request<{ messages: MailboxMessage[]; pending: number }>('getMessages', params);
     return resp;
   }
 

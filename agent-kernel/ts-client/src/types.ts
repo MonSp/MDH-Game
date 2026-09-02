@@ -125,6 +125,31 @@ export interface SimulationResult {
   summary: SimulationSummary;
 }
 
+/** L6: A journal event from EventJournal. */
+export interface JournalEvent {
+  id: number;
+  timestamp: number;
+  entityId: number;
+  eventType: string;
+  payload: string;
+}
+
+/** L6: A mailbox message from AgentMailbox. */
+export interface MailboxMessage {
+  id: number;
+  from: number;
+  to: number;
+  payload: string;
+  timestamp: number;
+  delivered: boolean;
+  acked: boolean;
+}
+
+/** L6: An event pushed from the EventStreamServer. */
+export type StreamEvent =
+  | { type: 'journal_event'; id: number; timestamp: number; entityId: number; eventType: string; payload: string }
+  | { type: 'message_received'; id: number; from: number; to: number; payload: string; timestamp: number };
+
 /** Internal: a pending request waiting for its response. */
 export interface PendingRequest {
   resolve: (value: unknown) => void;

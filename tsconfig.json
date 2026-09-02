@@ -5,7 +5,7 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": ".",
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -20,9 +20,10 @@
     "paths": {
       "@/*": ["./*"],
       "@shared/*": ["shared/*"],
-      "@server/*": ["server/*"]
+      "@server/*": ["server/*"],
+      "@agent-kernel/*": ["../agent-kernel/ts-client/src/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "agent-kernel/ts-client/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

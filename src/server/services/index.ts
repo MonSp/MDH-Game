@@ -10,3 +10,4 @@ export { Player, PlayerService } from './PlayerService';
 export { NPCBirthService, BehaviorTree, BehaviorExecutor } from './NPCService';
 export { LifespanSystem, DeathDropService, ReincarnationPool, WorldRecoveryPool, DeathService } from './DeathService';
 export { PIDBirthController, PopulationBalanceController, ResourceCycleManager } from './PopulationService';
+export { KernelDaemonService } from './KernelDaemonService';
