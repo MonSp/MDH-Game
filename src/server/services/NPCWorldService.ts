@@ -176,15 +176,84 @@ export class NPCWorldService extends EventEmitter {
       await this.kernelDaemon.start();
       console.log('[NPCWorldService] kernel daemon connected');
 
-      // Listen for real-time events
-      this.kernelDaemon.on('event', (event) => {
-        if (event.type === 'message_received') {
-          this.emit('kernelMessage', event);
-        }
+      // Bridge kernel mailbox messages → NPC world events → client WebSocket
+      this.kernelDaemon.on('message', (event) => {
+        this.handleKernelMessage(event);
+      });
+
+      // Bridge kernel journal events → NPC activity events
+      this.kernelDaemon.on('journal', (event) => {
+        this.handleKernelJournalEvent(event);
       });
     } catch {
       this.kernelDaemon = null;
       // Kernel not available — TS fallback pipeline continues as before
+    }
+  }
+
+  /** Convert a kernel mailbox message into an NPC world event + interaction. */
+  private handleKernelMessage(event: { id: number; from: number; to: number; payload: string; timestamp: number }): void {
+    const fromId = `npc-${event.from}`;
+    const toId = `npc-${event.to}`;
+    const fromState = this.npcs.get(fromId);
+    const toState = this.npcs.get(toId);
+
+    const fromName = fromState?.npc.name ?? `实体${event.from}`;
+    const toName = toState?.npc.name ?? `实体${event.to}`;
+
+    let messageText = '';
+    try {
+      const parsed = JSON.parse(event.payload);
+      messageText = parsed.text || parsed.content || parsed.message || event.payload;
+    } catch {
+      messageText = event.payload;
+    }
+
+    // Emit as NPC world event (flows to chronicle → WebSocket)
+    this.emit('npc:event', {
+      npcId: fromId,
+      npcName: fromName,
+      description: `传音给${toName}：${messageText}`,
+      location: '传音',
+      type: 'kernel_message',
+      source: 'deterministic',
+    } as NPCWorldEvent);
+
+    // Also emit as interaction (flows to io.emit('npc:interactions'))
+    const interaction: NPCInteractionEvent = {
+      id: `kernel-msg-${event.id}`,
+      type: 'greet',
+      npcIdA: fromId,
+      npcNameA: fromName,
+      npcIdB: toId,
+      npcNameB: toName,
+      description: messageText,
+      position: fromState?.npc.position ?? { x: 0, y: 0 },
+      timestamp: event.timestamp,
+    };
+    this.recentInteractions.push(interaction);
+    if (this.recentInteractions.length > this.MAX_RECENT_INTERACTIONS) {
+      this.recentInteractions.shift();
+    }
+    this.emit('npc:interaction', interaction);
+  }
+
+  /** Convert relevant kernel journal events into NPC activity events. */
+  private handleKernelJournalEvent(event: { entityId: number; eventType: string; payload: string }): void {
+    const npcId = `npc-${event.entityId}`;
+    const state = this.npcs.get(npcId);
+    if (!state) return;
+
+    // Only bridge certain event types
+    if (event.eventType === 'tick_completed') {
+      let action = '修炼';
+      try {
+        const parsed = JSON.parse(event.payload);
+        action = parsed.action || '修炼';
+      } catch { /* ignore */ }
+      this.emitEvent(npcId, `完成了一次行动：${action}`, 'kernel_tick');
+    } else if (event.eventType === 'action_effect') {
+      this.emitEvent(npcId, '实力有所提升', 'kernel_effect');
     }
   }
 
