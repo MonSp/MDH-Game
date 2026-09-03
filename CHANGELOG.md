@@ -1,5 +1,76 @@
 # Changelog
 
+## [1.14.0.0] - 2026-09-02
+
+### Added
+
+**Agent-Kernel Layer 5: Agent Tick & Action Effects**
+- `src/ecs/systems/ActionTypes.h`: 7 种行动类型（ExecuteTask/PracticeSkill/Delegate/Rest/Socialize/Study/Reflect）
+- `src/ecs/systems/ActionEffect.h`: 5 种目标组件（Social/SkillTree/Career/Personality/Memory）+ 确定性效果生成
+- `src/ecs/systems/ActionExecutor.h/.cpp`: 将效果应用到 ECS 组件（XP/状态/人格/记忆/职业）
+- `src/ecs/systems/TickEngine.h/.cpp`: 单 Agent tick 循环（感知→LLM决策→执行→效果）
+- `src/ecs/systems/SimulationRunner.h/.cpp`: 多 Agent 批量模拟
+- LLM 配置从环境变量读取（`LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL`）
+- LLM prompt 改进：显式列出 5 种有效行动类型，支持委派决策
+
+**Agent-Kernel Layer 6: EventJournal + AgentMailbox**
+- `src/ecs/systems/EventJournal.h`: 线程安全的 append-only 事件日志（ring buffer）
+- `src/ecs/systems/AgentMailbox.h`: 线程安全的 per-entity FIFO 消息队列
+- `src/ecs/systems/EventStreamServer.h`: 专用 Unix socket 事件推送服务器
+- 6 个新 IPC 方法：`appendEvent`/`getEvents`/`sendMessage`/`getMessages`/`agentTick`/`runSimulation`
+- Daemon `--events-socket` 参数启用事件流
+
+**TS 客户端 L6 方法**
+- `ts-client/src/AgentKernelClient.ts`: 新增 `appendEvent`、`getEvents`、`sendMessage`、`getMessages`
+- `ts-client/src/types.ts`: 新增 `JournalEvent`、`MailboxMessage`、`StreamEvent` 类型
+
+**KernelDaemonService — Daemon 生命周期管理**
+- `src/server/services/KernelDaemonService.ts`: 管理 C++ daemon 进程、IPC 客户端、事件流订阅
+- 支持自动启动/连接现有 daemon、事件流自动重连
+
+**RumorPanel — 江湖传闻面板**
+- `src/components/RumorPanel.tsx`: 实时 NPC 对话面板
+- 监听 chronicle WebSocket 的 `kernel_message` 事件
+- 监听 socket.io 的 `npc:interactions` 事件
+- 自动滚动、NPC 名字着色、消息图标（💬⚡📜）
+
+**Kernel 消息桥接到 WebSocket**
+- `NPCWorldService`: 监听 KernelDaemonService 的 `message` 和 `journal` 事件
+- `handleKernelMessage`: 将内核邮箱消息转换为 NPCWorldEvent（chronicle）+ NPCInteractionEvent（io.emit）
+- `handleKernelJournalEvent`: 将 `tick_completed`/`action_effect` 转换为 NPC 活动事件
+
+### Fixed
+
+**线程安全修复（5 个 Critical）**
+- `AgentKernelBridge.h`: 添加 `handlerMutex_` 序列化所有 IPC 处理器
+- `EventJournal.h` / `AgentMailbox.h`: 添加 `std::mutex` 保证线程安全
+- `EventStreamServer.h`: 追踪客户端线程并在 `stop()` 时 join（不再 detach）
+- `EventStreamServer.h`: `escapeStr` 添加 `\t` 处理
+
+**Daemon 生命周期修复**
+- `KernelDaemonService.ts`: 反转 `cleanStaleSocket`/`tryConnect` 顺序（先探测再清理）
+- `KernelDaemonService.ts`: 添加 SIGKILL 回退（5 秒后）
+- `KernelDaemonService.ts`: 修复 `DAEMON_BIN` 路径（4 级上溯）
+- `KernelDaemonService.ts`: 修复 `LD_LIBRARY_PATH` 为绝对路径
+
+**NPC 实体映射**
+- `NPCWorldService.ts`: 添加 `kernelEntityMap` 映射 NPC ID → kernel entity ID
+- `syncNPCsToKernel()`: 自动将所有 NPC 同步到内核
+- `planForNPC`: 使用映射后的 entity ID（不再硬编码 0）
+
+**IPC 安全**
+- `AgentKernelBridge.h`: 每个请求创建新的 TickEngine（无共享状态）
+- `TickEngine.cpp`: `toJson()` 对字符串字段进行 JSON 转义
+- `EventStreamServer.h`: `embedPayload()` 正确处理 JSON 对象嵌入
+
+### Test Results
+
+- 内核 C++ 测试: 181/181 通过
+- Python 客户端: 21/21 通过
+- TS 客户端: 21/21 通过
+- TS 桥接测试: 6/6 通过
+- E2E 集成测试: 10 事件验证通过
+
 ## [1.13.2.1] - 2026-05-06
 
 ### Fixed
