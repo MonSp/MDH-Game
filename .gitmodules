@@ -1,0 +1,3 @@
+[submodule "agent-kernel"]
+	path = agent-kernel
+	url = git@github.com:MonSp/agent-kernel.git

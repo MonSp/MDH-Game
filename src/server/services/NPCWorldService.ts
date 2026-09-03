@@ -28,7 +28,7 @@ import { NPCMemoryStore } from '../llm/NPCMemory';
 import { CommandStatus } from '../../shared/types/LLMPlanning';
 import { LLMIntegrationManager } from '../game/services/LLMIntegrationManager';
 import { wasmConsumeInteractionEvents, isECSWasmReady } from '../../ecs/ECSWasmLoader';
-import { KernelDaemonService } from './KernelDaemonService';
+import { KernelDaemonService } from '../../kernel-layer';
 
 export interface RecruitCandidate {
   id: string;
