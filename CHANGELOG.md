@@ -5,24 +5,19 @@
 ### Added
 
 **Agent-Kernel Layer 5: Agent Tick & Action Effects**
-- `src/ecs/systems/ActionTypes.h`: 7 种行动类型（ExecuteTask/PracticeSkill/Delegate/Rest/Socialize/Study/Reflect）
-- `src/ecs/systems/ActionEffect.h`: 5 种目标组件（Social/SkillTree/Career/Personality/Memory）+ 确定性效果生成
-- `src/ecs/systems/ActionExecutor.h/.cpp`: 将效果应用到 ECS 组件（XP/状态/人格/记忆/职业）
-- `src/ecs/systems/TickEngine.h/.cpp`: 单 Agent tick 循环（感知→LLM决策→执行→效果）
-- `src/ecs/systems/SimulationRunner.h/.cpp`: 多 Agent 批量模拟
-- LLM 配置从环境变量读取（`LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL`）
-- LLM prompt 改进：显式列出 5 种有效行动类型，支持委派决策
+- 6 个新文件在 `agent-kernel/src/ecs/systems/`：ActionTypes、ActionEffect、ActionExecutor、TickEngine、SimulationRunner
+- 7 种行动类型、5 种目标组件、确定性效果生成、批量模拟
+- 详见 [agent-kernel CHANGELOG](../agent-kernel/CHANGELOG.md)
 
 **Agent-Kernel Layer 6: EventJournal + AgentMailbox**
-- `src/ecs/systems/EventJournal.h`: 线程安全的 append-only 事件日志（ring buffer）
-- `src/ecs/systems/AgentMailbox.h`: 线程安全的 per-entity FIFO 消息队列
-- `src/ecs/systems/EventStreamServer.h`: 专用 Unix socket 事件推送服务器
-- 6 个新 IPC 方法：`appendEvent`/`getEvents`/`sendMessage`/`getMessages`/`agentTick`/`runSimulation`
-- Daemon `--events-socket` 参数启用事件流
+- 3 个新文件在 `agent-kernel/src/ecs/systems/`：EventJournal、AgentMailbox、EventStreamServer
+- 线程安全的事件日志 + 消息队列 + Unix socket 事件推送
+- 详见 [agent-kernel CHANGELOG](../agent-kernel/CHANGELOG.md)
 
-**TS 客户端 L6 方法**
-- `ts-client/src/AgentKernelClient.ts`: 新增 `appendEvent`、`getEvents`、`sendMessage`、`getMessages`
-- `ts-client/src/types.ts`: 新增 `JournalEvent`、`MailboxMessage`、`StreamEvent` 类型
+**TS 客户端 L4/L5/L6 方法**
+- `ts-client/src/AgentKernelClient.ts`: 新增 `agentDecide`(L4)、`agentTick`(L5)、`runSimulation`(L5)、`appendEvent`/`getEvents`/`sendMessage`/`getMessages`(L6)
+- `ts-client/src/types.ts`: 新增 `Decision`、`TickResult`、`SimulationResult`、`JournalEvent`、`MailboxMessage`、`StreamEvent` 类型
+- `ts-client/tests/client.test.ts`: 6 个新 L4/L5 测试
 
 **KernelDaemonService — Daemon 生命周期管理**
 - `src/server/services/KernelDaemonService.ts`: 管理 C++ daemon 进程、IPC 客户端、事件流订阅
@@ -34,12 +29,20 @@
 - 监听 socket.io 的 `npc:interactions` 事件
 - 自动滚动、NPC 名字着色、消息图标（💬⚡📜）
 
+**tsconfig 配置更新**
+- `tsconfig.json`: 新增 `@agent-kernel/*` 路径别名
+- `rootDir` 从 `./src` 放宽为 `.`（支持跨目录导入 agent-kernel 客户端）
+- `include` 新增 `agent-kernel/ts-client/src/**/*`
+
 **Kernel 消息桥接到 WebSocket**
 - `NPCWorldService`: 监听 KernelDaemonService 的 `message` 和 `journal` 事件
 - `handleKernelMessage`: 将内核邮箱消息转换为 NPCWorldEvent（chronicle）+ NPCInteractionEvent（io.emit）
 - `handleKernelJournalEvent`: 将 `tick_completed`/`action_effect` 转换为 NPC 活动事件
 
 ### Fixed
+
+**TS 客户端测试修复**
+- `ts-client/tests/client.test.ts`: 更新过时的技能映射测试（阵法造诣 → 阵法）
 
 **线程安全修复（5 个 Critical）**
 - `AgentKernelBridge.h`: 添加 `handlerMutex_` 序列化所有 IPC 处理器
